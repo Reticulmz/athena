@@ -1,4 +1,4 @@
-"""Beatmap performance best projection の command repository contract tests。"""
+"""Beatmap performance best command projection repositoryの契約を検証するtest."""
 
 from __future__ import annotations
 
@@ -22,10 +22,23 @@ _NOW = datetime(2026, 6, 28, 0, 0, 0, tzinfo=UTC)
 
 
 def _memory_factory() -> UnitOfWorkFactory:
+    """Isolated in-memory Unit of Work factoryを構築する.
+
+    Returns:
+        UnitOfWorkFactory: performance projectionのcommit/rollbackを検証するfactory.
+    """
     return InMemoryUnitOfWorkFactory()
 
 
 async def test_unit_of_work_exposes_beatmap_performance_best_repository() -> None:
+    """Unit of Workがperformance best command repositoryを公開する契約を検証する.
+
+    新しいin-memory Unit of Workを開く.
+    `beatmap_performance_bests`属性が存在することを確認する.
+
+    Returns:
+        None: Unit of Work repository公開契約を検証して完了する.
+    """
     factory = _memory_factory()
 
     async with factory() as uow:
@@ -33,6 +46,14 @@ async def test_unit_of_work_exposes_beatmap_performance_best_repository() -> Non
 
 
 async def test_upsert_replaces_existing_best_only_when_candidate_has_better_pp() -> None:
+    """upsertが高いPPのcandidateだけをperformance bestへ置換する契約を検証する.
+
+    既存bestより低いPPと高いPPのcandidateを同一scopeへ順にupsertする.
+    低いPPは既存rowを返し高いPPだけがcommit後の保存rowになることを確認する.
+
+    Returns:
+        None: PP優先によるperformance best置換を検証して完了する.
+    """
     factory = _memory_factory()
     scope = _scope()
 
@@ -68,6 +89,14 @@ async def test_upsert_replaces_existing_best_only_when_candidate_has_better_pp()
 
 
 async def test_upsert_uses_earlier_submission_and_lower_score_id_as_tie_breakers() -> None:
+    """同PPのperformance bestがsubmission時刻とscore IDで決まる契約を検証する.
+
+    同PPのlater/earlier submissionと同時刻の異なるscore IDを同一scopeへupsertする.
+    早いsubmissionを優先し同時刻では小さいscore IDを保持することを確認する.
+
+    Returns:
+        None: performance best tie breakerの順序を検証して完了する.
+    """
     factory = _memory_factory()
     scope = _scope()
 
@@ -116,6 +145,14 @@ async def test_upsert_uses_earlier_submission_and_lower_score_id_as_tie_breakers
 
 
 async def test_replace_projection_slice_replaces_only_target_user_rows() -> None:
+    """User projection sliceが対象userのperformance rowだけを置換する契約を検証する.
+
+    対象userの2 beatmap rowと別userのrowを保存して対象userのreplacementを投入する.
+    対象userのstale rowが消えrebuilt rowになり別userのrowは残ることを確認する.
+
+    Returns:
+        None: user単位のperformance projection置換を検証して完了する.
+    """
     factory = _memory_factory()
     stale_scope = _scope(user_id=1000, beatmap_id=1)
     rebuilt_scope = _scope(user_id=1000, beatmap_id=2)
@@ -155,6 +192,14 @@ async def test_replace_projection_slice_replaces_only_target_user_rows() -> None
 
 
 async def test_replace_projection_slice_can_delete_stale_beatmap_rows_with_empty_rows() -> None:
+    """空のbeatmap projection sliceが対象beatmapのstale rowを削除する契約を検証する.
+
+    2 beatmapのperformance bestを保存して一方のbeatmapを対象に空rowでsliceを置換する.
+    対象rowは削除され対象外beatmapのrowは保存されたままであることを確認する.
+
+    Returns:
+        None: empty beatmap sliceによる限定削除を検証して完了する.
+    """
     factory = _memory_factory()
     stale_scope = _scope(beatmap_id=1)
     unaffected_scope = _scope(beatmap_id=2)
@@ -181,6 +226,14 @@ async def test_replace_projection_slice_can_delete_stale_beatmap_rows_with_empty
 
 
 async def test_replace_scope_replaces_only_exact_scope() -> None:
+    """Replace scopeが一意なperformance scopeだけを置換する契約を検証する.
+
+    2 beatmap scopeのbestを保存して一方だけにreplacement winnerを指定する.
+    対象scopeが新rowへ置換され他scopeのrowは変化しないことを確認する.
+
+    Returns:
+        None: exact performance scopeの置換を検証して完了する.
+    """
     factory = _memory_factory()
     target_scope = _scope(beatmap_id=1)
     unaffected_scope = _scope(beatmap_id=2)
@@ -215,6 +268,14 @@ async def test_replace_scope_replaces_only_exact_scope() -> None:
 
 
 async def test_replace_scope_deletes_exact_scope_with_empty_winner() -> None:
+    """None winnerのreplace scopeが対象rowだけを削除する契約を検証する.
+
+    保存済みperformance best scopeに対してreplacement rowをNoneで指定する.
+    replace結果と後続getがNoneになることを確認する.
+
+    Returns:
+        None: empty winnerによるexact scope削除を検証して完了する.
+    """
     factory = _memory_factory()
     scope = _scope()
 
@@ -234,6 +295,14 @@ async def test_replace_scope_deletes_exact_scope_with_empty_winner() -> None:
 
 
 async def test_uncommitted_projection_rows_roll_back_with_unit_of_work() -> None:
+    """commit前のperformance projection rowがUnit of Work rollbackで破棄される契約を検証する.
+
+    performance bestをupsertしたtransactionでcommitせずrollbackを実行する.
+    次のtransactionから対象scopeのrowが取得できないことを確認する.
+
+    Returns:
+        None: performance projection rowのtransaction rollback境界を検証して完了する.
+    """
     factory = _memory_factory()
     scope = _scope()
 
@@ -248,6 +317,14 @@ async def test_uncommitted_projection_rows_roll_back_with_unit_of_work() -> None
 
 
 async def test_list_user_bests_returns_mode_scoped_rows_in_pp_order() -> None:
+    """List user bestsがuser/mode scopeをPP降順で返す契約を検証する.
+
+    同userのosu rowsと他userおよびmania rowを保存してosu vanilla scopeを取得する.
+    他scopeを除外しPPが高いrowから順に返すことを確認する.
+
+    Returns:
+        None: mode scoped performance best一覧のfilter/orderを検証して完了する.
+    """
     factory = _memory_factory()
 
     async with factory() as uow:
@@ -295,6 +372,15 @@ def _scope(
     user_id: int = 1000,
     beatmap_id: int = 1,
 ) -> BeatmapPerformanceBestScope:
+    """test用のBeatmap performance best scopeを構築する.
+
+    Args:
+        user_id (int): performance bestを所有するuserのID.
+        beatmap_id (int): performance best対象beatmapのID.
+
+    Returns:
+        BeatmapPerformanceBestScope: osu vanilla rulesetのscope fixture.
+    """
     return BeatmapPerformanceBestScope(
         user_id=user_id,
         beatmap_id=beatmap_id,
@@ -313,6 +399,20 @@ def _upsert(
     accuracy: float = 0.98,
     score: int = 1_000_000,
 ) -> UpsertBeatmapPerformanceBest:
+    """testでupsertするBeatmap performance best commandを構築する.
+
+    Args:
+        scope (BeatmapPerformanceBestScope): commandを適用する一意scope.
+        score_id (int): projectionへ関連付けるscoreのID.
+        pp (Decimal): candidateのperformance point値.
+        submitted_at (datetime): tie breakerへ使用するsubmission timestamp.
+        performance_calculation_id (int | None): calculationのID. Noneならscore ID由来の値.
+        accuracy (float): candidateのaccuracy値.
+        score (int): candidateのscore値.
+
+    Returns:
+        UpsertBeatmapPerformanceBest: PPとtie breakerを含むupsert command fixture.
+    """
     return UpsertBeatmapPerformanceBest(
         scope=scope,
         score_id=score_id,

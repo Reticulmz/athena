@@ -1,4 +1,4 @@
-"""SQLAlchemy replay download query repository."""
+"""SQLAlchemyからreplay download可否とmetadataをread-onlyで判定するquery repositoryを提供する."""
 
 from __future__ import annotations
 
@@ -31,38 +31,26 @@ if TYPE_CHECKING:
 
 
 class SQLAlchemyReplayDownloadQueryRepository:
-    """Replay download candidate を SQLAlchemy metadata から投影する.
+    """replay download candidateをSQLAlchemy metadataから投影する.
 
-    引数:
-        session_factory: Short read session を生成する factory.
+    Attributes:
+        _session_factory (SQLAlchemyQuerySessionFactory): queryごとに閉じるread sessionのfactory.
 
-    戻り値:
-        Class のため戻り値はない.
-
-    例外:
-        なし.
-
-    制約:
-        Raw replay bytes, blob storage key, filesystem path は読まない.
-        Score, owner visibility, replay attachment metadata だけを参照する.
+    Notes:
+        raw replay bytes,blob storage key,filesystem pathは読まず,Score,owner visibility,
+        replay attachment metadataだけを参照する.
     """
 
     _session_factory: SQLAlchemyQuerySessionFactory
 
     def __init__(self, session_factory: SQLAlchemyQuerySessionFactory) -> None:
-        """Repository を short read session factory で初期化する.
+        """短命なread session factoryを保持してrepositoryを初期化する.
 
-        引数:
-            session_factory: Query ごとに閉じる SQLAlchemy read session factory.
+        Args:
+            session_factory (SQLAlchemyQuerySessionFactory): query用read session factory.
 
-        戻り値:
-            None.
-
-        例外:
-            なし.
-
-        制約:
-            Factory は保持するだけで session を先行生成しない.
+        Notes:
+            factoryは保持するだけでsessionを先行生成しない.
         """
         self._session_factory = session_factory
 
@@ -70,20 +58,23 @@ class SQLAlchemyReplayDownloadQueryRepository:
         self,
         query: ReplayDownloadCandidateQuery,
     ) -> ReplayDownloadCandidate:
-        """Score id と ruleset から replay download candidate branch を返す.
+        """Score IDとrulesetからreplay download candidate branchを返す.
 
-        引数:
-            query: Parsed score id と Stable ruleset scope.
+        Args:
+            query (ReplayDownloadCandidateQuery): parsed Score IDとstable ruleset scope.
 
-        戻り値:
-            Score not found, hidden score, missing replay, available replay のいずれか.
+        Returns:
+            ReplayDownloadCandidate: score not found,hidden score,missing replay,
+                available replayのいずれか.
 
-        例外:
-            SQLAlchemy session または database の read 例外を送出する可能性がある.
+        Raises:
+            SQLAlchemyError: sessionのreadまたはrow取得に失敗した場合.
+            KeyError: available replay rowに必要なfieldがない場合.
+            TypeError: available replay rowのfield型が期待値と異なる場合.
 
-        制約:
-            1 回の short read session で metadata だけを投影する. Blob object の
-            storage key や raw bytes は読まない.
+        Notes:
+            1回のshort read sessionでmetadataだけを投影する.
+            Blob objectのstorage keyやraw bytesは読まない.
         """
         async with self._session_factory() as session:
             row = cast(
@@ -104,6 +95,18 @@ class SQLAlchemyReplayDownloadQueryRepository:
 
 
 def _candidate_statement(query: ReplayDownloadCandidateQuery) -> Executable:
+    """Replay download可否とattachment metadataを取得するstatementを構築する.
+
+    Args:
+        query (ReplayDownloadCandidateQuery): 検索するScore IDとruleset scope.
+
+    Returns:
+        Executable: Score,owner visibility,replay attachment metadataを最大1rowで返すSELECT.
+
+    Notes:
+        passedかつleaderboard eligibleで権限上表示可能なScoreだけをdownload可能としてlabelし,
+        Blob tableやstorage detailはjoinしない.
+    """
     role_permissions = _role_permissions_subquery()
     replay_download_visible = and_(
         ScoreModel.passed.is_(True),
@@ -131,6 +134,14 @@ def _candidate_statement(query: ReplayDownloadCandidateQuery) -> Executable:
 
 
 def _role_permissions_subquery() -> Subquery:
+    """Userごとの集約Role permissionを返すsubqueryを構築する.
+
+    Returns:
+        Subquery: user_idと割り当てRole permissionのbitwise ORを返すsubquery.
+
+    Notes:
+        Roleが割り当てられていないUserのpermission補完は呼び出し側のcoalesceで行う.
+    """
     return (
         select(
             UserRoleModel.user_id.label("user_id"),
@@ -144,6 +155,17 @@ def _role_permissions_subquery() -> Subquery:
 
 
 def _leaderboard_visible_condition(role_permissions: Subquery) -> ColumnElement[bool]:
+    """集約Role permissionがleaderboard表示要件を満たす条件を構築する.
+
+    Args:
+        role_permissions (Subquery): user_idごとの集約permissionを返すsubquery.
+
+    Returns:
+        ColumnElement[bool]: LEADERBOARD_VISIBLE_PERMISSION_MASKの全bitを持つかを判定するSQL条件.
+
+    Notes:
+        permissionがNULLの場合は0として扱う.
+    """
     permissions = cast(
         "ColumnElement[int]",
         func.coalesce(role_permissions.c.permissions, 0),
@@ -154,6 +176,22 @@ def _leaderboard_visible_condition(role_permissions: Subquery) -> ColumnElement[
 
 
 def _candidate_from_mapping(row: Mapping[str, object]) -> ReplayDownloadCandidate:
+    """SQL mapping rowをreplay download candidate branchへ変換する.
+
+    Args:
+        row (Mapping[str, object]): Score,visibility,replay attachment metadataを含むmapping row.
+
+    Returns:
+        ReplayDownloadCandidate: visibilityとattachment有無に対応するcandidate branch.
+
+    Raises:
+        KeyError: 必須fieldがmappingに存在しない場合.
+        TypeError: 必須fieldの型が期待値と異なる場合.
+
+    Notes:
+        hidden scoreはattachmentがあってもHIDDEN_SCOREを優先する.
+        visible scoreでblob_idがない場合はMISSING_REPLAYを返す.
+    """
     if not _bool_value(row, "replay_download_visible"):
         return ReplayDownloadHiddenScoreCandidate()
 
@@ -171,6 +209,19 @@ def _candidate_from_mapping(row: Mapping[str, object]) -> ReplayDownloadCandidat
 
 
 def _bool_value(mapping: Mapping[str, object], key: str) -> bool:
+    """mappingからbool型の必須fieldを取得する.
+
+    Args:
+        mapping (Mapping[str, object]): SQLAlchemy mapping row.
+        key (str): 取得する必須field名.
+
+    Returns:
+        bool: keyに対応するbool値.
+
+    Raises:
+        KeyError: keyがmappingに存在しない場合.
+        TypeError: keyに対応する値がboolではない場合.
+    """
     value = mapping[key]
     if not isinstance(value, bool):
         msg = f"{key} must be a bool"
@@ -179,6 +230,19 @@ def _bool_value(mapping: Mapping[str, object], key: str) -> bool:
 
 
 def _int_value(mapping: Mapping[str, object], key: str) -> int:
+    """mappingからint型の必須fieldを取得する.
+
+    Args:
+        mapping (Mapping[str, object]): SQLAlchemy mapping row.
+        key (str): 取得する必須field名.
+
+    Returns:
+        int: keyに対応するint値.
+
+    Raises:
+        KeyError: keyがmappingに存在しない場合.
+        TypeError: keyに対応する値がintではない場合.
+    """
     value = mapping[key]
     if not isinstance(value, int):
         msg = f"{key} must be an int"
@@ -187,6 +251,19 @@ def _int_value(mapping: Mapping[str, object], key: str) -> int:
 
 
 def _str_value(mapping: Mapping[str, object], key: str) -> str:
+    """mappingからstr型の必須fieldを取得する.
+
+    Args:
+        mapping (Mapping[str, object]): SQLAlchemy mapping row.
+        key (str): 取得する必須field名.
+
+    Returns:
+        str: keyに対応するstr値.
+
+    Raises:
+        KeyError: keyがmappingに存在しない場合.
+        TypeError: keyに対応する値がstrではない場合.
+    """
     value = mapping[key]
     if not isinstance(value, str):
         msg = f"{key} must be a str"

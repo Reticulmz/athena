@@ -1,7 +1,7 @@
-"""安定版 score submission の PostgreSQL integration test。
+"""Stable score submissionのPostgreSQL integrationを検証する.
 
-Command workflow の validation、persistence、stable response construction を
-SQLAlchemy repository と実 database transaction 越しに検証する。
+Command workflowのvalidation, persistence, stable response constructionを実database
+transaction越しに確認する.
 """
 
 from __future__ import annotations
@@ -65,6 +65,11 @@ if TYPE_CHECKING:
 
 
 def _eligible_beatmap() -> BeatmapEligibility:
+    """Ranked score submissionを受理するbeatmap eligibilityを作成する.
+
+    Returns:
+        BeatmapEligibility: ranked score, leaderboard, PP計算を許可するeligibility.
+    """
     return BeatmapEligibility(
         accepts_scores=True,
         has_leaderboard=True,
@@ -83,6 +88,14 @@ def _eligible_beatmap() -> BeatmapEligibility:
 
 
 def _resolved_beatmap(*, total_length: int | None = None) -> Beatmap:
+    """Score submissionで解決済みとみなすranked beatmapを作成する.
+
+    Args:
+        total_length (int | None): passed scoreのplay timeに使うbeatmap全長, 未指定時はNone.
+
+    Returns:
+        Beatmap: checksumとranked statusを固定した解決済みbeatmap.
+    """
     return Beatmap(
         id=1,
         beatmapset_id=10,
@@ -111,6 +124,14 @@ def _resolved_beatmap(*, total_length: int | None = None) -> Beatmap:
 
 
 def _resolved_beatmapset(*, total_length: int | None = None) -> BeatmapSet:
+    """Score submission用の解決済みbeatmapset snapshotを作成する.
+
+    Args:
+        total_length (int | None): 内包beatmapへ設定する全長, 未指定時はNone.
+
+    Returns:
+        BeatmapSet: 1件のranked beatmapを持つ解決済みbeatmapset.
+    """
     return BeatmapSet(
         id=10,
         artist="Integration Artist",
@@ -134,6 +155,17 @@ def _fingerprint_for(
     beatmap_checksum: str = "0123456789abcdef0123456789abcdef",
     submitted_timestamp: str | None = None,
 ) -> str:
+    """Submission inputから永続化済みrecord検索用fingerprintを作成する.
+
+    Args:
+        input_data (ParsedSubmissionInput): fingerprintのrequest hashを含むcommand入力.
+        user_id (int): fingerprintへ含めるsubmitter識別子.
+        beatmap_checksum (str): fingerprintへ含めるbeatmap checksum.
+        submitted_timestamp (str | None): client送信時刻, 未指定時はNone.
+
+    Returns:
+        str: score submission recordと一致するdeterministic fingerprint.
+    """
     return generate_submission_fingerprint(
         user_id=user_id,
         beatmap_checksum=beatmap_checksum,
@@ -146,6 +178,14 @@ def _leaderboard_scope(
     *,
     user_id: int = 1000,
 ) -> BeatmapLeaderboardUserBestScope:
+    """Test scoreのglobal user bestを検索するleaderboard scopeを作成する.
+
+    Args:
+        user_id (int): scopeへ設定するscore所有user識別子.
+
+    Returns:
+        BeatmapLeaderboardUserBestScope: OSU vanilla no-mod scoreのuser best scope.
+    """
     return BeatmapLeaderboardUserBestScope(
         beatmap_id=1,
         beatmap_checksum="0123456789abcdef0123456789abcdef",
@@ -160,6 +200,15 @@ async def _get_leaderboard_best(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
     scope: BeatmapLeaderboardUserBestScope,
 ) -> BeatmapLeaderboardUserBest | None:
+    """指定scopeのglobal user best projectionを読み取る.
+
+    Args:
+        uow_factory (SQLAlchemyUnitOfWorkFactory): projectionを読むUnit of Work factory.
+        scope (BeatmapLeaderboardUserBestScope): 検索するbeatmap, user, mod scope.
+
+    Returns:
+        BeatmapLeaderboardUserBest | None: 現在のbest projection, 未作成時はNone.
+    """
     async with uow_factory() as uow:
         return await uow.beatmap_leaderboards.get_global_user_best(scope)
 
@@ -172,6 +221,18 @@ async def _replace_user_projection_with_score(
     score: int,
     submitted_at: datetime,
 ) -> None:
+    """Userのleaderboard projectionを指定scoreだけへ置き換える.
+
+    Args:
+        uow_factory (SQLAlchemyUnitOfWorkFactory): projectionを置換してcommitするfactory.
+        user_id (int): projection sliceを所有するuser識別子.
+        score_id (int): projectionに設定するscore識別子.
+        score (int): rank keyに設定するscore値.
+        submitted_at (datetime): rank keyに設定するscore送信日時.
+
+    Returns:
+        None: replacement sliceを永続化した後に値を返さない.
+    """
     async with uow_factory() as uow:
         await uow.beatmap_leaderboards.replace_projection_slice(
             BeatmapLeaderboardUserProjectionSlice(user_id=user_id),
@@ -192,6 +253,13 @@ async def _replace_user_projection_with_score(
 
 @dataclass(slots=True)
 class FakeBeatmapResolver:
+    """固定eligibilityを返すscore submission用beatmap resolver fake.
+
+    Attributes:
+        eligibility (BeatmapEligibility | None): resolve結果へ設定するscore受理可否.
+        beatmap_total_length (int | None): checksum解決時のbeatmap全長, 未指定時はNone.
+    """
+
     eligibility: BeatmapEligibility | None
     beatmap_total_length: int | None = None
 
@@ -200,6 +268,15 @@ class FakeBeatmapResolver:
         beatmap_id: int,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """Beatmap識別子の解決を固定eligibilityだけで模擬する.
+
+        Args:
+            beatmap_id (int): 解決要求されたbeatmap識別子.
+            options (BeatmapResolveOptions | None): 解決option, fakeでは使用しない.
+
+        Returns:
+            BeatmapResolveResult: beatmap本体を持たず固定eligibilityを持つ解決結果.
+        """
         _ = (beatmap_id, options)
         return BeatmapResolveResult(
             beatmap=None,
@@ -219,6 +296,15 @@ class FakeBeatmapResolver:
         checksum_md5: str,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """Checksumの解決を固定ranked beatmapとeligibilityで模擬する.
+
+        Args:
+            checksum_md5 (str): 解決要求されたbeatmap MD5 checksum.
+            options (BeatmapResolveOptions | None): 解決option, fakeでは使用しない.
+
+        Returns:
+            BeatmapResolveResult: 固定beatmapと設定済みeligibilityを持つ解決結果.
+        """
         _ = (checksum_md5, options)
         return BeatmapResolveResult(
             beatmap=_resolved_beatmap(total_length=self.beatmap_total_length),
@@ -235,14 +321,32 @@ class FakeBeatmapResolver:
 
 
 class SQLAlchemyBlobStorageStub:
-    """外部キー付き integration test 用に blob metadata を永続化する fake storage。"""
+    """Replay blob metadataをSQLAlchemy repositoryへ保存するstorage fake.
+
+    Attributes:
+        _uow_factory (SQLAlchemyUnitOfWorkFactory): blob metadataを作成または検索するfactory.
+    """
 
     _uow_factory: SQLAlchemyUnitOfWorkFactory
 
     def __init__(self, uow_factory: SQLAlchemyUnitOfWorkFactory) -> None:
+        """Blob metadataを保存するUnit of Work factoryを設定する.
+
+        Args:
+            uow_factory (SQLAlchemyUnitOfWorkFactory): SQLAlchemy blob repositoryを提供するfactory.
+        """
         self._uow_factory = uow_factory
 
     async def put_bytes(self, data: bytes, *, content_type: str) -> BlobStored:
+        """BytesをSHA256でdeduplicateしblob metadataとして永続化する.
+
+        Args:
+            data (bytes): replayとして保存するraw bytes.
+            content_type (str): blob metadataへ設定するMIME type.
+
+        Returns:
+            BlobStored: 新規作成または既存metadataを包む保存済みblob.
+        """
         digest = hashlib.sha256(data).hexdigest()
         async with self._uow_factory() as uow:
             existing = await uow.blobs.get_by_sha256(digest)
@@ -263,6 +367,14 @@ class SQLAlchemyBlobStorageStub:
 
 
 async def _cleanup_score_submission_rows(session: AsyncSession) -> None:
+    """Score submission integration testが作成した関連rowを削除する.
+
+    Args:
+        session (AsyncSession): cleanup SQLを実行するdatabase session.
+
+    Returns:
+        None: score, projection, replay, blob, submission rowを削除して値を返さない.
+    """
     test_score_filter = """
         online_checksum LIKE 'integration_test_%'
         OR online_checksum LIKE 'int_test_%'
@@ -312,6 +424,14 @@ async def _cleanup_score_submission_rows(session: AsyncSession) -> None:
 async def _seed_score_submission_beatmap(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    """Score submission用ranked beatmapとcounter初期値を準備する.
+
+    Args:
+        session_factory (async_sessionmaker[AsyncSession]): snapshot保存とcounter更新に使うfactory.
+
+    Returns:
+        None: beatmapset snapshotとplay/pass counterを初期化して値を返さない.
+    """
     uow_factory = SQLAlchemyUnitOfWorkFactory(session_factory)
     async with uow_factory() as uow:
         await uow.beatmaps.save_beatmapset_snapshot(_resolved_beatmapset())
@@ -325,6 +445,14 @@ async def _seed_score_submission_beatmap(
 
 
 def _get_database_url() -> str:
+    """Integration test用のdatabase URLを環境変数から取得する.
+
+    Returns:
+        str: SQLAlchemy engineへ渡すdatabase接続URL.
+
+    Raises:
+        pytest.skip.Exception: DATABASE_URLが設定されていない場合.
+    """
     url = os.environ.get("DATABASE_URL")
     if not url:
         pytest.skip("DATABASE_URL not set")
@@ -333,6 +461,17 @@ def _get_database_url() -> str:
 
 @pytest.fixture
 async def engine() -> AsyncGenerator[AsyncEngine]:
+    """接続可能なSQLAlchemy async engineを提供するfixture.
+
+    Yields:
+        AsyncGenerator[AsyncEngine]: test本体で使用する接続確認済みengine.
+
+    Raises:
+        pytest.skip.Exception: DATABASE_URLが未設定か接続先databaseが利用不能な場合.
+
+    Notes:
+        fixture終了時にengineをdisposeして接続resourceを解放する.
+    """
     eng = create_engine(_get_database_url())
     try:
         async with eng.connect() as conn:
@@ -348,6 +487,18 @@ async def engine() -> AsyncGenerator[AsyncEngine]:
 async def session_factory(
     engine: AsyncEngine,
 ) -> AsyncGenerator[async_sessionmaker[AsyncSession]]:
+    """Test前後にscore submission rowをcleanupするsession factoryを提供する.
+
+    Args:
+        engine (AsyncEngine): 接続確認済みのSQLAlchemy async engine.
+
+    Yields:
+        AsyncGenerator[async_sessionmaker[AsyncSession]]: testがDB transactionを
+            開始するsession factory.
+
+    Notes:
+        cleanup時のOSErrorとSQLAlchemyErrorはtest後のresource回収を妨げないよう無視する.
+    """
     factory = create_session_factory(engine)
     # Cleanup before test
     try:
@@ -373,6 +524,14 @@ async def session_factory(
 def uow_factory(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> SQLAlchemyUnitOfWorkFactory:
+    """Score submission assertion用SQLAlchemy Unit of Work factoryを作成する.
+
+    Args:
+        session_factory (async_sessionmaker[AsyncSession]): DB sessionを生成するfactory.
+
+    Returns:
+        SQLAlchemyUnitOfWorkFactory: score, replay, projectionを読み取るfactory.
+    """
     return SQLAlchemyUnitOfWorkFactory(session_factory)
 
 
@@ -380,19 +539,16 @@ def uow_factory(
 def service(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> ProcessScoreSubmissionUseCase:
-    """永続化 repository で ProcessScoreSubmissionUseCase を作る。
+    """永続化repositoryでProcessScoreSubmissionUseCaseを作る.
 
     Args:
-        uow_factory: integration test 用 Unit of Work factory。
+        uow_factory (SQLAlchemyUnitOfWorkFactory): integration test用Unit of Work factory.
 
     Returns:
-        PostgreSQL-backed repository を使う score submission use-case。
+        ProcessScoreSubmissionUseCase: PostgreSQL-backed repositoryを使うscore submission use-case.
 
-    Raises:
-        例外は送出しない。
-
-    Constraints:
-        Production composition graph は使わず、repository 境界だけを integration する。
+    Notes:
+        Production composition graphは使わず, repository境界だけをintegrationする.
     """
     auth_service = make_score_authorization_service()
     beatmap_resolver = FakeBeatmapResolver(_eligible_beatmap())
@@ -407,19 +563,13 @@ def service(
 
 @pytest.fixture
 def valid_input() -> ParsedSubmissionInput:
-    """有効な score submission input を返す。
-
-    Args:
-        なし。
+    """有効なscore submission inputを返す.
 
     Returns:
-        PostgreSQL integration test 用の ParsedSubmissionInput。
+        ParsedSubmissionInput: PostgreSQL integration test用のcommand境界入力.
 
-    Raises:
-        例外は送出しない。
-
-    Constraints:
-        Transport wire payload ではなく command 境界の入力を直接生成する。
+    Notes:
+        Transport wire payloadではなくcommand境界の入力を直接生成する.
     """
     return make_test_submission_input(
         replay_data=b"replay_binary_data_integration",
@@ -434,22 +584,22 @@ async def test_e2e_valid_submission_persists_to_database(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
     query_budget: QueryBudget,
 ) -> None:
-    """有効な submission が score、replay、submission record を DB に作る。
+    """有効なsubmissionがscore, replay, submission recordをDBに作る.
 
     Args:
-        service: test 対象の use-case。
-        valid_input: 有効な command input。
-        uow_factory: assertion 用 Unit of Work factory。
-        query_budget: SQL query 数を検証する helper。
+        service (ProcessScoreSubmissionUseCase): test対象のscore submission use-case.
+        valid_input (ParsedSubmissionInput): 有効なcommand入力のtemplate.
+        uow_factory (SQLAlchemyUnitOfWorkFactory): 永続化結果を読むassertion用factory.
+        query_budget (QueryBudget): SQL query数を検証するhelper.
 
     Returns:
-        None。
+        None: score, replay, submission recordをassertして終了する.
 
     Raises:
-        AssertionError: DB に保存された score、replay、submission が期待と異なる場合。
+        AssertionError: DBに保存されたscore, replay, submissionが期待と異なる場合.
 
-    Constraints:
-        実 PostgreSQL transaction と repository 実装を通して検証する。
+    Notes:
+        実PostgreSQL transactionとrepository実装を通して検証する.
     """
     input_data = replace(
         valid_input,
@@ -501,7 +651,18 @@ async def test_e2e_database_transaction_handling(
     service: ProcessScoreSubmissionUseCase,
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    """データベース transaction が正しく commit されることを検証する。"""
+    """Score submission transactionがcommitされreplayも保存されることを検証する.
+
+    Args:
+        service (ProcessScoreSubmissionUseCase): 実PostgreSQLを使うscore submission use-case.
+        uow_factory (SQLAlchemyUnitOfWorkFactory): commit後のscoreを読むfactory.
+
+    Returns:
+        None: completed outcome, score, replayの永続化をassertして終了する.
+
+    Raises:
+        AssertionError: submission outcome, score, またはreplayの保存結果が期待と異なる場合.
+    """
     input_data = make_test_submission_input(
         payload=(
             "1000:test_user:0123456789abcdef0123456789abcdef:integration_test_checksum_002:0:0:100:10:5:0:0:2:500000:99:1:1"
@@ -529,7 +690,18 @@ async def test_e2e_concurrent_submission_handling(
     service: ProcessScoreSubmissionUseCase,
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    """異なる checksum の concurrent submission を正しく保存する。"""
+    """異なるchecksumのconcurrent submissionを正しく保存することを検証する.
+
+    Args:
+        service (ProcessScoreSubmissionUseCase): 並行実行するscore submission use-case.
+        uow_factory (SQLAlchemyUnitOfWorkFactory): 各scoreの永続化を読むfactory.
+
+    Returns:
+        None: 3件のcompleted outcomeと一意なscore識別子をassertして終了する.
+
+    Raises:
+        AssertionError: outcome, score識別子, または永続化済みscoreが期待と異なる場合.
+    """
     # Create 3 concurrent submissions with different fingerprints
     inputs = [
         make_test_submission_input(
@@ -562,7 +734,18 @@ async def test_e2e_duplicate_online_checksum_rejected_in_db(
     service: ProcessScoreSubmissionUseCase,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """重複 online checksum が別 submission を terminal reject する。"""
+    """重複online checksumが別submissionをterminal rejectすることを検証する.
+
+    Args:
+        service (ProcessScoreSubmissionUseCase): 重複scoreを送信するuse-case.
+        session_factory (async_sessionmaker[AsyncSession]): score row数を直接読むsession factory.
+
+    Returns:
+        None: terminal reject outcomeとscore row数をassertして終了する.
+
+    Raises:
+        AssertionError: duplicate outcome, error reason, またはDB内score row数が期待と異なる場合.
+    """
     parsed_score = make_test_parsed_score(
         "1000:test_user:0123456789abcdef0123456789abcdef:int_test_dup:0:0:100:10:5:0:0:2:500000:99:1:1"
     )
@@ -602,8 +785,21 @@ async def test_e2e_eligible_submission_updates_leaderboard_projection_and_retry_
     session_factory: async_sessionmaker[AsyncSession],
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    """適格 submit が projection を更新し retry で保存済み PB delta を返す。"""
+    """適格submitがprojectionを更新しretryで保存済みPB deltaを返すことを検証する.
 
+    Args:
+        service (ProcessScoreSubmissionUseCase): 前回score, 新規score, retryを実行するuse-case.
+        session_factory (async_sessionmaker[AsyncSession]): 新規scoreのrow数を直接読む
+            session factory.
+        uow_factory (SQLAlchemyUnitOfWorkFactory): leaderboard projectionを読むfactory.
+
+    Returns:
+        None: personal best delta, projection, idempotent retryをassertして終了する.
+
+    Raises:
+        AssertionError: personal best delta, projection, retry snapshot,
+            またはscore row数が期待と異なる場合.
+    """
     previous_input = make_test_submission_input(
         payload="1000:test_user:0123456789abcdef0123456789abcdef:int_test_lb_prev:0:0:100:10:5:0:0:2:400000:99:1:1",
         request_hash="leaderboard_previous_hash",
@@ -681,7 +877,18 @@ async def test_e2e_failed_play_persists_to_database(
     service: ProcessScoreSubmissionUseCase,
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    """失敗 play (passed=0) を database に保存する。"""
+    """失敗playがfail time由来のtimingでDBへ保存されることを検証する.
+
+    Args:
+        service (ProcessScoreSubmissionUseCase): failed playを送信するscore submission use-case.
+        uow_factory (SQLAlchemyUnitOfWorkFactory): 保存済みscoreを読むfactory.
+
+    Returns:
+        None: failed scoreのstatus, grade, timing fieldをassertして終了する.
+
+    Raises:
+        AssertionError: failed scoreの永続化結果またはplay time sourceが期待と異なる場合.
+    """
     input_data = make_test_submission_input(
         payload="1000:test_user:0123456789abcdef0123456789abcdef:int_test_failed:0:0:50:10:5:0:0:10:200000:40:0:0",
         request_hash="failed-play-hash",
@@ -710,7 +917,18 @@ async def test_e2e_failed_play_persists_to_database(
 async def test_e2e_passed_score_submission_uses_beatmap_length_for_play_time(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
-    """受理済み passed score が beatmap-length play time を保存する。"""
+    """受理済みpassed scoreがbeatmap全長由来のplay timeを保存することを検証する.
+
+    Args:
+        uow_factory (SQLAlchemyUnitOfWorkFactory): submission用use-caseと保存済みscoreを作る
+            factory.
+
+    Returns:
+        None: passed scoreのtiming fieldとplay time sourceをassertして終了する.
+
+    Raises:
+        AssertionError: passed scoreの永続化結果またはbeatmap全長由来のtimingが期待と異なる場合.
+    """
     auth_service = make_score_authorization_service()
     beatmap_resolver = FakeBeatmapResolver(_eligible_beatmap(), beatmap_total_length=123)
     submit_score_use_case = SubmitScoreUseCase(unit_of_work_factory=uow_factory)
@@ -749,7 +967,19 @@ async def test_e2e_idempotent_retry_returns_cached_result(
     session_factory: async_sessionmaker[AsyncSession],
     query_budget: QueryBudget,
 ) -> None:
-    """冪等 retry が database の cached result を返す。"""
+    """冪等retryがdatabaseのcached resultを返すことを検証する.
+
+    Args:
+        service (ProcessScoreSubmissionUseCase): 初回submissionとretryを実行するuse-case.
+        session_factory (async_sessionmaker[AsyncSession]): score row数を直接読むsession factory.
+        query_budget (QueryBudget): 初回とretryのquery数を検証するhelper.
+
+    Returns:
+        None: retryのscore識別子と単一score rowをassertして終了する.
+
+    Raises:
+        AssertionError: cached outcome, score識別子, またはDB内row数が期待と異なる場合.
+    """
     input_data = make_test_submission_input(
         payload="1000:test_user:0123456789abcdef0123456789abcdef:int_test_idem:0:0:100:10:5:0:0:2:500000:99:1:1",
         request_hash="idempotent_test_hash",

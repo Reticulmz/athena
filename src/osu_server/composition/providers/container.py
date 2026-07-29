@@ -1,4 +1,4 @@
-"""Container factories for app and worker composition."""
+"""appとworkerのDishka containerを構成するfactoryを提供する."""
 
 from __future__ import annotations
 
@@ -34,7 +34,18 @@ def make_app_container(
     config: AppConfig,
     overrides: Iterable[Provider] = (),
 ) -> AsyncContainer:
-    """Build the app dependency graph with explicit provider overrides."""
+    """App process用の完全なdependency graphを構成する.
+
+    Args:
+        config (AppConfig): infrastructure providerへ渡す実行時設定.
+        overrides (Iterable[Provider]): 標準provider setの後に追加する明示的なoverride.
+
+    Returns:
+        AsyncContainer: stable transportを含むapp process用の非同期Dishka container.
+
+    Notes:
+        ``overrides`` は標準provider setの後に渡し,testなどが明示した置換を優先できる.
+    """
     return make_async_container(
         InfrastructureProviderSet(config),
         RepositoryProviderSet(),
@@ -58,7 +69,18 @@ def make_worker_container(
     config: AppConfig,
     overrides: Iterable[Provider] = (),
 ) -> AsyncContainer:
-    """Build the worker dependency graph with explicit provider overrides."""
+    """Worker process用の共有dependency graphを構成する.
+
+    Args:
+        config (AppConfig): infrastructure providerへ渡す実行時設定.
+        overrides (Iterable[Provider]): 標準provider setの後に追加する明示的なoverride.
+
+    Returns:
+        AsyncContainer: background job実行に必要な共有providerを持つ非同期Dishka container.
+
+    Notes:
+        app専用transport providerは登録せず,worker用provider setだけを追加する.
+    """
     return make_async_container(
         InfrastructureProviderSet(config),
         RepositoryProviderSet(),

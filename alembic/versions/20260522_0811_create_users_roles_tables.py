@@ -1,4 +1,4 @@
-"""create users roles tables
+"""ユーザー, role, BanchoBotの初期schemaを作成するmigration.
 
 Revision ID: 20260522_0811
 Revises:
@@ -17,6 +17,15 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """Identity schemaと初期roleおよびBanchoBotを作成する.
+
+    Returns:
+        None: users, roles, 関連tableと初期データを作成したことを示す.
+
+    Notes:
+        `INSERT ... ON CONFLICT DO NOTHING`は予約済みid `1`のBanchoBotを競合なく
+        seedするPostgreSQL固有のupsertのために使用する.
+    """
     # users
     op.create_table(
         "users",
@@ -110,6 +119,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Identity schemaを外部keyの依存順で削除する.
+
+    Returns:
+        None: user_roles, disallowed_usernames, roles, usersを削除したことを示す.
+    """
     op.drop_table("user_roles")
     op.drop_table("disallowed_usernames")
     op.drop_table("roles")

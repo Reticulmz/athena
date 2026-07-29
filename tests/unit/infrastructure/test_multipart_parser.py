@@ -1,4 +1,4 @@
-"""Unit tests for multipart parser."""
+"""stable score submissionのmultipart parser境界を検証するmodule."""
 
 import base64
 
@@ -13,7 +13,15 @@ IV_B64 = base64.b64encode(RAW_IV)
 
 
 def make_multipart_body(boundary: str, fields: list[tuple[str, bytes]]) -> bytes:
-    """Build multipart body from field list."""
+    """指定fieldを含むmultipart request bodyを構築する.
+
+    Args:
+        boundary (str): multipart bodyを区切るboundary文字列.
+        fields (list[tuple[str, bytes]]): field名とraw valueの順序付き組.
+
+    Returns:
+        bytes: 終端boundaryを含むmultipart request body.
+    """
     parts: list[bytes] = []
     for name, value in fields:
         part = (
@@ -27,7 +35,11 @@ def make_multipart_body(boundary: str, fields: list[tuple[str, bytes]]) -> bytes
 
 
 def test_parse_valid_multipart_with_all_required_fields():
-    """Valid multipart with all required fields should parse successfully."""
+    """必須fieldをすべて含むmultipart bodyがsubmission値へparseされることを検証する.
+
+    Returns:
+        None: decoded payloadと必須fieldおよび既定optional valueを検証して完了する.
+    """
     boundary = "----boundary"
     fields = [
         ("score", SCORE_B64),
@@ -53,7 +65,11 @@ def test_parse_valid_multipart_with_all_required_fields():
 
 
 def test_parse_normalizes_uppercase_password_md5_hex():
-    """Stable password MD5 hex は大小文字差を canonicalization で吸収する."""
+    """大文字のstable password MD5 hexが小文字へcanonicalizeされることを検証する.
+
+    Returns:
+        None: canonicalized password MD5値を検証して完了する.
+    """
     boundary = "----boundary"
     fields = [
         ("score", SCORE_B64),
@@ -71,7 +87,11 @@ def test_parse_normalizes_uppercase_password_md5_hex():
 
 
 def test_parse_preserves_non_md5_password_credential():
-    """32文字 hex ではない credential は従来どおりそのまま保持する."""
+    """32文字hexでないpassword credentialが変更されず保持されることを検証する.
+
+    Returns:
+        None: non-MD5 credentialの保存値を検証して完了する.
+    """
     boundary = "----boundary"
     fields = [
         ("score", SCORE_B64),
@@ -89,7 +109,11 @@ def test_parse_preserves_non_md5_password_credential():
 
 
 def test_parse_duplicate_score_field_order_preservation():
-    """First score field is payload, second is replay."""
+    """重複score fieldの先頭をpayload, 後続をreplayとして保持することを検証する.
+
+    Returns:
+        None: encrypted payloadとreplayの順序を検証して完了する.
+    """
     boundary = "----boundary"
     encrypted_payload = b"encrypted_payload"
     fields = [
@@ -111,7 +135,11 @@ def test_parse_duplicate_score_field_order_preservation():
 
 
 def test_parse_empty_replay_score_field_as_absent_replay():
-    """Empty second score field means no replay body was submitted."""
+    """空の2番目score fieldがreplay未提出として扱われることを検証する.
+
+    Returns:
+        None: payload維持とNone replayを検証して完了する.
+    """
     boundary = "----boundary"
     encrypted_payload = b"encrypted_payload"
     fields = [
@@ -133,7 +161,11 @@ def test_parse_empty_replay_score_field_as_absent_replay():
 
 
 def test_parse_with_optional_fields():
-    """Optional fields should be preserved in submission_metadata."""
+    """任意fieldがsubmission metadataへ名前と値を維持して保存されることを検証する.
+
+    Returns:
+        None: すべてのoptional metadata fieldを検証して完了する.
+    """
     boundary = "----boundary"
     fields = [
         ("score", SCORE_B64),
@@ -164,7 +196,11 @@ def test_parse_with_optional_fields():
 
 
 def test_parse_with_fail_time():
-    """ft field should be parsed as fail_time_ms."""
+    """Ft fieldがintegerのfail_time_msとしてparseされることを検証する.
+
+    Returns:
+        None: millisecond値への変換結果を検証して完了する.
+    """
     boundary = "----boundary"
     fields = [
         ("score", SCORE_B64),
@@ -183,7 +219,11 @@ def test_parse_with_fail_time():
 
 
 def test_parse_malformed_fail_time_as_unavailable():
-    """Invalid ft should not reject otherwise valid submissions."""
+    """不正なft fieldでも他の有効submissionを拒否せずNoneにすることを検証する.
+
+    Returns:
+        None: unavailable fail_time_msを検証して完了する.
+    """
     boundary = "----boundary"
     fields = [
         ("score", SCORE_B64),
@@ -202,7 +242,11 @@ def test_parse_malformed_fail_time_as_unavailable():
 
 
 def test_parse_keeps_stable_x_as_client_hash_only():
-    """Stable x は client_hash として扱い, 未確認の分類値には使わない。"""
+    """Stable x fieldをclient_hashだけとして保持し未確認分類へ使わないことを検証する.
+
+    Returns:
+        None: client hashとNone exit classificationを検証して完了する.
+    """
     boundary = "----boundary"
     fields = [
         ("score", SCORE_B64),
@@ -221,7 +265,11 @@ def test_parse_keeps_stable_x_as_client_hash_only():
 
 
 def test_parse_missing_required_field_score():
-    """Missing score field should raise ParseError."""
+    """必須score fieldがないmultipart bodyでParseErrorを送出することを検証する.
+
+    Returns:
+        None: missing score validation例外を検証して完了する.
+    """
     boundary = "----boundary"
     fields = [
         ("iv", IV_B64),
@@ -237,7 +285,11 @@ def test_parse_missing_required_field_score():
 
 
 def test_parse_missing_required_field_iv():
-    """Missing iv field should raise ParseError."""
+    """必須iv fieldがないmultipart bodyでParseErrorを送出することを検証する.
+
+    Returns:
+        None: missing IV validation例外を検証して完了する.
+    """
     boundary = "----boundary"
     fields = [
         ("score", SCORE_B64),
@@ -253,19 +305,31 @@ def test_parse_missing_required_field_iv():
 
 
 def test_parse_empty_body():
-    """Empty body should raise ParseError."""
+    """空request bodyでParseErrorを送出することを検証する.
+
+    Returns:
+        None: empty body validation例外を検証して完了する.
+    """
     with pytest.raises(ParseError, match="Request body cannot be empty"):
         _ = parse(b"", "multipart/form-data; boundary=----boundary")
 
 
 def test_parse_invalid_content_type():
-    """Invalid Content-Type should raise ParseError."""
+    """multipartでないContent-TypeでParseErrorを送出することを検証する.
+
+    Returns:
+        None: Content-Type validation例外を検証して完了する.
+    """
     with pytest.raises(ParseError, match="Content-Type must be multipart/form-data"):
         _ = parse(b"some data", "application/json")
 
 
 def test_parse_rejects_body_over_configured_limit():
-    """Body size limit should reject oversized requests before parsing."""
+    """設定したtotal body sizeを超えるrequestがparse前に拒否されることを検証する.
+
+    Returns:
+        None: request body size validation例外を検証して完了する.
+    """
     body = b"x" * 64
     limits = MultipartLimits(total_body_size=16, replay_size=64, text_field_size=64)
 
@@ -274,7 +338,11 @@ def test_parse_rejects_body_over_configured_limit():
 
 
 def test_parse_rejects_replay_over_configured_limit():
-    """Replay size limit should reject the second score field."""
+    """設定したreplay sizeを超える2番目score fieldが拒否されることを検証する.
+
+    Returns:
+        None: replay size validation例外を検証して完了する.
+    """
     boundary = "----boundary"
     fields = [
         ("score", SCORE_B64),
@@ -293,7 +361,11 @@ def test_parse_rejects_replay_over_configured_limit():
 
 
 def test_parse_rejects_text_field_over_configured_limit():
-    """Text field size limit should reject credential and metadata fields."""
+    """設定したtext field sizeを超えるcredential fieldが拒否されることを検証する.
+
+    Returns:
+        None: text field size validation例外を検証して完了する.
+    """
     boundary = "----boundary"
     fields = [
         ("score", SCORE_B64),
@@ -311,7 +383,11 @@ def test_parse_rejects_text_field_over_configured_limit():
 
 
 def test_parse_allows_token_over_configured_text_limit_when_under_opaque_limit():
-    """Opaque token field should not use the strict text field limit."""
+    """Opaque tokenがtext上限を超えてもopaque上限内なら受理されることを検証する.
+
+    Returns:
+        None: token metadataの保存値を検証して完了する.
+    """
     boundary = "----boundary"
     fields = [
         ("score", SCORE_B64),
@@ -336,7 +412,11 @@ def test_parse_allows_token_over_configured_text_limit_when_under_opaque_limit()
 
 
 def test_parse_rejects_token_over_configured_opaque_limit():
-    """Opaque token field size limit should still reject oversized values."""
+    """Opaque tokenが設定したopaque field上限を超えると拒否されることを検証する.
+
+    Returns:
+        None: opaque field size validation例外を検証して完了する.
+    """
     boundary = "----boundary"
     fields = [
         ("score", SCORE_B64),
@@ -360,7 +440,11 @@ def test_parse_rejects_token_over_configured_opaque_limit():
 
 
 def test_parse_rejects_encrypted_score_payload_over_configured_score_payload_limit():
-    """Score payload field size limit should reject the first score field."""
+    """設定したscore payload field上限を超える先頭score fieldが拒否されることを検証する.
+
+    Returns:
+        None: score payload size validation例外を検証して完了する.
+    """
     boundary = "----boundary"
     fields = [
         ("score", SCORE_B64),
@@ -383,7 +467,11 @@ def test_parse_rejects_encrypted_score_payload_over_configured_score_payload_lim
 
 
 def test_parse_non_multipart_body():
-    """Non-multipart body should raise ParseError."""
+    """multipart形式でないbodyをparseするとParseErrorになることを検証する.
+
+    Returns:
+        None: multipart structure validation例外を検証して完了する.
+    """
     body = b"not a multipart body"
     content_type = "multipart/form-data; boundary=----boundary"
 
@@ -392,7 +480,11 @@ def test_parse_non_multipart_body():
 
 
 def test_parse_invalid_base64_score():
-    """Invalid encoded score should raise ParseError."""
+    """不正なBase64 score fieldをparseするとParseErrorになることを検証する.
+
+    Returns:
+        None: score Base64 validation例外を検証して完了する.
+    """
     boundary = "----boundary"
     fields = [
         ("score", b"not valid base64!"),
@@ -409,7 +501,11 @@ def test_parse_invalid_base64_score():
 
 
 def test_parse_invalid_iv_length():
-    """Decoded IV must match Rijndael-256 block size."""
+    """Rijndael-256 block sizeでないdecoded IVをParseErrorとして拒否することを検証する.
+
+    Returns:
+        None: IV length validation例外を検証して完了する.
+    """
     boundary = "----boundary"
     fields = [
         ("score", SCORE_B64),

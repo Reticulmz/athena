@@ -1,1 +1,1 @@
-"""Lazer SignalR mapper package."""
+"""Lazer SignalRのwire mapperを提供するpackage."""

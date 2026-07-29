@@ -1,15 +1,7 @@
-"""Tests for PacketDispatcher.
+"""PacketDispatcher の handler registration, dispatch, structured logging を検証する.
 
-Validates:
-- Req 5.1: Decorator-based handler registration by ClientPacketID
-- Req 5.2: Dispatch calls registered handler for matching ClientPacketID
-- Req 5.3: Dispatch ignores unregistered ClientPacketID (no error)
-- Req 5.4: get_handlers returns read-only copy of all registered handlers
-- Req 5.5: Duplicate registration raises DuplicateHandlerError
-- Logging Req 5.1: C2S packet logging with packet name and payload size
-- Logging Req 5.2: Normal packets logged at INFO with payload
-- Logging Req 5.3: Noisy packets logged at DEBUG only
-- Logging Req 5.4: Unhandled packets logged at DEBUG
+decorator registration, packet ID routing, 未登録 packet, snapshot, 重複 registration,
+logging level を確認する.
 """
 
 import pytest
@@ -21,42 +13,73 @@ from osu_server.transports.stable.bancho.protocol.errors import DuplicateHandler
 
 
 class TestRegister:
-    """Req 5.1: Decorator registers handler for a ClientPacketID."""
+    """register decorator が ClientPacketID と handler を関連付けることを検証する."""
 
     def test_register_returns_decorator(self) -> None:
+        """Register が handler を registry に追加する decorator を返すことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.PONG)
         async def handler(_payload: bytes, _user_id: int) -> None:
-            pass
+            """PONG registration 用の no-op async handler を定義する.
+
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
+            """
 
         _ = handler
 
         assert ClientPacketID.PONG in dp.get_handlers()
 
     def test_register_preserves_function(self) -> None:
+        """Register decorator が元の handler function object を保持することを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.EXIT)
         async def my_handler(_payload: bytes, _user_id: int) -> None:
-            pass
+            """EXIT registration 用の no-op async handler を定義する.
+
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
+            """
 
         _ = my_handler
 
         assert dp.get_handlers()[ClientPacketID.EXIT] is my_handler
 
     def test_register_multiple_different_ids(self) -> None:
+        """異なる packet ID の handler を同じ dispatcher に登録できることを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.PONG)
         async def handler_a(_payload: bytes, _user_id: int) -> None:
-            pass
+            """PONG registration 用の no-op async handler を定義する.
+
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
+            """
 
         _ = handler_a
 
         @dp.register(ClientPacketID.EXIT)
         async def handler_b(_payload: bytes, _user_id: int) -> None:
-            pass
+            """EXIT registration 用の no-op async handler を定義する.
+
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
+            """
 
         _ = handler_b
 
@@ -67,14 +90,24 @@ class TestRegister:
 
 
 class TestDispatch:
-    """Req 5.2: Dispatch calls registered handler."""
+    """dispatch が packet ID に対応する登録済み handler を呼び出すことを検証する."""
 
     async def test_dispatch_calls_handler(self) -> None:
+        """Dispatch が payload と user ID を登録済み handler に渡すことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         dp = PacketDispatcher()
         called_with: list[tuple[bytes, int]] = []
 
         @dp.register(ClientPacketID.PONG)
         async def handler(payload: bytes, user_id: int) -> None:
+            """呼び出された payload と user ID を test list に記録する.
+
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
+            """
             called_with.append((payload, user_id))
 
         _ = handler
@@ -83,17 +116,32 @@ class TestDispatch:
         assert called_with == [(b"\x01\x02", 1)]
 
     async def test_dispatch_correct_handler_for_id(self) -> None:
+        """Dispatch が packet ID に対応する handler だけを選択することを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         dp = PacketDispatcher()
         results: list[str] = []
 
         @dp.register(ClientPacketID.PONG)
         async def pong_handler(_payload: bytes, _user_id: int) -> None:
+            """PONG dispatch を result list に記録する.
+
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
+            """
             results.append("pong")
 
         _ = pong_handler
 
         @dp.register(ClientPacketID.EXIT)
         async def exit_handler(_payload: bytes, _user_id: int) -> None:
+            """EXIT dispatch を result list に記録する.
+
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
+            """
             results.append("exit")
 
         _ = exit_handler
@@ -103,19 +151,34 @@ class TestDispatch:
 
 
 class TestDispatchUnregistered:
-    """Req 5.3: Unregistered ClientPacketID is silently ignored."""
+    """未登録 ClientPacketID を dispatch が副作用なしで無視することを検証する."""
 
     async def test_unregistered_id_no_error(self) -> None:
+        """未登録 packet ID の dispatch が例外を送出しないことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         dp = PacketDispatcher()
         # Should not raise
         await dp.dispatch(ClientPacketID.PONG, b"", 1)
 
     async def test_unregistered_id_no_side_effects(self) -> None:
+        """未登録 packet ID が別の登録済み handler を呼び出さないことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         dp = PacketDispatcher()
         called = False
 
         @dp.register(ClientPacketID.EXIT)
         async def handler(_payload: bytes, _user_id: int) -> None:
+            """呼び出しを boolean flag に記録する EXIT handler を定義する.
+
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
+            """
             nonlocal called
             called = True
 
@@ -126,18 +189,32 @@ class TestDispatchUnregistered:
 
 
 class TestGetHandlers:
-    """Req 5.4: get_handlers returns read-only copy."""
+    """get_handlers が registration state の独立した snapshot を返すことを検証する."""
 
     def test_returns_dict(self) -> None:
+        """get_handlers が dict instance を返すことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         dp = PacketDispatcher()
         assert isinstance(dp.get_handlers(), dict)
 
     def test_returns_copy(self) -> None:
+        """取得した handler dict の mutation が dispatcher registry に影響しないことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.PONG)
         async def handler(_payload: bytes, _user_id: int) -> None:
-            pass
+            """PONG registration 用の no-op async handler を定義する.
+
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
+            """
 
         _ = handler
 
@@ -147,24 +224,42 @@ class TestGetHandlers:
         assert len(dp.get_handlers()) == 1
 
     def test_empty_when_no_registrations(self) -> None:
+        """Handler 未登録の dispatcher が空 dict snapshot を返すことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         dp = PacketDispatcher()
         assert dp.get_handlers() == {}
 
 
 class TestDuplicateRegistration:
-    """Req 5.5: Duplicate registration raises DuplicateHandlerError."""
+    """同じ ClientPacketID への重複 handler registration を検証する."""
 
     def test_duplicate_raises(self) -> None:
+        """重複 handler registration が DuplicateHandlerError を送出することを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.PONG)
         async def handler_a(_payload: bytes, _user_id: int) -> None:
-            pass
+            """先に登録する PONG no-op async handler を定義する.
+
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
+            """
 
         _ = handler_a
 
         async def handler_b(_payload: bytes, _user_id: int) -> None:
-            pass
+            """重複 registration を試す PONG no-op async handler を定義する.
+
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
+            """
 
         _ = handler_b
 
@@ -172,16 +267,29 @@ class TestDuplicateRegistration:
             _ = dp.register(ClientPacketID.PONG)(handler_b)
 
     def test_duplicate_error_message_contains_id(self) -> None:
+        """重複 registration error message が packet ID 名を含むことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.PONG)
         async def handler_a(_payload: bytes, _user_id: int) -> None:
-            pass
+            """先に登録する PONG no-op async handler を定義する.
+
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
+            """
 
         _ = handler_a
 
         async def handler_b(_payload: bytes, _user_id: int) -> None:
-            pass
+            """重複 registration を試す PONG no-op async handler を定義する.
+
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
+            """
 
         _ = handler_b
 
@@ -190,34 +298,67 @@ class TestDuplicateRegistration:
 
 
 class TestQuietC2sPackets:
-    """QUIET_C2S_PACKETS definition validation."""
+    """QUIET_C2S_PACKETS の packet member と immutable collection contract を検証する."""
 
     def test_contains_pong(self) -> None:
+        """QUIET_C2S_PACKETS が PONG を含むことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         assert ClientPacketID.PONG in QUIET_C2S_PACKETS
 
     def test_contains_stats_request(self) -> None:
+        """QUIET_C2S_PACKETS が STATS_REQUEST を含むことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         assert ClientPacketID.STATS_REQUEST in QUIET_C2S_PACKETS
 
     def test_contains_presence_request(self) -> None:
+        """QUIET_C2S_PACKETS が PRESENCE_REQUEST を含むことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         assert ClientPacketID.PRESENCE_REQUEST in QUIET_C2S_PACKETS
 
     def test_contains_presence_request_all(self) -> None:
+        """QUIET_C2S_PACKETS が PRESENCE_REQUEST_ALL を含むことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         assert ClientPacketID.PRESENCE_REQUEST_ALL in QUIET_C2S_PACKETS
 
     def test_is_frozenset(self) -> None:
+        """QUIET_C2S_PACKETS が immutable frozenset であることを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         assert isinstance(QUIET_C2S_PACKETS, frozenset)
 
 
 class TestDispatchLogging:
-    """Logging Req 5.1-5.4: C2S packet dispatch logging."""
+    """C2S packet dispatch 時の structured logging event と level を検証する."""
 
     async def test_normal_packet_logged_at_info(self) -> None:
-        """Req 5.1, 5.2: Normal (non-quiet) packet logged at INFO with name and size."""
+        """Quiet ではない packet が名前と size を持つ info event として記録されることを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.SEND_MESSAGE)
         async def handler(_payload: bytes, _user_id: int) -> None:
-            pass
+            """SEND_MESSAGE logging 用の no-op async handler を定義する.
+
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
+            """
 
         _ = handler
 
@@ -232,12 +373,20 @@ class TestDispatchLogging:
         assert c2s_logs[0]["size"] == 3
 
     async def test_quiet_packet_logged_at_debug(self) -> None:
-        """Req 5.3: Noisy (quiet) packet logged at DEBUG only."""
+        """Quiet packet が名前と size を持つ debug event として記録されることを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         dp = PacketDispatcher()
 
         @dp.register(ClientPacketID.PONG)
         async def handler(_payload: bytes, _user_id: int) -> None:
-            pass
+            """PONG logging 用の no-op async handler を定義する.
+
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
+            """
 
         _ = handler
 
@@ -251,7 +400,11 @@ class TestDispatchLogging:
         assert c2s_logs[0]["size"] == 1
 
     async def test_unhandled_packet_logged_at_debug(self) -> None:
-        """Req 5.4: Unregistered packet logged at DEBUG as c2s_unhandled."""
+        """未登録 packet が c2s_unhandled debug event として記録されることを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         dp = PacketDispatcher()
 
         with structlog.testing.capture_logs() as logs:
@@ -264,14 +417,22 @@ class TestDispatchLogging:
         assert unhandled_logs[0]["size"] == 2
 
     async def test_all_quiet_packets_logged_at_debug(self) -> None:
-        """All packets in QUIET_C2S_PACKETS are logged at debug, not info."""
+        """QUIET_C2S_PACKETS の全 member が debug event として記録されることを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         dp = PacketDispatcher()
 
         for packet_id in QUIET_C2S_PACKETS:
 
             @dp.register(packet_id)
             async def handler(_payload: bytes, _user_id: int) -> None:
-                pass
+                """Current quiet packet registration 用の no-op async handler を定義する.
+
+                Returns:
+                    None: 処理を完了し, 呼び出し側へ値を返さない.
+                """
 
             _ = handler
 
@@ -286,12 +447,21 @@ class TestDispatchLogging:
             )
 
     async def test_dispatch_still_calls_handler_after_logging(self) -> None:
-        """Logging must not interfere with handler invocation."""
+        """Logging 後も dispatch が登録済み handler を呼び出すことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         dp = PacketDispatcher()
         called_with: list[tuple[bytes, int]] = []
 
         @dp.register(ClientPacketID.EXIT)
         async def handler(payload: bytes, user_id: int) -> None:
+            """Logging 後の payload と user ID を test list に記録する.
+
+            Returns:
+                None: 処理を完了し, 呼び出し側へ値を返さない.
+            """
             called_with.append((payload, user_id))
 
         _ = handler

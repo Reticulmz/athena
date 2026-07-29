@@ -1,4 +1,4 @@
-"""App-only score submission providers."""
+"""app process専用のscore submission providerを構成する."""
 
 from __future__ import annotations
 
@@ -43,7 +43,11 @@ _DISHKA_RUNTIME_HINTS = (
 
 @final
 class ScoreSubmissionProviderSet(Provider):
-    """Providers for app-only score authorization and submission processing."""
+    """score認可とsubmission処理workflowをAPP scopeで登録する.
+
+    Attributes:
+        scope (Scope): app container内で共有するDishkaのAPP scope.
+    """
 
     scope = Scope.APP
 
@@ -54,6 +58,16 @@ class ScoreSubmissionProviderSet(Provider):
         password_service: PasswordService,
         session_store: SessionStore,
     ) -> ScoreAuthorizationService:
+        """Stable score submissionの認可serviceをidentity依存で構成する.
+
+        Args:
+            user_repo (UserQueryRepository): submission userを検索するread repository.
+            password_service (PasswordService): password hashの照合を行うquery service.
+            session_store (SessionStore): active sessionを検証するvolatile store.
+
+        Returns:
+            ScoreAuthorizationService: score submissionのuser credentialとsessionを認可するservice.
+        """
         return ScoreAuthorizationService(
             user_repo=user_repo,
             password_service=password_service,
@@ -62,6 +76,14 @@ class ScoreSubmissionProviderSet(Provider):
 
     @provide
     def submit_score_use_case(self, uow_factory: UnitOfWorkFactory) -> SubmitScoreUseCase:
+        """score永続化commandをUnit of Work factoryで構成する.
+
+        Args:
+            uow_factory (UnitOfWorkFactory): score mutationをtransactionで実行するfactory.
+
+        Returns:
+            SubmitScoreUseCase: 正規化済みscore submissionを永続化するcommand.
+        """
         return SubmitScoreUseCase(unit_of_work_factory=uow_factory)
 
     @provide
@@ -78,6 +100,30 @@ class ScoreSubmissionProviderSet(Provider):
         current_user_stats_query: CurrentUserStatsQuery,
         beatmap_personal_best_rank_query: BeatmapPersonalBestRankQuery,
     ) -> ProcessScoreSubmissionUseCase:
+        """Score submission全体workflowを認可,beatmap,replay,performance依存で構成する.
+
+        Args:
+            submit_score_use_case (SubmitScoreUseCase): 正規化済みscoreを永続化するcommand.
+            replay_blob_storage (BlobStorageService): replay blobを保存するstorage service.
+            auth_service (ScoreAuthorizationService): submission credentialを検証するservice.
+            beatmap_resolver (BeatmapMirrorService): submission対象beatmapを解決するservice.
+            beatmap_file_warmup (RequestBeatmapFileWarmupUseCase):
+                不足するbeatmap file取得を要求するcommand.
+            performance_calculation_request (RequestPerformanceCalculationUseCase):
+                performance計算を要求するcommand.
+            performance_calculator (PerformanceCalculator):
+                score performanceを計算するadapter identity.
+            performance_response_query (PerformanceResponseQuery):
+                計算済みperformanceのresponseを取得するquery.
+            current_user_stats_query (CurrentUserStatsQuery):
+                submission後のuser statsを取得するquery.
+            beatmap_personal_best_rank_query (BeatmapPersonalBestRankQuery):
+                beatmap内personal best rankを取得するquery.
+
+        Returns:
+            ProcessScoreSubmissionUseCase: stable submissionを認可,保存,response生成まで
+                処理するcommand.
+        """
         return ProcessScoreSubmissionUseCase(
             submit_score_use_case=submit_score_use_case,
             replay_blob_storage=replay_blob_storage,

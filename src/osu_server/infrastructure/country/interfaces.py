@@ -1,4 +1,7 @@
-"""CountryResolver Protocol — HTTP ヘッダから国コードを検出する抽象インターフェース。"""
+"""HTTP headerから国コードを解決する抽象interfaceを定義するmodule.
+
+transportがcountry resolver implementationへ依存しないためのProtocolを提供する.
+"""
 
 from __future__ import annotations
 
@@ -10,11 +13,18 @@ if TYPE_CHECKING:
 
 @runtime_checkable
 class CountryResolver(Protocol):
-    """HTTP ヘッダから2文字の ISO 3166-1 alpha-2 国コードを返す。
+    """HTTP headerから2文字のISO 3166-1 alpha-2国コードを返すProtocol.
 
-    検出不能時は ``"XX"`` を返す。
+    resolverは国コードを検出できない場合に``"XX"``を返す.
     """
 
     def resolve(self, headers: Mapping[str, str]) -> str:
-        """国コードを返す。検出不能時は ``"XX"``。"""
+        """HTTP headerから国コードを解決する.
+
+        Args:
+            headers (Mapping[str, str]): 国コード検出に利用するHTTP header.
+
+        Returns:
+            str: 2文字の国コード. 検出不能な場合は``"XX"``.
+        """
         ...

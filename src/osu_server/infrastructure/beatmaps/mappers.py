@@ -1,4 +1,4 @@
-"""Map osu! API v2 JSON responses to provider-neutral snapshots."""
+"""外部APIのJSONレスポンスをprovider非依存のスナップショットへ変換する."""
 
 from __future__ import annotations
 
@@ -19,7 +19,31 @@ from osu_server.domain.beatmaps import (
 
 
 class _BeatmapJSON(TypedDict, total=False):
-    """Subset of osu! API v2 beatmap JSON fields consumed by the mapper."""
+    """変換処理が読むosu! API v2ビートマップJSONの部分型.
+
+    Attributes:
+        id (int): ビートマップID.
+        beatmapset_id (int): 所属するビートマップセットID.
+        checksum (str): ビートマップファイルのMD5チェックサム.
+        mode (str): osu! APIが返すゲームモード名.
+        version (str): 難易度名.
+        status (str): osu! APIが返す公開status名.
+        total_length (int | None): 総再生時間(秒).
+        hit_length (int | None): オブジェクト密度を除いた再生時間(秒).
+        max_combo (int | None): 最大コンボ数.
+        bpm (float | None): BPM.
+        cs (float | None): Circle Size.
+        accuracy (float | None): Overall Difficulty.
+        ar (float | None): Approach Rate.
+        drain (float | None): HP Drain.
+        difficulty_rating (float | None): 難易度rating.
+        last_update (str | None): API互換レスポンスの最終更新日時文字列.
+        last_updated (str | None): API v2の最終更新日時文字列.
+        beatmapset (_BeatmapsetJSON): 親ビートマップセットの埋め込みJSON.
+
+    Notes:
+        ``total=False`` のため,外部APIが省略するfieldを含め全fieldは任意である.
+    """
 
     id: int
     beatmapset_id: int
@@ -42,7 +66,22 @@ class _BeatmapJSON(TypedDict, total=False):
 
 
 class _BeatmapsetJSON(TypedDict, total=False):
-    """Subset of osu! API v2 beatmapset JSON fields consumed by the mapper."""
+    """変換処理が読むosu! API v2ビートマップセットJSONの部分型.
+
+    Attributes:
+        id (int): ビートマップセットID.
+        artist (str): 曲のartist名.
+        title (str): 曲名.
+        creator (str): ビートマップセット作成者名.
+        artist_unicode (str | None): Unicode表記のartist名.
+        title_unicode (str | None): Unicode表記の曲名.
+        status (str): osu! APIが返す公開status名.
+        last_updated (str | None): ビートマップセットの最終更新日時文字列.
+        beatmaps (list[_BeatmapJSON]): 内包するビートマップJSON列.
+
+    Notes:
+        ``total=False`` のため,外部APIが省略するfieldを含め全fieldは任意である.
+    """
 
     id: int
     artist: str
@@ -62,7 +101,17 @@ def beatmap_json_to_snapshot(
     source: BeatmapMetadataSource = BeatmapMetadataSource.OFFICIAL,
     verification: BeatmapSourceVerification = BeatmapSourceVerification.VERIFIED,
 ) -> BeatmapsetSnapshot:
-    """Convert osu! API v2 beatmap or beatmapset JSON to a snapshot."""
+    """公式API v2のビートマップまたはセットJSONをスナップショットへ変換する.
+
+    Args:
+        data (dict[str, object]): ビートマップ単体または ``beatmaps`` を持つセットのJSON object.
+        now (datetime | None): 取得日時として保存するUTC日時. ``None`` なら現在のUTC日時を使う.
+        source (BeatmapMetadataSource): 変換結果へ記録するメタデータsource.
+        verification (BeatmapSourceVerification): source由来の検証状態.
+
+    Returns:
+        BeatmapsetSnapshot: 外部statusと日時をdomain値へ変換したスナップショット.
+    """
     _now = now or datetime.now(UTC)
     if "beatmaps" in data:
         return _from_beatmapset_json(
@@ -86,7 +135,17 @@ def beatmap_v1_json_to_snapshot(
     source: BeatmapMetadataSource = BeatmapMetadataSource.MIRROR,
     verification: BeatmapSourceVerification = BeatmapSourceVerification.UNVERIFIED,
 ) -> BeatmapsetSnapshot | None:
-    """Convert osu! API v1 flat beatmap rows to a snapshot."""
+    """API v1互換のflatなビートマップ行をスナップショットへ変換する.
+
+    Args:
+        items (Sequence[Mapping[str, object]]): 同一ビートマップセットを表すv1互換JSON行.
+        now (datetime | None): 取得日時として保存するUTC日時. ``None`` なら現在のUTC日時を使う.
+        source (BeatmapMetadataSource): 変換結果へ記録するメタデータsource.
+        verification (BeatmapSourceVerification): source由来の検証状態.
+
+    Returns:
+        BeatmapsetSnapshot | None: 変換したスナップショット. 入力行が空の場合は ``None``.
+    """
     if not items:
         return None
 
@@ -144,6 +203,17 @@ def _from_beatmap_json(
     source: BeatmapMetadataSource,
     verification: BeatmapSourceVerification,
 ) -> BeatmapsetSnapshot:
+    """ビートマップ単体JSONを親セットを持つスナップショットへ変換する.
+
+    Args:
+        data (_BeatmapJSON): 親セットを ``beatmapset`` fieldへ含むビートマップJSON.
+        now (datetime): 変換結果へ記録する取得日時.
+        source (BeatmapMetadataSource): 変換結果へ記録するメタデータsource.
+        verification (BeatmapSourceVerification): source由来の検証状態.
+
+    Returns:
+        BeatmapsetSnapshot: 単一ビートマップを含む親セットのスナップショット.
+    """
     beatmapset_data = data.get("beatmapset") or {}
     return _from_beatmapset_json(
         {
@@ -169,6 +239,17 @@ def _from_beatmapset_json(
     source: BeatmapMetadataSource,
     verification: BeatmapSourceVerification,
 ) -> BeatmapsetSnapshot:
+    """ビートマップセットJSONを親子スナップショットへ変換する.
+
+    Args:
+        data (_BeatmapsetJSON): ビートマップ列を含むセットJSON.
+        now (datetime): 変換結果へ記録する取得日時.
+        source (BeatmapMetadataSource): 変換結果へ記録するメタデータsource.
+        verification (BeatmapSourceVerification): source由来の検証状態.
+
+    Returns:
+        BeatmapsetSnapshot: 全内包ビートマップを変換したセットのスナップショット.
+    """
     beatmapset_id = data.get("id", 0)
     beatmapset_status = data.get("status", "")
     beatmapset_last_updated_at = _maybe_datetime(data.get("last_updated"))
@@ -224,6 +305,17 @@ def _from_beatmapset_json(
 
 
 def _maybe_int(value: object) -> int | None:
+    """外部JSON値をintへ安全に変換する.
+
+    Args:
+        value (object): 外部APIから受け取った変換対象値.
+
+    Returns:
+        int | None: 変換した整数. ``bool``, ``None``,不正な文字列,未対応型は ``None``.
+
+    Notes:
+        floatはPythonの ``int()`` と同じく小数部を切り捨てる.
+    """
     if isinstance(value, bool) or value is None:
         return None
     if isinstance(value, int):
@@ -239,6 +331,17 @@ def _maybe_int(value: object) -> int | None:
 
 
 def _maybe_str(value: object) -> str | None:
+    """外部JSON値を文字列として扱える場合だけ文字列化する.
+
+    Args:
+        value (object): 外部APIから受け取った変換対象値.
+
+    Returns:
+        str | None: 文字列値,またはint/floatを文字列化した値. 未対応型と ``None`` は ``None``.
+
+    Notes:
+        ``bool`` はPythonでは ``int`` のsubclassであるため ``"True"`` または ``"False"`` になる.
+    """
     if value is None:
         return None
     if isinstance(value, str):
@@ -249,6 +352,17 @@ def _maybe_str(value: object) -> str | None:
 
 
 def _maybe_datetime(value: object) -> datetime | None:
+    """外部JSONのISO 8601日時をUTCのdatetimeへ変換する.
+
+    Args:
+        value (object): 文字列,数値,またはその他の外部API値.
+
+    Returns:
+        datetime | None: UTCへ正規化した日時. 不正,空,または未対応の値は ``None``.
+
+    Notes:
+        末尾 ``Z`` はUTC offsetへ置換し,timezoneなしの日時はUTCとして扱う.
+    """
     text = _maybe_str(value)
     if text is None:
         return None
@@ -267,6 +381,14 @@ def _maybe_datetime(value: object) -> datetime | None:
 
 
 def _mode_text(value: object) -> BeatmapMode:
+    """外部JSONの数値または文字列modeをdomain enumへ変換する.
+
+    Args:
+        value (object): osu! APIが返すmode値.
+
+    Returns:
+        BeatmapMode: 定義済みmode. 未対応または不正な値は ``BeatmapMode.UNKNOWN``.
+    """
     mode = _maybe_int(value)
     if mode is not None:
         return {
@@ -283,6 +405,14 @@ def _mode_text(value: object) -> BeatmapMode:
 
 
 def _status_text(value: object) -> str:
+    """API v1互換の数値statusまたは文字列statusを外部status名へ変換する.
+
+    Args:
+        value (object): osu! APIが返す ``approved`` またはstatus値.
+
+    Returns:
+        str: 数値statusに対応する名称,または前後空白を除いた文字列. 未対応値は空文字列.
+    """
     approved = _maybe_int(value)
     if approved is not None:
         return {
@@ -298,6 +428,14 @@ def _status_text(value: object) -> str:
 
 
 def _maybe_float(value: object) -> float | None:
+    """外部JSON値をfloatへ安全に変換する.
+
+    Args:
+        value (object): 外部APIから受け取った変換対象値.
+
+    Returns:
+        float | None: 変換した浮動小数点数. ``bool``, ``None``,不正な文字列,未対応型は ``None``.
+    """
     if isinstance(value, bool) or value is None:
         return None
     if isinstance(value, int | float):

@@ -1,3 +1,5 @@
+"""Personal best migrationのschemaとmetadata contractを検証する."""
+
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -13,14 +15,42 @@ MIGRATION_PATH = Path("alembic/versions/20260617_0101_add_personal_bests.py")
 
 
 def _column(table: Table, name: str) -> Column[object]:
+    """Tableから指定名のcolumnをtyped Columnとして取得する.
+
+    Args:
+        table (Table): columnを所有するSQLAlchemy table metadata.
+        name (str): 存在することを前提に取得するcolumn名.
+
+    Returns:
+        Column[object]: 指定名に対応するtyped column.
+
+    Raises:
+        KeyError: tableにnameのcolumnが存在しない場合.
+    """
     return cast("Column[object]", table.c[name])
 
 
 def _enum_values(column: Column[object]) -> tuple[str, ...]:
+    """PostgreSQL ENUM columnから許可値を順序付きで取得する.
+
+    Args:
+        column (Column[object]): PostgreSQL ENUM型であることを前提にしたcolumn.
+
+    Returns:
+        tuple[str, ...]: ENUMに定義された許可値の順序付きtuple.
+    """
     return tuple(cast("ENUM", column.type).enums)
 
 
 def _foreign_key_constraints(table: Table) -> dict[str, tuple[str, str]]:
+    """Tableの名前付きforeign key constraintをcolumn対応表へ変換する.
+
+    Args:
+        table (Table): foreign key constraintを検証するSQLAlchemy table metadata.
+
+    Returns:
+        dict[str, tuple[str, str]]: constraint名ごとのsource columnとtarget column.
+    """
     constraints: dict[str, tuple[str, str]] = {}
     for constraint in table.constraints:
         if isinstance(constraint, ForeignKeyConstraint) and constraint.name is not None:
@@ -31,6 +61,14 @@ def _foreign_key_constraints(table: Table) -> dict[str, tuple[str, str]]:
 
 
 def _indexes(table: Table) -> dict[str, tuple[tuple[str, ...], bool]]:
+    """Tableの名前付きindexをcolumn順序とunique設定へ変換する.
+
+    Args:
+        table (Table): indexを検証するSQLAlchemy table metadata.
+
+    Returns:
+        dict[str, tuple[tuple[str, ...], bool]]: index名ごとのcolumn順序とunique設定.
+    """
     indexes: dict[str, tuple[tuple[str, ...], bool]] = {}
     for index in table.indexes:
         if index.name is not None:
@@ -39,6 +77,14 @@ def _indexes(table: Table) -> dict[str, tuple[tuple[str, ...], bool]]:
 
 
 def test_personal_best_migration_creates_projection_table_and_indexes() -> None:
+    """Personal best migrationがprojection tableとlookup indexを作成することを検証する.
+
+    固定revisionのsourceを読み込み, score foreign key, scope unique index, lookup index,
+    downgrade時のtable削除がobservable contractとして存在することを確認する.
+
+    Returns:
+        None: personal best migration schema contractを検証して完了する.
+    """
     migration = MIGRATION_PATH.read_text()
 
     assert 'revision: str = "20260617_0101"' in migration
@@ -52,11 +98,27 @@ def test_personal_best_migration_creates_projection_table_and_indexes() -> None:
 
 
 def test_personal_best_model_is_registered_for_metadata_discovery() -> None:
+    """PersonalBestModelがBase metadataで発見可能なことを検証する.
+
+    modelのtable名とBase.metadataの登録先を照合し, personal_bests tableと同一objectが
+    observable metadataとして公開されることを確認する.
+
+    Returns:
+        None: personal best metadata discovery contractを検証して完了する.
+    """
     assert PersonalBestModel.__tablename__ == "personal_bests"
     assert Base.metadata.tables["personal_bests"] is PersonalBestModel.__table__
 
 
 def test_personal_best_metadata_matches_projection_contract() -> None:
+    """PersonalBestModel metadataがprojection storage contractを満たすことを検証する.
+
+    現行model tableを条件に, required column, category ENUM, score foreign key, scopeとlookup
+    indexがobservable metadataとして一致することを確認する.
+
+    Returns:
+        None: personal best projection metadata contractを検証して完了する.
+    """
     table = cast("Table", PersonalBestModel.__table__)
 
     assert _column(table, "id").primary_key

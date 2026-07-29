@@ -1,3 +1,8 @@
+"""Password hash, verification, and banned-password query serviceを提供するmodule.
+
+stable client互換のMD5 credentialをargon2id hashと照合し, optional HIBP確認をread-onlyで行う.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -17,12 +22,15 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 
 class PasswordService:
-    """パスワードのハッシュと検証を担当するサービス。
+    """passwordのhash化, credential照合, banned-password確認を提供するservice.
 
-    argon2-cffi の PasswordHasher は CPU バウンドでイベントループをブロックするため、
-    全操作を ``run_in_executor`` で非同期化する。
+    Attributes:
+        _hasher (PasswordHasher): password hash化と照合を行うargon2id hasher.
+        _hibp_client (HIBPClient | None): 漏洩passwordを確認するoptional HIBP client.
+        _banned_passwords (frozenset[str]): lowercase化したcustom banned password集合.
 
-    HIBP チェックとカスタム禁止パスワードリストによるセキュリティ強化を提供する。
+    Notes:
+        PasswordHasherのCPU-bound操作はrun_in_executorで実行し,event loopをblockしない.
     """
 
     def __init__(
@@ -30,6 +38,15 @@ class PasswordService:
         hibp_client: HIBPClient | None = None,
         banned_passwords: list[str] | None = None,
     ) -> None:
+        """argon2id hasherとoptional password policy dependencyを初期化する.
+
+        Args:
+            hibp_client (HIBPClient | None): 漏洩passwordを確認するclient. 無効化する場合はNone.
+            banned_passwords (list[str] | None): lowercase比較用に登録するcustom banned password群.
+
+        Notes:
+            banned_passwordsは初期化時にlowercaseのfrozensetへ正規化する.
+        """
         self._hasher: PasswordHasher = PasswordHasher()
         self._hibp_client: HIBPClient | None = hibp_client
         self._banned_passwords: frozenset[str] = frozenset(
@@ -37,26 +54,33 @@ class PasswordService:
         )
 
     async def hash(self, password: str) -> str:
-        """argon2id でハッシュ。run_in_executor で非同期化。"""
+        """入力password credentialをargon2id hashへ変換する.
+
+        Args:
+            password (str): hash化するpasswordまたはstable互換MD5 credential.
+
+        Returns:
+            str: argon2id形式のpassword hash.
+
+        Notes:
+            CPU-bound hash操作はevent loop外で実行する.
+        """
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._hasher.hash, password)
 
     async def verify(self, hashed: str, password: str) -> bool:
-        """Argon2id hash と password credential を照合する.
+        """argon2id hashとpassword credentialを照合する.
 
         Args:
-            hashed: 保存済み password hash.
-            password: 照合対象の password credential. Stable auth の 32文字
-                MD5 hex credential は大小文字差を認証差にしない.
+            hashed (str): 保存済みpassword hash.
+            password (str): 照合対象のpassword credential. stable authの32文字MD5 hexは
+                大文字小文字を認証差にしない.
 
         Returns:
-            bool: 照合に成功した場合は True. VerifyMismatchError の場合は False.
-
-        Raises:
-            Exception: argon2-cffi の verify 処理が予期しない理由で失敗した場合.
+            bool: credentialが一致する場合はTrue. VerifyMismatchErrorの場合はFalse.
 
         Notes:
-            CPU bound な verify 処理は run_in_executor で実行する.
+            CPU-bound verify操作はevent loop外で実行する.
         """
         loop = asyncio.get_running_loop()
         password = normalize_legacy_md5_hex(password)
@@ -67,68 +91,63 @@ class PasswordService:
             return False
 
     async def prepare_password(self, plain_password: str) -> str:
-        """平文 password を legacy MD5 hex に変換してから argon2id で hash する.
+        """平文passwordをstable互換MD5 credentialへ変換してargon2id hash化する.
 
-        引数:
-            plain_password: 登録フォームから受け取った平文 password.
+        Args:
+            plain_password (str): 登録formから受け取ったplain password.
 
-        戻り値:
-            Legacy stable auth 互換の MD5 hex を argon2id で hash した文字列.
+        Returns:
+            str: stable auth互換MD5 credentialをargon2id hash化した保存用文字列.
 
-        例外:
-            argon2-cffi の hash 処理が失敗した場合は実装依存の例外を送出する.
-
-        制約:
-            MD5 は password 保存用途ではなく Stable client 互換入力への変換だけに使う.
-            永続化される値は argon2id hash であり, 平文 password と MD5 hex は返さない.
+        Notes:
+            MD5はstable client互換inputへの変換だけに使う. 永続化される値はargon2id hashであり,
+            plain passwordとMD5 credentialは返さない.
         """
         md5_hex = self.legacy_plaintext_md5(plain_password)
         return await self.hash(md5_hex)
 
     def legacy_plaintext_md5(self, plain_password: str) -> str:
-        """Stable legacy auth 互換の平文 password MD5 hex を返す.
+        """Stable legacy auth互換のplain password MD5 hexを返す.
 
-        引数:
-            plain_password: ユーザーが入力した平文 password.
+        Args:
+            plain_password (str): userが入力したplain password.
 
-        戻り値:
-            Stable legacy auth で使う lowercase MD5 hex 文字列.
+        Returns:
+            str: stable legacy authで使うlowercase MD5 hex文字列.
 
-        例外:
-            なし.
-
-        制約:
-            MD5 は互換プロトコル値の再現だけに使う. 新しい password 保存や
-            authorization policy の hash 方式として扱わない.
+        Notes:
+            MD5は互換protocol値の再現だけに使う. 新しいpassword保存やauthorization policyの
+            hash方式として扱わない.
         """
         return hashlib.md5(plain_password.encode(), usedforsecurity=False).hexdigest()
 
     async def check_hibp(self, password: str) -> bool:
-        """HIBP で漏洩パスワードか判定する。
-
-        HIBPClient が未設定の場合は False を返す。
+        """HIBPでpasswordが漏洩済みかを確認する.
 
         Args:
-            password: 平文パスワード。
+            password (str): HIBPへ照会するplain password.
 
         Returns:
-            True なら漏洩済み。クライアント未設定時は False。
+            bool: passwordが漏洩済みの場合はTrue. HIBP client未設定時はFalse.
+
+        Notes:
+            HIBPClientが未設定の場合はnetwork照会を行わずFalseを返す.
         """
         if self._hibp_client is None:
             return False
         return await self._hibp_client.is_password_compromised(password)
 
     async def is_password_banned(self, password: str) -> bool:
-        """カスタム禁止リスト + HIBP の統合チェック。
-
-        カスタムリストを先にチェック(高速)し、一致すれば即 True を返す。
-        カスタムリストに無ければ HIBP をチェックする。
+        """Custom banned password集合とHIBPを統合してpassword禁止状態を確認する.
 
         Args:
-            password: 平文パスワード。
+            password (str): custom listとHIBPへ照合するplain password.
 
         Returns:
-            True ならパスワードは使用禁止。
+            bool: custom listまたはHIBPがpasswordを禁止と判定する場合はTrue.
+
+        Notes:
+            custom listを先に照合し, 一致した場合はHIBPを呼ばない.
         """
         if password.lower() in self._banned_passwords:
             logger.warning("password_banned", source="custom_list")

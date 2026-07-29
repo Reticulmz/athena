@@ -1,4 +1,4 @@
-"""Query repository contract tests for score-backed Beatmap Leaderboards."""
+"""score-backed Beatmap Leaderboard query repositoryの契約を検証するtest."""
 
 from __future__ import annotations
 
@@ -66,48 +66,56 @@ _VISIBLE_ROLE_ID = 1
     ],
 )
 def test_leaderboard_scope_rejects_invalid_beatmap_checksum(checksum: str) -> None:
-    """Leaderboard scopeが不正なBeatmap checksumを拒否することを検証する.
+    """Leaderboard read scopeが不正なMD5 checksumを拒否する契約を検証する.
+
+    空値と長さ違いと大文字または非16進数のchecksumでread scopeを構築する.
+    各入力でbeatmap_checksumを示すValueErrorが発生することを確認する.
 
     Args:
-        checksum (str): 空、長さ不正、または小文字16進数ではないchecksum.
+        checksum (str): 空値か形式不正なMD5 checksum.
 
     Returns:
-        None: 不正なchecksumが拒否されたことを示す.
-
-    Raises:
-        AssertionError: 不正なchecksumでscopeを構築できた場合.
+        None: checksum validation contractを検証して完了する.
     """
     with pytest.raises(ValueError, match="beatmap_checksum must be"):
         _ = _scope(beatmap_checksum=checksum)
 
 
 def test_selected_mods_scope_requires_selected_mods() -> None:
-    """Selected Mods categoryがraw Mod filterを必須にすることを検証する.
+    """SELECTED_MODS categoryがselected_modsを必須にする契約を検証する.
+
+    selected_modsを指定せずSELECTED_MODS categoryのread scopeを構築する.
+    required selected_modsを示すValueErrorが発生することを確認する.
 
     Returns:
-        None: selected_mods未指定のscopeが拒否されたことを示す.
-
-    Raises:
-        AssertionError: selected_modsなしでSelected Mods scopeを構築できた場合.
+        None: selected Mod filterのboundary validationを検証して完了する.
     """
     with pytest.raises(ValueError, match="requires selected_mods"):
         _ = _scope(category=LeaderboardCategory.SELECTED_MODS)
 
 
 def test_non_selected_mods_scope_rejects_selected_mods() -> None:
-    """Selected Mods以外のcategoryがraw Mod filterを拒否することを検証する.
+    """SELECTED_MODS以外のcategoryがselected_modsを拒否する契約を検証する.
+
+    GLOBAL categoryのread scopeへraw Mod filterを指定する.
+    selected-mods限定入力を示すValueErrorが発生することを確認する.
 
     Returns:
-        None: Global scopeへのselected_mods指定が拒否されたことを示す.
-
-    Raises:
-        AssertionError: non-Selected Mods scopeへselected_modsを設定できた場合.
+        None: non-selected Mod categoryのboundary validationを検証して完了する.
     """
     with pytest.raises(ValueError, match="only valid for selected-mods"):
         _ = _scope(selected_mods=ModCombination.none())
 
 
 async def test_top_rows_are_limited_to_50_and_use_score_ordering() -> None:
+    """Top row queryが50件上限とScoreRankKey順を守る契約を検証する.
+
+    60件以上の可視scoreとscore/submission時刻/score IDが競合する上位scoreをseedする.
+    50 rowだけが順位1から返り同scoreでは早いsubmissionと小さいscore IDを優先することを確認する.
+
+    Returns:
+        None: top row limitとscore orderingを検証して完了する.
+    """
     factory = _factory()
     state = factory.snapshot()
     _seed_beatmap(state)
@@ -161,6 +169,14 @@ async def test_top_rows_are_limited_to_50_and_use_score_ordering() -> None:
 
 
 async def test_personal_best_rank_can_be_outside_top_50() -> None:
+    """Personal best queryがtop 50外でも実順位を返す契約を検証する.
+
+    viewerより高順位の51 scoreとviewerの代表scoreをseedしてtop 50とpersonal bestを取得する.
+    viewer rowがtop rowsには現れずrank 52のpersonal bestとして返ることを確認する.
+
+    Returns:
+        None: top row上限とは独立したpersonal best順位を検証して完了する.
+    """
     factory = _factory()
     state = factory.snapshot()
     _seed_beatmap(state)
@@ -199,6 +215,14 @@ async def test_personal_best_rank_can_be_outside_top_50() -> None:
 
 
 async def test_country_and_friends_are_read_time_filters_over_all_mods_scope() -> None:
+    """COUNTRY/FRIENDS categoryがread時のall-Mod filterになる契約を検証する.
+
+    JP/USの可視user scoreをseedしてcountry/friend scopeを取得し後からuser countryを変更する.
+    filter結果がread時のuser stateを反映しscore projectionを再作成しないことを確認する.
+
+    Returns:
+        None: category filterのread-time評価を検証して完了する.
+    """
     factory = _factory()
     state = factory.snapshot()
     _seed_beatmap(state)
@@ -243,6 +267,14 @@ async def test_country_and_friends_are_read_time_filters_over_all_mods_scope() -
 
 
 async def test_selected_mods_use_exact_raw_bitflag_and_preserve_displayed_mods() -> None:
+    """SELECTED_MODS categoryがraw bitflagの完全一致だけを返す契約を検証する.
+
+    NIGHTCORE/DOUBLE_TIMEを持つscoreとDOUBLE_TIMEだけのscoreをseedしてnightcore scopeを取得する.
+    implied Modへの正規化をせず一致する2 rowだけを表示Modを保って返すことを確認する.
+
+    Returns:
+        None: selected Mod raw bitflagのfilterとdisplay値を検証して完了する.
+    """
     factory = _factory()
     state = factory.snapshot()
     _seed_beatmap(state)
@@ -285,6 +317,14 @@ async def test_selected_mods_use_exact_raw_bitflag_and_preserve_displayed_mods()
 
 
 async def test_owner_visibility_filters_rows_and_personal_best_at_read_time() -> None:
+    """Owner visibilityがtop rowsとpersonal bestをread時にfilterする契約を検証する.
+
+    visibility Roleのない高score userと可視userをseedしてleaderboardを読み後からRoleを付与する.
+    初回はhidden userを除外しRole付与後はtop rowとpersonal bestへ反映することを確認する.
+
+    Returns:
+        None: owner visibilityのread-time filterを検証して完了する.
+    """
     factory = _factory()
     state = factory.snapshot()
     _seed_beatmap(state)
@@ -332,6 +372,15 @@ async def test_owner_visibility_filters_rows_and_personal_best_at_read_time() ->
 
 
 async def test_current_filters_exclude_stale_or_ineligible_score_rows() -> None:
+    """Current leaderboard filterがstale/ineligible scoreを除外する契約を検証する.
+
+    failed/ineligible/old-checksum scoreを有効scoreと共にseedしbeatmap statusとchecksumも更新する.
+    eligible current scoreだけを返すことを確認する.
+    status/checksum不一致後はtop rowsとpersonal bestを返さないことを確認する.
+
+    Returns:
+        None: current score/beatmap eligibility filterを検証して完了する.
+    """
     factory = _factory()
     state = factory.snapshot()
     _seed_beatmap(state)
@@ -399,6 +448,15 @@ async def test_current_filters_exclude_stale_or_ineligible_score_rows() -> None:
 
 
 async def test_current_pp_is_display_enrichment_for_ranked_approved_rows_only() -> None:
+    """Current PPがRANKED/APPROVED rowだけの表示enrichmentになる契約を検証する.
+
+    RANKED/APPROVED/LOVED/QUALIFIED beatmapごとにcurrent performance calculationを
+    持つscoreをseedする.
+    rankとscore順を維持しRANKED/APPROVEDだけがPPを表示することを確認する.
+
+    Returns:
+        None: beatmap statusに依存するcurrent PP表示を検証して完了する.
+    """
     pp_value = Decimal("250.125000")
     for status, expected_pp in (
         (BeatmapRankStatus.RANKED, pp_value),
@@ -433,6 +491,16 @@ async def test_current_pp_is_display_enrichment_for_ranked_approved_rows_only() 
 
 
 async def test_beatmap_leaderboard_personal_best_ignores_pp_priority_projection() -> None:
+    """Beatmap Leaderboard personal bestがstats用PP priority projectionを使わない契約を検証する.
+
+    leaderboard代表scoreより低scoreで高PPのstats-owned personal bestとcurrent calculationを
+    seedする.
+    top rowとpersonal bestがleaderboard projectionのscoreを返すことを確認する.
+    personal bestがstats用のcurrent calculationを使わずPPを表示しないことを確認する.
+
+    Returns:
+        None: leaderboard固有personal bestのprojection境界を検証して完了する.
+    """
     factory = _factory()
     state = factory.snapshot()
     _seed_beatmap(state)
@@ -497,6 +565,11 @@ async def test_beatmap_leaderboard_personal_best_ignores_pp_priority_projection(
 
 
 def _factory() -> InMemoryUnitOfWorkFactory:
+    """Empty committed stateを持つin-memory Unit of Work factoryを構築する.
+
+    Returns:
+        InMemoryUnitOfWorkFactory: seed後にquery repositoryへ渡すfactory fixture.
+    """
     return InMemoryUnitOfWorkFactory(InMemoryCommandRepositoryState())
 
 
@@ -508,6 +581,18 @@ def _scope(
     country: str | None = None,
     eligible_user_ids: tuple[int, ...] | None = None,
 ) -> LeaderboardReadScope:
+    """test用のBeatmap Leaderboard read scopeを構築する.
+
+    Args:
+        category (LeaderboardCategory): leaderboardへ適用するcategory filter.
+        beatmap_checksum (str): current beatmap revisionを特定するMD5 checksum.
+        selected_mods (ModCombination | None): SELECTED_MODSで完全一致させるraw Mod bitflag.
+        country (str | None): COUNTRY categoryで一致させるcountry code.
+        eligible_user_ids (tuple[int, ...] | None): FRIENDS categoryで許可するuser ID群.
+
+    Returns:
+        LeaderboardReadScope: fixed beatmap/ruleset/playstyleを持つread scope fixture.
+    """
     return LeaderboardReadScope(
         beatmap_id=_BEATMAP_ID,
         beatmap_checksum=beatmap_checksum,
@@ -521,6 +606,14 @@ def _scope(
 
 
 def _seed_visible_role(state: InMemoryCommandRepositoryState) -> None:
+    """leaderboard可視userに必要なRoleをstateへseedする.
+
+    Args:
+        state (InMemoryCommandRepositoryState): Role fixtureを書き込む可変command state.
+
+    Returns:
+        None: NORMAL/UNRESTRICTED permissionsを持つRoleを保存して完了する.
+    """
     state.roles_by_id[_VISIBLE_ROLE_ID] = Role(
         id=_VISIBLE_ROLE_ID,
         name="Visible",
@@ -535,6 +628,16 @@ def _seed_beatmap(
     checksum_md5: str = _CURRENT_CHECKSUM,
     status: BeatmapRankStatus = BeatmapRankStatus.RANKED,
 ) -> None:
+    """Leaderboard queryが参照するcurrent Beatmapをstateへseedする.
+
+    Args:
+        state (InMemoryCommandRepositoryState): Beatmap fixtureを書き込む可変command state.
+        checksum_md5 (str): current revisionとしてindexするMD5 checksum.
+        status (BeatmapRankStatus): query visibilityとPP表示を決めるofficial status.
+
+    Returns:
+        None: fixed beatmap IDとchecksum indexをstateへ保存して完了する.
+    """
     state.beatmaps_by_id[_BEATMAP_ID] = Beatmap(
         id=_BEATMAP_ID,
         beatmapset_id=5,
@@ -577,6 +680,24 @@ def _seed_leaderboard_score(
     passed: bool = True,
     leaderboard_eligible_at_submission: bool = True,
 ) -> None:
+    """Leaderboard projectionと参照Score/Userをstateへseedする.
+
+    Args:
+        state (InMemoryCommandRepositoryState): fixture群を書き込む可変command state.
+        score_id (int): seedするScoreとprojectionのID.
+        user_id (int): Scoreを所有するUserのID.
+        score (int): ScoreRankKeyへ設定するscore値.
+        submitted_at (datetime): ScoreRankKeyへ設定するsubmission timestamp.
+        country (str): seedするUserのcountry code.
+        visible (bool): Trueならvisible Role assignmentを設定するか.
+        mods (ModCombination | None): Scoreとprojectionへ設定するraw Mods. Noneならno Mod.
+        beatmap_checksum (str): Score/projectionへ設定するbeatmap revision checksum.
+        passed (bool): Scoreがsubmission時にpassしたか.
+        leaderboard_eligible_at_submission (bool): Scoreをleaderboard対象としてindexするか.
+
+    Returns:
+        None: User/Score/eligibility/projection fixtureを一貫して保存して完了する.
+    """
     state.users_by_id[user_id] = _user(user_id=user_id, country=country)
     source_mods = mods or ModCombination.none()
     if visible:
@@ -612,6 +733,20 @@ def _upsert_projection(
     mods: ModCombination,
     beatmap_checksum: str,
 ) -> None:
+    """指定ScoreのBeatmap Leaderboard user best projectionをstateへupsertする.
+
+    Args:
+        state (InMemoryCommandRepositoryState): projectionを書き込む可変command state.
+        score_id (int): projectionが参照するScoreのID.
+        user_id (int): projection scopeを所有するUserのID.
+        score (int): projection rank keyへ設定するscore値.
+        submitted_at (datetime): projection rank keyへ設定するsubmission timestamp.
+        mods (ModCombination): projection scopeへ設定するraw Mods.
+        beatmap_checksum (str): projection scopeへ設定するbeatmap revision checksum.
+
+    Returns:
+        None: 既存rowがないかcandidateが高順位の場合だけscope rowを更新して完了する.
+    """
     scope = BeatmapLeaderboardUserBestScope(
         beatmap_id=_BEATMAP_ID,
         beatmap_checksum=beatmap_checksum,
@@ -663,6 +798,17 @@ def _seed_current_performance_calculation(
     score_id: int,
     pp: Decimal,
 ) -> None:
+    """Scoreに対応するcurrent completed performance calculationをstateへseedする.
+
+    Args:
+        state (InMemoryCommandRepositoryState): calculation fixtureを書き込む可変command state.
+        calculation_id (int): seedするPerformanceCalculationのID.
+        score_id (int): calculationを関連付けるScoreのID.
+        pp (Decimal): queryがdisplay enrichmentに使うPP値.
+
+    Returns:
+        None: completed/current calculationとScore indexをstateへ保存して完了する.
+    """
     state.performance_calculations_by_id[calculation_id] = PerformanceCalculation(
         id=calculation_id,
         score_id=score_id,
@@ -682,6 +828,15 @@ def _seed_current_performance_calculation(
 
 
 def _user(*, user_id: int, country: str) -> User:
+    """Leaderboard ownerとして表示するUser fixtureを構築する.
+
+    Args:
+        user_id (int): UserのIDとusername suffixに使う値.
+        country (str): category filterへ使うUserのcountry code.
+
+    Returns:
+        User: fixed credentials/timestampsを持つvisible判定用User fixture.
+    """
     username = f"User{user_id}"
     safe_username = username.lower()
     return User(
@@ -706,6 +861,20 @@ def _score(
     beatmap_checksum: str,
     passed: bool,
 ) -> Score:
+    """Leaderboard projectionが参照するScore fixtureを構築する.
+
+    Args:
+        score_id (int): ScoreのIDとonline checksumに使う値.
+        user_id (int): Scoreを所有するUserのID.
+        score (int): rankingへ使うscore値.
+        submitted_at (datetime): rankingへ使うsubmission timestamp.
+        mods (ModCombination): displayed Modとprojection scopeに使うraw Mods.
+        beatmap_checksum (str): current revision照合に使うbeatmap checksum.
+        passed (bool): current eligibilityのpass条件を満たすか.
+
+    Returns:
+        Score: osu vanilla leaderboard fieldsを持つScore fixture.
+    """
     return Score(
         id=score_id,
         user_id=user_id,

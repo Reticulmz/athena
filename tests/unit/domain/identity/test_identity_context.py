@@ -1,4 +1,4 @@
-"""Identity bounded-context architecture tests."""
+"""Identity bounded-contextのauthorization責務と依存境界を検証する."""
 
 from __future__ import annotations
 
@@ -34,6 +34,16 @@ OLD_FLAT_IDENTITY_MODULES = (
 
 
 def test_identity_context_owns_server_authorization_language() -> None:
+    """Identity contextがserver-side authorization語彙を所有することを検証する.
+
+    privilege, session authorization, username正規化を具体値で比較する.
+
+    Returns:
+        None: role privilege, session role ID, 正規化usernameを検証して完了する.
+
+    Raises:
+        AssertionError: identity contextが必要なserver authorization語彙を提供しない場合.
+    """
     role = Role(
         id=1,
         name="Admin",
@@ -51,6 +61,14 @@ def test_identity_context_owns_server_authorization_language() -> None:
 
 
 def test_flat_identity_domain_modules_are_not_supported() -> None:
+    """旧flat identity module pathがrepositoryから除去されていることを検証する.
+
+    Returns:
+        None: 存在する旧module pathの一覧が空であることを検証して完了する.
+
+    Raises:
+        AssertionError: 移行後にdeprecatedなflat domain moduleが残っている場合.
+    """
     remaining = [
         path.relative_to(PROJECT_ROOT).as_posix()
         for path in OLD_FLAT_IDENTITY_MODULES
@@ -61,10 +79,26 @@ def test_flat_identity_domain_modules_are_not_supported() -> None:
 
 
 def test_identity_authorization_does_not_define_client_permission_flags() -> None:
+    """Identity authorization moduleがstable client permission flagを所有しないことを検証する.
+
+    Returns:
+        None: ClientPermissions attributeが存在しないことを検証して完了する.
+
+    Raises:
+        AssertionError: client compatibility permission語彙をidentity domainへ追加した場合.
+    """
     assert not hasattr(authorization, "ClientPermissions")
 
 
 def test_internal_authorization_modules_do_not_import_client_permission_flags() -> None:
+    """Internal authorization collaboratorがclient permission flagへ依存しないことを検証する.
+
+    Returns:
+        None: AST import監査とPermissionServiceの公開surfaceを検証して完了する.
+
+    Raises:
+        AssertionError: internal authorization moduleがstable client permissionをimportした場合.
+    """
     offenders = [
         f"{path.relative_to(PROJECT_ROOT).as_posix()} imports {name}"
         for path in INTERNAL_AUTHORIZATION_MODULES
@@ -78,6 +112,14 @@ def test_internal_authorization_modules_do_not_import_client_permission_flags() 
 
 
 def _imported_names(path: Path) -> set[str]:
+    """指定source fileのabsolute import module名とfrom-import member名を収集する.
+
+    Args:
+        path (Path): ASTで解析するPython source fileのpath.
+
+    Returns:
+        set[str]: level 0 importから得たmodule名と完全修飾member名の集合.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.as_posix())
     names: set[str] = set()
 

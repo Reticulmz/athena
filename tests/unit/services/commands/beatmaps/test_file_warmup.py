@@ -1,4 +1,4 @@
-"""Beatmap file warmup request identity policy tests."""
+"""Beatmap file warmup requestのidentity policyを検証するtest module."""
 
 from __future__ import annotations
 
@@ -28,7 +28,15 @@ from osu_server.services.commands.beatmaps.file_warmup import (
 
 @final
 class RecordingWarmupResolver:
+    """正常なresolve結果と呼出履歴を返すwarmup resolverのtest double.
+
+    Attributes:
+        calls (list[tuple[str, int | str, BeatmapResolveOptions | None]]): resolve呼出履歴.
+        result (BeatmapResolveResult): 各resolve呼出で返す設定済みの結果.
+    """
+
     def __init__(self) -> None:
+        """保留結果を持つ空のresolver状態を初期化する."""
         self.calls: list[tuple[str, int | str, BeatmapResolveOptions | None]] = []
         self.result = _pending_result()
 
@@ -37,6 +45,15 @@ class RecordingWarmupResolver:
         beatmap_id: int,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """対象beatmap IDによるresolve要求を記録して設定済みの結果を返す.
+
+        Args:
+            beatmap_id (int): resolve対象のbeatmap ID.
+            options (BeatmapResolveOptions | None): file取得要件を含む任意のresolve条件.
+
+        Returns:
+            BeatmapResolveResult: testで事前設定したresolve結果.
+        """
         self.calls.append(("beatmap_id", beatmap_id, options))
         return self.result
 
@@ -45,13 +62,29 @@ class RecordingWarmupResolver:
         checksum_md5: str,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """対象checksumによるresolve要求を記録して設定済みの結果を返す.
+
+        Args:
+            checksum_md5 (str): resolve対象のMD5 checksum.
+            options (BeatmapResolveOptions | None): file取得要件を含む任意のresolve条件.
+
+        Returns:
+            BeatmapResolveResult: testで事前設定したresolve結果.
+        """
         self.calls.append(("checksum", checksum_md5, options))
         return self.result
 
 
 @final
 class FailingWarmupResolver:
+    """診断情報を秘匿したresolver失敗を再現するtest double.
+
+    Attributes:
+        calls (list[tuple[str, int | str, BeatmapResolveOptions | None]]): resolve呼出履歴.
+    """
+
     def __init__(self) -> None:
+        """呼出履歴だけを保持する失敗用resolver状態を初期化する."""
         self.calls: list[tuple[str, int | str, BeatmapResolveOptions | None]] = []
 
     async def resolve_by_beatmap_id(
@@ -59,6 +92,15 @@ class FailingWarmupResolver:
         beatmap_id: int,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """対象beatmap IDのresolve後に診断用の失敗を送出する.
+
+        Args:
+            beatmap_id (int): resolve対象のbeatmap ID.
+            options (BeatmapResolveOptions | None): file取得要件を含む任意のresolve条件.
+
+        Raises:
+            RuntimeError: resolver失敗時の構造化log処理を検証する場合.
+        """
         self.calls.append(("beatmap_id", beatmap_id, options))
         raise RuntimeError("credential=secret replay bytes should not be logged")
 
@@ -67,11 +109,27 @@ class FailingWarmupResolver:
         checksum_md5: str,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """対象checksumのresolve後に診断用の失敗を送出する.
+
+        Args:
+            checksum_md5 (str): resolve対象のMD5 checksum.
+            options (BeatmapResolveOptions | None): file取得要件を含む任意のresolve条件.
+
+        Raises:
+            RuntimeError: resolver失敗時の構造化log処理を検証する場合.
+        """
         self.calls.append(("checksum", checksum_md5, options))
         raise RuntimeError("raw payload should not be logged")
 
 
 async def test_no_beatmap_identity_skips_without_resolver_call() -> None:
+    """このidentity未指定のwarmupがresolverを呼ばずにskipする契約を検証する.
+
+    beatmap IDとchecksumのないrequestを渡し, skip outcomeと構造化eventが記録されることを確認する.
+
+    Returns:
+        None: outcomeとeventを検証して完了し, 呼び出し側へ値を返さない.
+    """
     resolver = RecordingWarmupResolver()
     use_case = RequestBeatmapFileWarmupUseCase(resolver)
 
@@ -99,6 +157,14 @@ async def test_no_beatmap_identity_skips_without_resolver_call() -> None:
 
 
 async def test_malformed_beatmap_identity_skips_without_resolver_call() -> None:
+    """不正なidentityのwarmupがresolverを呼ばずにskipする契約を検証する.
+
+    負のbeatmap IDと不正なchecksumを渡す.
+    malformed identity用のoutcomeとeventが記録されることを確認する.
+
+    Returns:
+        None: outcomeとeventを検証して完了し, 呼び出し側へ値を返さない.
+    """
     resolver = RecordingWarmupResolver()
     use_case = RequestBeatmapFileWarmupUseCase(resolver)
 
@@ -128,6 +194,14 @@ async def test_malformed_beatmap_identity_skips_without_resolver_call() -> None:
 
 
 async def test_positive_beatmap_id_takes_priority_over_checksum() -> None:
+    """有効なbeatmap IDがchecksumより優先される解決契約を検証する.
+
+    両方のidentityを持つrequestを渡す.
+    resolverがbeatmap IDをfile待機なしのoptionsとともに一度だけ受け取ることを確認する.
+
+    Returns:
+        None: resolverの呼出種別とoptionsを検証して完了し, 呼び出し側へ値を返さない.
+    """
     resolver = RecordingWarmupResolver()
     use_case = RequestBeatmapFileWarmupUseCase(resolver)
 
@@ -150,6 +224,14 @@ async def test_positive_beatmap_id_takes_priority_over_checksum() -> None:
 
 
 async def test_checksum_identity_is_normalized_before_resolver_call() -> None:
+    """対象checksum identityがresolver呼出前に正規化される契約を検証する.
+
+    大文字を含むMD5 checksumを渡す.
+    小文字化した値とfile待機なしのoptionsでresolveされることを確認する.
+
+    Returns:
+        None: 正規化後のresolver入力を検証して完了し, 呼び出し側へ値を返さない.
+    """
     resolver = RecordingWarmupResolver()
     use_case = RequestBeatmapFileWarmupUseCase(resolver)
 
@@ -171,6 +253,14 @@ async def test_checksum_identity_is_normalized_before_resolver_call() -> None:
 
 
 async def test_available_file_maps_to_already_available_noop() -> None:
+    """利用可能なfileがalready availableのno-opへ対応付けられる契約を検証する.
+
+    AVAILABLE file状態の既知beatmapをresolveする.
+    outcomeと構造化eventがfile_available理由を持つことを確認する.
+
+    Returns:
+        None: no-op outcomeとeventを検証して完了し, 呼び出し側へ値を返さない.
+    """
     resolver = RecordingWarmupResolver()
     resolver.result = _known_result(beatmap_id=42, file_status=BeatmapFileState.AVAILABLE)
     use_case = RequestBeatmapFileWarmupUseCase(resolver)
@@ -197,6 +287,14 @@ async def test_available_file_maps_to_already_available_noop() -> None:
 
 
 async def test_available_file_uses_noop_reason_when_metadata_is_stale() -> None:
+    """対象metadataがstaleでも利用可能なfileがno-opになる契約を検証する.
+
+    AVAILABLE file状態とstale理由を返すresolverを使う.
+    file_available理由のalready available outcomeになることを確認する.
+
+    Returns:
+        None: outcome理由とeventを検証して完了し, 呼び出し側へ値を返さない.
+    """
     resolver = RecordingWarmupResolver()
     resolver.result = replace(
         _known_result(beatmap_id=42, file_status=BeatmapFileState.AVAILABLE),
@@ -222,6 +320,14 @@ async def test_available_file_uses_noop_reason_when_metadata_is_stale() -> None:
 
 
 async def test_known_beatmap_missing_file_maps_to_requested() -> None:
+    """対象fileのない既知beatmapがfile requestへ対応付けられる契約を検証する.
+
+    MISSING file状態の既知beatmapをresolveする.
+    requested outcomeとfile_missing理由になることを確認する.
+
+    Returns:
+        None: request outcomeを検証して完了し, 呼び出し側へ値を返さない.
+    """
     resolver = RecordingWarmupResolver()
     resolver.result = _known_result(beatmap_id=43, file_status=BeatmapFileState.MISSING)
     use_case = RequestBeatmapFileWarmupUseCase(resolver)
@@ -240,6 +346,14 @@ async def test_known_beatmap_missing_file_maps_to_requested() -> None:
 
 
 async def test_checksum_only_unresolved_beatmap_maps_to_metadata_pending() -> None:
+    """未解決のchecksum identityがmetadata pendingへ対応付けられる契約を検証する.
+
+    checksumだけを持つrequestでpending結果を返す.
+    beatmap IDなしのmetadata pending outcomeになることを確認する.
+
+    Returns:
+        None: pending outcomeとchecksumを検証して完了し, 呼び出し側へ値を返さない.
+    """
     resolver = RecordingWarmupResolver()
     use_case = RequestBeatmapFileWarmupUseCase(resolver)
 
@@ -258,6 +372,13 @@ async def test_checksum_only_unresolved_beatmap_maps_to_metadata_pending() -> No
 
 
 async def test_resolver_failure_returns_failed_and_logs_sanitized_diagnostics() -> None:
+    """このresolver失敗が機密値を出さないfailed outcomeになる契約を検証する.
+
+    失敗するresolverを使い, failed outcomeとexception種別だけがeventに記録されることを確認する.
+
+    Returns:
+        None: 失敗結果とsanitize済みeventを検証して完了し, 呼び出し側へ値を返さない.
+    """
     resolver = FailingWarmupResolver()
     use_case = RequestBeatmapFileWarmupUseCase(resolver)
 
@@ -287,6 +408,11 @@ async def test_resolver_failure_returns_failed_and_logs_sanitized_diagnostics() 
 
 
 def _pending_result() -> BeatmapResolveResult:
+    """対象metadata取得中でfile未取得のresolve結果を作る.
+
+    Returns:
+        BeatmapResolveResult: PENDING_FETCHとMISSING file状態を持つtest用の結果.
+    """
     return BeatmapResolveResult(
         beatmap=None,
         beatmapset=None,
@@ -306,6 +432,15 @@ def _known_result(
     beatmap_id: int,
     file_status: BeatmapFileState,
 ) -> BeatmapResolveResult:
+    """指定したfile状態を持つ既知beatmapのresolve結果を作る.
+
+    Args:
+        beatmap_id (int): 生成するbeatmapの識別子.
+        file_status (BeatmapFileState): 生成するbeatmapのfile取得状態.
+
+    Returns:
+        BeatmapResolveResult: 指定状態のbeatmapと対応する理由を含むtest用の結果.
+    """
     beatmap = Beatmap(
         id=beatmap_id,
         beatmapset_id=24,

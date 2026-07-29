@@ -1,6 +1,7 @@
-"""Integration tests for the SQLAlchemy score command repository.
+"""SQLAlchemy score command repositoryのCRUD, uniqueness, field persistence contractを検証する.
 
-Tests CRUD operations and unique constraint handling against real PostgreSQL.
+Notes:
+    各testは実PostgreSQLへ接続してscore row persistenceを検証する.
 """
 
 from __future__ import annotations
@@ -27,6 +28,14 @@ if TYPE_CHECKING:
 
 
 def _get_database_url() -> str:
+    """Integration testで使用するPostgreSQL connection URLを取得する.
+
+    Returns:
+        str: DATABASE_URL environment variableのPostgreSQL URL.
+
+    Raises:
+        pytest.skip: DATABASE_URLが未設定の場合.
+    """
     url = os.environ.get("DATABASE_URL")
     if not url:
         pytest.skip("DATABASE_URL not set")
@@ -35,6 +44,17 @@ def _get_database_url() -> str:
 
 @pytest.fixture
 async def engine() -> AsyncGenerator[AsyncEngine]:
+    """Score repository integration test用engineを提供する.
+
+    Yields:
+        AsyncEngine: 接続確認済みのPostgreSQL engine.
+
+    Raises:
+        pytest.skip: DATABASE_URLが未設定またはdatabase serviceが利用不能な場合.
+
+    Notes:
+        fixture終了時にengine poolをdisposeする.
+    """
     eng = create_engine(_get_database_url())
     try:
         async with eng.connect() as conn:
@@ -50,6 +70,17 @@ async def engine() -> AsyncGenerator[AsyncEngine]:
 async def session_factory(
     engine: AsyncEngine,
 ) -> AsyncGenerator[async_sessionmaker[AsyncSession]]:
+    """Score persistence test rowをcleanupするPostgreSQL session factoryを提供する.
+
+    Args:
+        engine (AsyncEngine): 接続確認済みのPostgreSQL engine.
+
+    Yields:
+        async_sessionmaker[AsyncSession]: score repository用session factory.
+
+    Notes:
+        fixture終了時にtest_checksum_ prefixを持つscore rowを削除する.
+    """
     factory = create_session_factory(engine)
     yield factory
     try:
@@ -66,6 +97,14 @@ async def session_factory(
 def uow_factory(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> SQLAlchemyUnitOfWorkFactory:
+    """Score command repositoryを解決するSQLAlchemy Unit of Work factoryを構築する.
+
+    Args:
+        session_factory (async_sessionmaker[AsyncSession]): test用PostgreSQL session factory.
+
+    Returns:
+        SQLAlchemyUnitOfWorkFactory: score command repositoryを持つfactory.
+    """
     return SQLAlchemyUnitOfWorkFactory(session_factory)
 
 
@@ -75,7 +114,16 @@ def _make_score(
     user_id: int = 1000,
     beatmap_id: int = 2000,
 ) -> Score:
-    """Create a valid Score for testing."""
+    """Score command repositoryへ保存するvalid score domain objectを構築する.
+
+    Args:
+        online_checksum (str): score uniquenessとcleanupに使うonline checksum.
+        user_id (int): scoreを所有するtest user ID.
+        beatmap_id (int): scoreが参照するtest beatmap ID.
+
+    Returns:
+        Score: ranked beatmap statusを持つpersistable score.
+    """
     return Score(
         id=None,
         user_id=user_id,
@@ -106,6 +154,14 @@ def _make_score(
 async def test_sqlalchemy_score_repository_creates_and_retrieves_score(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
+    """Score repositoryがcreated scoreをIDでretrieveするcontractを検証する.
+
+    Args:
+        uow_factory (SQLAlchemyUnitOfWorkFactory): score command repositoryを持つfactory.
+
+    Returns:
+        None: persisted identity, user, checksum, beatmap statusを確認して完了する.
+    """
     score = _make_score(online_checksum="test_checksum_001")
     async with uow_factory() as uow:
         created = await uow.scores.create(score)
@@ -126,6 +182,14 @@ async def test_sqlalchemy_score_repository_creates_and_retrieves_score(
 async def test_sqlalchemy_score_repository_exists_by_online_checksum(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
+    """Score repositoryがpersistedとmissing online checksumを区別するcontractを検証する.
+
+    Args:
+        uow_factory (SQLAlchemyUnitOfWorkFactory): score command repositoryを持つfactory.
+
+    Returns:
+        None: persisted checksumでTrue, unknown checksumでFalseとなることを確認する.
+    """
     score = _make_score(online_checksum="test_checksum_002")
     async with uow_factory() as uow:
         created = await uow.scores.create(score)
@@ -139,6 +203,14 @@ async def test_sqlalchemy_score_repository_exists_by_online_checksum(
 async def test_sqlalchemy_score_repository_get_by_online_checksum(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
+    """Score repositoryがonline checksumからscoreをretrieveするcontractを検証する.
+
+    Args:
+        uow_factory (SQLAlchemyUnitOfWorkFactory): score command repositoryを持つfactory.
+
+    Returns:
+        None: persisted checksumでscore, unknown checksumでNoneとなることを確認する.
+    """
     score = _make_score(online_checksum="test_checksum_get_by_online")
     async with uow_factory() as uow:
         created = await uow.scores.create(score)
@@ -155,6 +227,14 @@ async def test_sqlalchemy_score_repository_get_by_online_checksum(
 async def test_sqlalchemy_score_repository_rejects_duplicate_online_checksum(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
+    """Score repositoryがduplicate online checksumをValueErrorで拒否するcontractを検証する.
+
+    Args:
+        uow_factory (SQLAlchemyUnitOfWorkFactory): score command repositoryを持つfactory.
+
+    Returns:
+        None: second score createがonline checksum uniqueness errorとなることを確認する.
+    """
     score1 = _make_score(online_checksum="test_checksum_003", user_id=1000)
     async with uow_factory() as uow:
         _ = await uow.scores.create(score1)
@@ -169,6 +249,14 @@ async def test_sqlalchemy_score_repository_rejects_duplicate_online_checksum(
 async def test_sqlalchemy_score_repository_handles_failed_scores(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
+    """Score repositoryがfailed scoreのpassed, score, accuracy, gradeを保持するcontractを検証する.
+
+    Args:
+        uow_factory (SQLAlchemyUnitOfWorkFactory): score command repositoryを持つfactory.
+
+    Returns:
+        None: retrieved scoreがfailed stateとreduced scoreを保持することを確認する.
+    """
     score = _make_score(online_checksum="test_checksum_004")
     score.passed = False
     score.score = 50000
@@ -192,6 +280,14 @@ async def test_sqlalchemy_score_repository_handles_failed_scores(
 async def test_sqlalchemy_score_repository_preserves_all_fields(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
+    """Score repositoryがruleset, mods, hit countなどのscore fieldを保持するcontractを検証する.
+
+    Args:
+        uow_factory (SQLAlchemyUnitOfWorkFactory): score command repositoryを持つfactory.
+
+    Returns:
+        None: retrieved scoreがmodified ruleset, mods, perfect, hit countを保持することを確認する.
+    """
     score = _make_score(online_checksum="test_checksum_005")
     score.ruleset = Ruleset.TAIKO
     score.mods = ModCombination.from_bitmask(72)  # HD+DT
@@ -221,6 +317,14 @@ async def test_sqlalchemy_score_repository_preserves_all_fields(
 async def test_sqlalchemy_score_repository_preserves_timing_fields(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
 ) -> None:
+    """Score repositoryがfail timeとderived play time fieldを保持するcontractを検証する.
+
+    Args:
+        uow_factory (SQLAlchemyUnitOfWorkFactory): score command repositoryを持つfactory.
+
+    Returns:
+        None: retrieved scoreのtiming fieldとexit classificationを確認して完了する.
+    """
     score = _make_score(online_checksum="test_checksum_timing")
     score.fail_time_ms = 7_112
     score.play_time_seconds = 7

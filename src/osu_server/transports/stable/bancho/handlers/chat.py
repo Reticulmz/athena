@@ -1,7 +1,6 @@
-"""stable bancho chat C2S パケットを chat command に適応する。
+"""stable Bancho chat C2S packetをchat commandへ適応する.
 
-handle_send_message, handle_send_private_message, handle_join_channel,
-handle_leave_channel を @handles デコレータで実装する。
+channel message,private message,channel参加と離脱をpacket queueへのS2C応答へ変換する.
 """
 
 from __future__ import annotations
@@ -55,11 +54,18 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 
 class ChatHandlers(HandlerGroup):
-    """chat C2S packet の transport adapter。
+    """chat C2S packetをchat commandとS2C packetへ適応する.
 
-    各 handler は Caterpillar で payload を parse し、active session から
-    sender context を補って chat command に委譲する。command result は
-    stable S2C packet に戻して PacketQueue へ enqueue する。
+    Attributes:
+        _send_channel_message (SendChannelMessageUseCase): channel messageを送信するuse case.
+        _send_private_message (SendPrivateMessageUseCase): private messageを送信するuse case.
+        _join_channel (JoinChannelUseCase): channel参加を処理するuse case.
+        _leave_channel (LeaveChannelUseCase): channel離脱を処理するuse case.
+        _session_store (UserSessionLookup): senderのcurrent sessionを取得するstore.
+        _packet_queue (PacketQueue): stable S2C packetを対象sessionへenqueueするqueue.
+
+    Notes:
+        不正payloadまたは存在しないsessionはcommandを実行せずdropする.
     """
 
     _send_channel_message: SendChannelMessageUseCase
@@ -79,6 +85,16 @@ class ChatHandlers(HandlerGroup):
         session_store: UserSessionLookup,
         packet_queue: PacketQueue,
     ) -> None:
+        """Chat C2S packetを処理する依存を初期化する.
+
+        Args:
+            send_channel_message (SendChannelMessageUseCase): channel送信用のuse case.
+            send_private_message (SendPrivateMessageUseCase): private message送信用のuse case.
+            join_channel (JoinChannelUseCase): channel参加用のuse case.
+            leave_channel (LeaveChannelUseCase): channel離脱用のuse case.
+            session_store (UserSessionLookup): sender sessionを参照するstore.
+            packet_queue (PacketQueue): S2C packetを配信するqueue.
+        """
         self._send_channel_message = send_channel_message
         self._send_private_message = send_private_message
         self._join_channel = join_channel
@@ -88,7 +104,18 @@ class ChatHandlers(HandlerGroup):
 
     @handles(ClientPacketID.SEND_MESSAGE)
     async def handle_send_message(self, payload: bytes, user_id: int) -> None:
-        """SEND_MESSAGE (1) — チャンネルメッセージ送信。"""
+        """SEND_MESSAGEをchannel message commandとS2C packetへ変換する.
+
+        Args:
+            payload (bytes): Messageを含むSEND_MESSAGE packet payload.
+            user_id (int): messageを送信した認証済みuserのID.
+
+        Returns:
+            None: command結果をchannel recipientとsenderへenqueueして値を返さずに完了する.
+
+        Notes:
+            channel向けbot応答はrecipientへ,sender専用bot応答はsenderだけへ配信する.
+        """
         msg = _parse_message(payload, "SEND_MESSAGE")
         if msg is None:
             return
@@ -146,7 +173,18 @@ class ChatHandlers(HandlerGroup):
 
     @handles(ClientPacketID.SEND_PRIVATE_MESSAGE)
     async def handle_send_private_message(self, payload: bytes, user_id: int) -> None:
-        """SEND_PRIVATE_MESSAGE (25) — PM 送信。"""
+        """SEND_PRIVATE_MESSAGEをprivate message commandとS2C packetへ変換する.
+
+        Args:
+            payload (bytes): Messageを含むSEND_PRIVATE_MESSAGE packet payload.
+            user_id (int): messageを送信した認証済みuserのID.
+
+        Returns:
+            None: delivery結果またはbot応答をenqueueして値を返さずに完了する.
+
+        Notes:
+            friend-only DMにより拒否された場合はsenderへuser_dm_blockedを返す.
+        """
         msg = _parse_message(payload, "SEND_PRIVATE_MESSAGE")
         if msg is None:
             return
@@ -200,7 +238,15 @@ class ChatHandlers(HandlerGroup):
 
     @handles(ClientPacketID.JOIN_CHANNEL)
     async def handle_join_channel(self, payload: bytes, user_id: int) -> None:
-        """JOIN_CHANNEL (63) — チャンネル参加。"""
+        """JOIN_CHANNELをchannel参加commandとS2C応答へ変換する.
+
+        Args:
+            payload (bytes): channel名を含むJOIN_CHANNEL packet payload.
+            user_id (int): channelへ参加しようとする認証済みuserのID.
+
+        Returns:
+            None: 参加可否に対応するS2C packetをenqueueして値を返さずに完了する.
+        """
         channel_name = _parse_channel_name(payload, "JOIN_CHANNEL")
         if channel_name is None:
             return
@@ -226,7 +272,15 @@ class ChatHandlers(HandlerGroup):
 
     @handles(ClientPacketID.LEAVE_CHANNEL)
     async def handle_leave_channel(self, payload: bytes, user_id: int) -> None:
-        """LEAVE_CHANNEL (78) — チャンネル離脱。"""
+        """LEAVE_CHANNELをchannel離脱commandとS2C応答へ変換する.
+
+        Args:
+            payload (bytes): channel名を含むLEAVE_CHANNEL packet payload.
+            user_id (int): channelから離脱する認証済みuserのID.
+
+        Returns:
+            None: 離脱command後にchannel_revokedをenqueueして値を返さずに完了する.
+        """
         channel_name = _parse_channel_name(payload, "LEAVE_CHANNEL")
         if channel_name is None:
             return
@@ -244,6 +298,15 @@ class ChatHandlers(HandlerGroup):
 
 
 def _parse_message(payload: bytes, packet_name: str) -> Message | None:
+    """Message payloadを安全にparseする.
+
+    Args:
+        payload (bytes): CaterpillarでdecodeするC2S packet payload.
+        packet_name (str): warning logへ記録するpacket名.
+
+    Returns:
+        Message | None: parseしたMessage. payloadが不正な場合はNone.
+    """
     try:
         return parse_message_payload(payload, packet_name=packet_name)
     except PacketReadError as exc:
@@ -257,6 +320,15 @@ def _parse_message(payload: bytes, packet_name: str) -> Message | None:
 
 
 def _parse_channel_name(payload: bytes, packet_name: str) -> str | None:
+    """channel名payloadを安全にparseする.
+
+    Args:
+        payload (bytes): CaterpillarでdecodeするC2S packet payload.
+        packet_name (str): warning logへ記録するpacket名.
+
+    Returns:
+        str | None: parseしたchannel名. payloadが不正な場合はNone.
+    """
     try:
         return parse_channel_name_payload(payload, packet_name=packet_name)
     except PacketReadError as exc:

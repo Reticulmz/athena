@@ -1,3 +1,5 @@
+"""Stable verificationのreportable model contractを検証する."""
+
 from __future__ import annotations
 
 from dataclasses import fields
@@ -17,6 +19,11 @@ from athena_cli.stable_verification.models import (
 
 
 def test_verification_status_values_match_stable_reporting_vocabulary() -> None:
+    """Verification statusとsurface valueがstable report vocabularyを保つことを検証する.
+
+    Returns:
+        None: Status集合とreplay download surface valueを検証する.
+    """
     assert {status.value for status in VerificationStatus} == {
         "pass",
         "fail",
@@ -28,6 +35,11 @@ def test_verification_status_values_match_stable_reporting_vocabulary() -> None:
 
 
 def test_common_result_model_covers_surface_evidence_scope_and_target() -> None:
+    """Common result modelがtargetとmandatory evidenceを保持することを検証する.
+
+    Returns:
+        None: PASS resultを含むrunがfailedにならず入力objectを保持することを検証する.
+    """
     target = StableTarget(
         base_url="http://127.0.0.1:8000",
         host_identity="athena.localhost",
@@ -57,6 +69,11 @@ def test_common_result_model_covers_surface_evidence_scope_and_target() -> None:
 
 
 def test_mandatory_failure_fails_run() -> None:
+    """Mandatory surface failureがverification runを失敗にすることを検証する.
+
+    Returns:
+        None: Surface resultとrun resultのfails_run判定を検証する.
+    """
     result = SurfaceResult(
         surface=StableSurface.SCORE_SUBMIT,
         status=VerificationStatus.FAIL,
@@ -73,6 +90,11 @@ def test_mandatory_failure_fails_run() -> None:
 
 
 def test_optional_unavailable_and_skip_do_not_fail_run() -> None:
+    """Optional unavailable/skip resultがverification runを失敗にしないことを検証する.
+
+    Returns:
+        None: Optional resultごとのfails_runとaggregate failed判定を検証する.
+    """
     results = (
         SurfaceResult(
             surface=StableSurface.GETSCORES,
@@ -99,6 +121,11 @@ def test_optional_unavailable_and_skip_do_not_fail_run() -> None:
 
 
 def test_secret_probe_input_is_kept_out_of_reportable_diagnostic_summary() -> None:
+    """Secret probe inputがreportable diagnostic representationへ漏れないことを検証する.
+
+    Returns:
+        None: Password, hash, token, raw replay valueがdiagnostic reprに含まれないことを検証する.
+    """
     secret_input = SecretProbeInput(
         "password-value",
         "hash-value",
@@ -122,6 +149,12 @@ def test_secret_probe_input_is_kept_out_of_reportable_diagnostic_summary() -> No
 
 
 def test_replay_download_evidence_models_share_verification_vocabulary() -> None:
+    """Replay download evidence modelが共通verification vocabularyを共有することを検証する.
+
+    Returns:
+        None: Route, response, body decision, blob diagnosticのsurfaceとevidence metadataを
+            検証する.
+    """
     route_contract = models.ReplayDownloadTargetRouteContract(
         primary_route="/web/osu-getreplay.php",
         primary_route_observed_in_target_client_traffic=True,
@@ -272,6 +305,11 @@ def test_replay_download_evidence_models_share_verification_vocabulary() -> None
 
 
 def test_replay_download_reportable_models_exclude_secret_like_fields() -> None:
+    """Replay downloadのreportable modelがsecret-like fieldを公開しないことを検証する.
+
+    Returns:
+        None: Field集合とmetadata representationからsecret-like valueが除外されることを検証する.
+    """
     forbidden_field_names = {
         "password",
         "password_hash",

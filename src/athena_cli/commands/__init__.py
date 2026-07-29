@@ -1,1 +1,1 @@
-"""Command groups for the Athena management CLI."""
+"""Athena管理CLIのcommand groupを提供する."""

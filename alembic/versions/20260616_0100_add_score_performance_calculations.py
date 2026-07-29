@@ -1,4 +1,4 @@
-"""Add score performance calculation tables.
+"""score performance calculation保存用schemaを作成するmigration.
 
 Revision ID: 20260616_0100
 Revises: 20260613_0023
@@ -19,6 +19,16 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """Performance calculation, recalculation batch, work itemのtableとindexを作成する.
+
+    Returns:
+        None: performance計算と再計算queueのdurable schemaを作成したことを示す.
+
+    Notes:
+        `postgresql_where=sa.text("is_current = true")`はpartial index predicateをAlembicへ
+        伝えるPostgreSQL DDL fragmentであり, SQLAlchemy APIが要求するtextual expressionとして
+        保持する.
+    """
     op.create_table(
         "score_performance_calculations",
         sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
@@ -195,6 +205,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Performance calculationとrecalculation queueのschemaを依存順で削除する.
+
+    Returns:
+        None: work item, batch, calculation tableと関連indexを削除したことを示す.
+    """
     op.drop_index(
         "idx_performance_recalculation_work_items_score_reason",
         table_name="performance_recalculation_work_items",

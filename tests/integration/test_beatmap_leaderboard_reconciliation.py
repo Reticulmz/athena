@@ -1,4 +1,7 @@
-"""Integration tests for leaderboard reconciliation public correctness."""
+"""Leaderboard reconciliation後のstable public出力を検証するintegration test.
+
+現在の可視性filterとbeatmap状態でrebuildが収束することを確認する.
+"""
 
 from __future__ import annotations
 
@@ -75,6 +78,16 @@ _LEADERBOARD_VISIBLE_ROLE = Role(
 
 @dataclass(frozen=True, slots=True)
 class _StableScoreRow:
+    """Stable getscores responseから取得したscore rowの必要項目.
+
+    Attributes:
+        score_id (int): stable responseに含まれるscore識別子.
+        username (str): scoreを送信したuser名.
+        score (int): stable responseに含まれるscore値.
+        user_id (int): scoreを送信したuser識別子.
+        rank (int): leaderboard内の順位.
+    """
+
     score_id: int
     username: str
     score: int
@@ -84,6 +97,14 @@ class _StableScoreRow:
 
 @contextmanager
 def _test_env() -> Generator[None]:
+    """In-memory app作成に必要なtest環境変数を一時設定する.
+
+    Yields:
+        Generator[None]: test環境変数が設定されたcontext本体.
+
+    Notes:
+        context終了時に既存値を復元し, 未設定だった値だけを削除する.
+    """
     old_env = os.environ.get("ENVIRONMENT")
     old_domain = os.environ.get("DOMAIN")
     os.environ["ENVIRONMENT"] = "test"
@@ -104,6 +125,15 @@ def _test_env() -> Generator[None]:
 
 
 async def _seed_user_with_session(app: Starlette, *, country: str = "JP") -> int:
+    """Stable getscores用の認証済み可視userを作成する.
+
+    Args:
+        app (Starlette): in-memory依存graphを持つtest application.
+        country (str): sessionとuserに設定する2文字のcountry code.
+
+    Returns:
+        int: 作成されたuser識別子.
+    """
     password_service = await resolve_dependency(app, PasswordService)
     session_store = await resolve_dependency(app, SessionStore)
 
@@ -142,6 +172,15 @@ async def _seed_user_with_session(app: Starlette, *, country: str = "JP") -> int
 
 
 async def _assign_leaderboard_visible_role(app: Starlette, user_id: int) -> None:
+    """Userへleaderboard表示対象のroleを割り当てる.
+
+    Args:
+        app (Starlette): role repositoryを解決するtest application.
+        user_id (int): 可視roleを割り当てるuser識別子.
+
+    Returns:
+        None: role割り当てをcommitした後に値を返さない.
+    """
     await seed_role(app, _LEADERBOARD_VISIBLE_ROLE)
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
@@ -150,6 +189,15 @@ async def _assign_leaderboard_visible_role(app: Starlette, user_id: int) -> None
 
 
 async def _remove_leaderboard_visible_roles(app: Starlette, user_id: int) -> None:
+    """Userから全roleを外してleaderboard上で非表示にする.
+
+    Args:
+        app (Starlette): role repositoryを解決するtest application.
+        user_id (int): roleを除去するuser識別子.
+
+    Returns:
+        None: roleの除去をcommitした後に値を返さない.
+    """
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
         await uow.roles.set_roles_for_user(user_id, ())
@@ -162,6 +210,16 @@ async def _seed_known_beatmap(
     checksum: str = _KNOWN_CHECKSUM,
     status: BeatmapRankStatus = BeatmapRankStatus.RANKED,
 ) -> None:
+    """Getscoresで解決できるbeatmapset snapshotを保存する.
+
+    Args:
+        app (Starlette): beatmap persistenceを解決するtest application.
+        checksum (str): 保存するbeatmapのMD5 checksum.
+        status (BeatmapRankStatus): stable responseで評価するbeatmap rank status.
+
+    Returns:
+        None: beatmapset snapshotを保存した後に値を返さない.
+    """
     beatmap = Beatmap(
         id=75,
         beatmapset_id=1,
@@ -210,6 +268,19 @@ async def _seed_score_with_projection(
     user_id: int,
     checksum: str = _KNOWN_CHECKSUM,
 ) -> int:
+    """可視scoreと対応するleaderboard projectionを保存する.
+
+    Args:
+        app (Starlette): scoreとprojectionを永続化するtest application.
+        user_id (int): scoreを所有するuser識別子.
+        checksum (str): scoreとprojection scopeに設定するbeatmap checksum.
+
+    Returns:
+        int: 保存されたscore識別子.
+
+    Raises:
+        AssertionError: repositoryが作成したscoreに識別子を割り当てない場合.
+    """
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
         score = await uow.scores.create(
@@ -264,6 +335,18 @@ async def _seed_score_with_projection(
 
 
 async def _run_user_rebuild_twice(app: Starlette, *, user_id: int) -> None:
+    """同一userのleaderboard rebuildを2回実行して収束を確認する.
+
+    Args:
+        app (Starlette): rebuild use-caseを解決するtest application.
+        user_id (int): rebuild対象のuser識別子.
+
+    Returns:
+        None: 2回のrebuildがtargetを見つけたことをassertして終了する.
+
+    Raises:
+        AssertionError: いずれかのrebuildが対象userを見つけない場合.
+    """
     use_case = await resolve_dependency(app, RebuildBeatmapLeaderboardsForUserUseCase)
     for index in range(2):
         result = await use_case.execute(
@@ -276,6 +359,17 @@ async def _run_user_rebuild_twice(app: Starlette, *, user_id: int) -> None:
 
 
 async def _run_beatmapset_rebuild_twice(app: Starlette) -> None:
+    """既知beatmapsetのleaderboard rebuildを2回実行して収束を確認する.
+
+    Args:
+        app (Starlette): rebuild use-caseを解決するtest application.
+
+    Returns:
+        None: 2回のrebuildがtargetを見つけたことをassertして終了する.
+
+    Raises:
+        AssertionError: いずれかのrebuildが対象beatmapsetを見つけない場合.
+    """
     use_case = await resolve_dependency(app, RebuildBeatmapLeaderboardsForBeatmapsetUseCase)
     for index in range(2):
         result = await use_case.execute(
@@ -291,6 +385,14 @@ def _query(
     *,
     checksum: str = _KNOWN_CHECKSUM,
 ) -> dict[str, str]:
+    """Stable getscores endpointへ渡す認証済みquery parameterを作成する.
+
+    Args:
+        checksum (str): リクエストするbeatmap checksum.
+
+    Returns:
+        dict[str, str]: stable getscores endpointの必要fieldを持つquery parameter.
+    """
     return {
         "c": checksum,
         "us": _TEST_USERNAME,
@@ -304,6 +406,18 @@ def _query(
 
 
 def _get_header(client: TestClient, *, checksum: str = _KNOWN_CHECKSUM) -> GetscoresHeader:
+    """Getscores endpointからheader形式のresponseを取得して解析する.
+
+    Args:
+        client (TestClient): stable legacy endpointへrequestするclient.
+        checksum (str): 取得するbeatmap checksum.
+
+    Returns:
+        GetscoresHeader: 成功したheader responseの解析結果.
+
+    Raises:
+        AssertionError: HTTP status, parser error, またはresponse kindが期待と異なる場合.
+    """
     response = client.get(
         "/web/osu-osz2-getscores.php",
         params=_query(checksum=checksum),
@@ -322,6 +436,18 @@ def _assert_not_submitted_response(
     *,
     checksum: str = _KNOWN_CHECKSUM,
 ) -> None:
+    """Getscores endpointがnot-submitted responseを返すことを検証する.
+
+    Args:
+        client (TestClient): stable legacy endpointへrequestするclient.
+        checksum (str): not-submittedとして期待するbeatmap checksum.
+
+    Returns:
+        None: raw responseと解析結果をassertした後に値を返さない.
+
+    Raises:
+        AssertionError: HTTP status, raw response, または解析結果が期待と異なる場合.
+    """
     response = client.get(
         "/web/osu-osz2-getscores.php",
         params=_query(checksum=checksum),
@@ -336,16 +462,52 @@ def _assert_not_submitted_response(
 
 
 def _score_rows(header: GetscoresHeader) -> tuple[_StableScoreRow, ...]:
+    """Header内の全score rowをtest用の構造値へ変換する.
+
+    Args:
+        header (GetscoresHeader): stable getscores responseのheader部分.
+
+    Returns:
+        tuple[_StableScoreRow, ...]: response順を保持した解析済みscore row列.
+
+    Raises:
+        AssertionError: いずれかのscore rowがstable field数を満たさない場合.
+        ValueError: score row内の整数fieldを変換できない場合.
+    """
     return tuple(_parse_score_row(row) for row in header.score_rows)
 
 
 def _personal_best_row(header: GetscoresHeader) -> _StableScoreRow | None:
+    """Headerのpersonal best rowを存在する場合だけ構造値へ変換する.
+
+    Args:
+        header (GetscoresHeader): stable getscores responseのheader部分.
+
+    Returns:
+        _StableScoreRow | None: 解析済みpersonal best row, または未送信時はNone.
+
+    Raises:
+        AssertionError: personal best rowがstable field数を満たさない場合.
+        ValueError: personal best row内の整数fieldを変換できない場合.
+    """
     if header.personal_best_row is None:
         return None
     return _parse_score_row(header.personal_best_row)
 
 
 def _parse_score_row(row: str) -> _StableScoreRow:
+    """Stable getscoresの1行を必要なscore属性へ分解する.
+
+    Args:
+        row (str): pipe区切りのstable score row.
+
+    Returns:
+        _StableScoreRow: score, user, rankを持つ解析済みrow.
+
+    Raises:
+        AssertionError: rowが16 fieldでない場合.
+        ValueError: score識別子, score値, user識別子, またはrankを整数へ変換できない場合.
+    """
     fields = row.split("|")
     assert len(fields) == 16
     return _StableScoreRow(
@@ -358,6 +520,14 @@ def _parse_score_row(row: str) -> _StableScoreRow:
 
 
 def test_pending_rebuild_public_output_uses_current_filters_and_rebuild_converges() -> None:
+    """Pending rebuild中も現在filterを反映しrebuild後に出力が収束することを検証する.
+
+    Returns:
+        None: stable public responseと2回のrebuild後のresponseをassertして終了する.
+
+    Raises:
+        AssertionError: 可視性, rank status, checksum変更, またはrebuild収束結果が期待と異なる場合.
+    """
     with _test_env():
         app = create_app()
         with TestClient(
@@ -367,6 +537,11 @@ def test_pending_rebuild_public_output_uses_current_filters_and_rebuild_converge
         ) as client:
 
             async def _setup() -> tuple[int, int]:
+                """可視user, ranked beatmap, およびprojection済みscoreを準備する.
+
+                Returns:
+                    tuple[int, int]: viewer user識別子と初期score識別子.
+                """
                 viewer_id = await _seed_user_with_session(app)
                 await _seed_known_beatmap(app)
                 score_id = await _seed_score_with_projection(app, user_id=viewer_id)

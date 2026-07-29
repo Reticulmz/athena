@@ -1,4 +1,4 @@
-"""Chat channel access policies."""
+"""Chat channelのrole based access policyを定義するmodule."""
 
 from __future__ import annotations
 
@@ -14,7 +14,12 @@ if TYPE_CHECKING:
 
 
 class ChannelPermission(Enum):
-    """Permission checked against channel role overrides."""
+    """Channel role overrideに照合するpermission種別を表す閉集合.
+
+    Attributes:
+        READ (str): channelのread permissionを示す値.
+        WRITE (str): channelへのmessage送信permissionを示す値.
+    """
 
     READ = "read"
     WRITE = "write"
@@ -27,10 +32,19 @@ def has_channel_permission(
     overrides: Iterable[ChannelRoleOverride],
     permission: ChannelPermission,
 ) -> bool:
-    """Return whether a user can read or write a channel.
+    """Userがchannelで要求されたpermissionを持つか判定する.
 
-    Channels with no matching overrides are fail-closed unless the user has the
-    explicit ACL bypass privilege.
+    Args:
+        user_privileges (int): userに付与されたprivilege bitmask.
+        user_role_ids (Iterable[int]): userに割り当てられたrole ID群.
+        overrides (Iterable[ChannelRoleOverride]): channelに設定されたrole override群.
+        permission (ChannelPermission): 判定するreadまたはwrite permission.
+
+    Returns:
+        bool: BYPASS_CHANNEL_ACLを持つか,一致するrole overrideが要求permissionを許可するとTrue.
+
+    Notes:
+        一致するoverrideがない場合はfail-closedでFalseを返す.
     """
     if has_privilege(user_privileges, Privileges.BYPASS_CHANNEL_ACL):
         return True

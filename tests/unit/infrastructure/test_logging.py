@@ -1,4 +1,4 @@
-"""Tests for infrastructure/logging.py — structlog initialization and sensitive field masking."""
+"""infrastructure loggingの初期化と機密field masking契約を検証するmodule."""
 
 from __future__ import annotations
 
@@ -21,7 +21,11 @@ if TYPE_CHECKING:
 
 @pytest.fixture(autouse=True)
 def reset_logging() -> Iterator[None]:
-    """Reset stdlib root logger and structlog config between tests."""
+    """各testの前後でstdlib root loggerとstructlog設定を復元する.
+
+    Yields:
+        None: testを実行可能なreset済みlogging環境を提供する.
+    """
     root = logging.getLogger()
     # Save original state
     original_handlers = root.handlers[:]
@@ -47,36 +51,80 @@ def reset_logging() -> Iterator[None]:
 
 
 class StructlogInfoLogger(Protocol):
-    def info(self, event: str, **kwargs: object) -> object: ...
+    """testが使用するstructlog info loggerの最小contractを表す.
+
+    `info`はevent名と任意fieldを受け取り, 記録backend固有のresultを返す.
+    """
+
+    def info(self, event: str, **kwargs: object) -> object:
+        """Eventとstructured fieldを記録する.
+
+        Args:
+            event (str): 記録するevent名.
+            **kwargs (object): eventへ付加するstructured field.
+
+        Returns:
+            object: structlog backendが返すresult.
+        """
+        ...
 
 
 def _mask_event_fields(event_dict: dict[str, object]) -> dict[str, object]:
+    """Mask processorへevent dictionaryを渡しresultをtyped値として返す.
+
+    Args:
+        event_dict (dict[str, object]): masking対象のstructured event field.
+
+    Returns:
+        dict[str, object]: processorが返した同一または更新済みevent dictionary.
+    """
     logger = cast("structlog.types.WrappedLogger", object())
     masked = mask_sensitive_fields(logger, "info", event_dict)
     return cast("dict[str, object]", masked)
 
 
 def _get_test_logger() -> StructlogInfoLogger:
+    """現在のstructlog設定に従うtest用info loggerを取得する.
+
+    Returns:
+        StructlogInfoLogger: event記録に使うtyped logger.
+    """
     return cast("StructlogInfoLogger", structlog.get_logger())
 
 
 def _decode_last_json_line(content: str) -> dict[str, object]:
+    """JSON Lines出力の最終行をobject dictionaryとして復号する.
+
+    Args:
+        content (str): 1行以上のJSON Lines形式logging出力.
+
+    Returns:
+        dict[str, object]: 最終行から復号したstructured event.
+    """
     decoded = cast("object", json.loads(content.strip().split("\n")[-1]))
     assert isinstance(decoded, dict)
     return cast("dict[str, object]", decoded)
 
 
 class TestMaskSensitiveFields:
-    """Tests for the mask_sensitive_fields processor."""
+    """mask_sensitive_fields processorの機密field置換契約を検証するtest群."""
 
     def test_masks_password_key(self) -> None:
-        """password key is replaced with '***'."""
+        """Password fieldを含むeventで値がmaskへ置換されることを検証する.
+
+        Returns:
+            None: password fieldのobservable masking結果を検証して完了する.
+        """
         event_dict: dict[str, object] = {"event": "login", "password": "secret123"}
         result = _mask_event_fields(event_dict)
         assert result["password"] == "***"
 
     def test_masks_password_hash_key(self) -> None:
-        """password_hash key is replaced with '***'."""
+        """password_hash fieldを含むeventで値がmaskへ置換されることを検証する.
+
+        Returns:
+            None: password_hash fieldのobservable masking結果を検証して完了する.
+        """
         event_dict: dict[str, object] = {
             "event": "login",
             "password_hash": "abc123hash",
@@ -85,7 +133,11 @@ class TestMaskSensitiveFields:
         assert result["password_hash"] == "***"
 
     def test_masks_password_md5_key(self) -> None:
-        """password_md5 key is replaced with '***'."""
+        """password_md5 fieldを含むeventで値がmaskへ置換されることを検証する.
+
+        Returns:
+            None: password_md5 fieldのobservable masking結果を検証して完了する.
+        """
         event_dict: dict[str, object] = {
             "event": "login",
             "password_md5": "d41d8cd98f",
@@ -94,7 +146,11 @@ class TestMaskSensitiveFields:
         assert result["password_md5"] == "***"
 
     def test_masks_multiple_sensitive_keys(self) -> None:
-        """All sensitive keys are masked in a single event_dict."""
+        """複数の機密fieldを含むeventで全値がmaskされることを検証する.
+
+        Returns:
+            None: すべての対象fieldのobservable masking結果を検証して完了する.
+        """
         event_dict: dict[str, object] = {
             "event": "login",
             "password": "pw",
@@ -107,7 +163,11 @@ class TestMaskSensitiveFields:
         assert result["password_md5"] == "***"
 
     def test_preserves_non_sensitive_keys(self) -> None:
-        """Non-sensitive keys are not modified."""
+        """機密でないfieldを含むeventで元の値が維持されることを検証する.
+
+        Returns:
+            None: usernameとIP addressの非変更結果を検証して完了する.
+        """
         event_dict: dict[str, object] = {
             "event": "login",
             "username": "player1",
@@ -118,7 +178,11 @@ class TestMaskSensitiveFields:
         assert result["ip"] == "127.0.0.1"
 
     def test_returns_event_dict(self) -> None:
-        """Processor returns the event_dict (structlog protocol)."""
+        """Processorがstructlog protocolどおりinput event dictionaryを返すことを検証する.
+
+        Returns:
+            None: inputとのidentityを検証して完了する.
+        """
         event_dict: dict[str, object] = {"event": "test"}
         result = _mask_event_fields(event_dict)
         assert result is event_dict
@@ -128,22 +192,34 @@ class TestMaskSensitiveFields:
 
 
 class TestSetupLogging:
-    """Tests for setup_logging configuration."""
+    """setup_loggingが構成するloggerとhandlerの契約を検証するtest群."""
 
     def test_configures_root_logger_level(self) -> None:
-        """Root logger level is set from config.log_level."""
+        """DEBUG log levelを指定したconfigでroot loggerのlevelが設定されることを検証する.
+
+        Returns:
+            None: root loggerのDEBUG levelを検証して完了する.
+        """
         config = make_app_config(log_level="DEBUG")
         setup_logging(config)
         assert logging.getLogger().level == logging.DEBUG
 
     def test_configures_root_logger_level_warning(self) -> None:
-        """Root logger level correctly handles WARNING."""
+        """WARNING log levelを指定したconfigでroot loggerのlevelが設定されることを検証する.
+
+        Returns:
+            None: root loggerのWARNING levelを検証して完了する.
+        """
         config = make_app_config(log_level="WARNING")
         setup_logging(config)
         assert logging.getLogger().level == logging.WARNING
 
     def test_adds_console_handler(self) -> None:
-        """A StreamHandler for console output is always added."""
+        """既定configでconsole出力用StreamHandlerが追加されることを検証する.
+
+        Returns:
+            None: non-file StreamHandlerの存在を検証して完了する.
+        """
         config = make_app_config()
         setup_logging(config)
         root = logging.getLogger()
@@ -156,7 +232,14 @@ class TestSetupLogging:
         assert stream_handler_count >= 1
 
     def test_adds_file_handler_always(self, tmp_path: Path) -> None:
-        """FileHandler is always added to log_dir/latest.jsonl."""
+        """指定log directoryでlatest.jsonl用FileHandlerが追加されることを検証する.
+
+        Args:
+            tmp_path (Path): test固有の書き込み可能なlog directory.
+
+        Returns:
+            None: FileHandlerの個数を検証して完了する.
+        """
         config = make_app_config(log_dir=str(tmp_path))
         setup_logging(config)
         root = logging.getLogger()
@@ -164,7 +247,14 @@ class TestSetupLogging:
         assert len(file_handlers) == 1
 
     def test_json_file_handler_writes_json(self, tmp_path: Path) -> None:
-        """JSON file handler writes valid JSON lines to latest.jsonl."""
+        """JSON file handlerがlatest.jsonlへparse可能なeventを書き込むことを検証する.
+
+        Args:
+            tmp_path (Path): test固有の書き込み可能なlog directory.
+
+        Returns:
+            None: JSON Linesのevent fieldとvalueを検証して完了する.
+        """
         config = make_app_config(log_dir=str(tmp_path))
         setup_logging(config)
 
@@ -179,7 +269,14 @@ class TestSetupLogging:
         assert parsed["key"] == "value"
 
     def test_second_setup_logging_does_not_rotate_active_session(self, tmp_path: Path) -> None:
-        """A later setup in the same process session does not archive the active latest.jsonl."""
+        """同一process内の再設定でactive latest.jsonlをarchiveしないことを検証する.
+
+        Args:
+            tmp_path (Path): preexisting log fileを配置するtest directory.
+
+        Returns:
+            None: active content維持とarchive個数を検証して完了する.
+        """
         config = make_app_config(log_dir=str(tmp_path))
         latest_path = tmp_path / "latest.jsonl"
         _ = latest_path.write_text('{"event": "previous_session"}\n')
@@ -194,7 +291,14 @@ class TestSetupLogging:
         assert len(list(tmp_path.glob("*.jsonl.gz"))) == 1
 
     def test_json_write_failure_does_not_crash(self, tmp_path: Path) -> None:
-        """If JSON file path is not writable, setup_logging warns but continues."""
+        """書き込み不能なJSON log pathでwarningを出してloggingを継続することを検証する.
+
+        Args:
+            tmp_path (Path): fileをdirectoryとして誤用するtest path.
+
+        Returns:
+            None: UserWarningとconsole logging継続を検証して完了する.
+        """
         blocked_log_dir = tmp_path / "not-a-directory"
         _ = blocked_log_dir.write_text("existing file")
         config = make_app_config(
@@ -211,7 +315,11 @@ class TestSetupLogging:
         _ = logger.info("still_works")
 
     def test_structlog_get_logger_works_after_setup(self) -> None:
-        """structlog.get_logger() returns a usable logger after setup."""
+        """設定後のstructlog loggerがeventを記録できることを検証する.
+
+        Returns:
+            None: captureしたeventとuser fieldを検証して完了する.
+        """
         config = make_app_config()
         setup_logging(config)
         logger = _get_test_logger()
@@ -226,7 +334,11 @@ class TestSetupLogging:
         assert cap_logs[0]["user"] == "test"
 
     def test_overrides_uvicorn_error_logger_handlers(self) -> None:
-        """uvicorn.error logger handlers are overridden with structlog formatter."""
+        """uvicorn.error handlerがstructlog formatterへ置換されることを検証する.
+
+        Returns:
+            None: handlerのProcessorFormatter設定を検証して完了する.
+        """
         config = make_app_config()
         setup_logging(config)
         uvicorn_error = logging.getLogger("uvicorn.error")
@@ -237,7 +349,11 @@ class TestSetupLogging:
             assert "ProcessorFormatter" in type(formatter).__name__
 
     def test_overrides_uvicorn_access_logger_handlers(self) -> None:
-        """uvicorn.access logger handlers are overridden with structlog formatter."""
+        """uvicorn.access handlerがstructlog formatterへ置換されることを検証する.
+
+        Returns:
+            None: handlerのProcessorFormatter設定を検証して完了する.
+        """
         config = make_app_config()
         setup_logging(config)
         uvicorn_access = logging.getLogger("uvicorn.access")
@@ -248,7 +364,14 @@ class TestSetupLogging:
             assert "ProcessorFormatter" in type(formatter).__name__
 
     def test_mask_sensitive_fields_in_processor_chain(self, tmp_path: Path) -> None:
-        """Sensitive fields are masked when logging through the full JSON output chain."""
+        """完全なJSON processor chainでも機密fieldがmaskされることを検証する.
+
+        Args:
+            tmp_path (Path): JSON outputを保存するtest固有directory.
+
+        Returns:
+            None: serialized eventのmasked passwordと維持されたusernameを検証して完了する.
+        """
         config = make_app_config(log_dir=str(tmp_path))
         setup_logging(config)
 

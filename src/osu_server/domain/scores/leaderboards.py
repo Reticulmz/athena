@@ -1,4 +1,4 @@
-"""Beatmap leaderboard domain policy."""
+"""beatmap leaderboard の順位比較と scope を表す domain 値を定義する."""
 
 from __future__ import annotations
 
@@ -13,13 +13,27 @@ if TYPE_CHECKING:
 
 @dataclass(slots=True, frozen=True)
 class ScoreRankKey:
-    """Score-priority ordering key for Beatmap Leaderboard candidates."""
+    """beatmap leaderboard 候補 score の順位比較キーを表す.
+
+    Attributes:
+        score (int): 降順で比較する非負の score 値.
+        submitted_at (datetime): 同 score 時に昇順で比較する送信日時.
+        score_id (int): 同日時時に昇順で比較する正の score ID.
+    """
 
     score: int
     submitted_at: datetime
     score_id: int
 
     def __post_init__(self) -> None:
+        """順位比較に使う score と score ID の範囲を検証する.
+
+        Returns:
+            None: scoreとscore_idの検証を完了し, 呼び出し側へ値を返さずに終了する.
+
+        Raises:
+            ValueError: score が負,または score_id が 0 以下の場合.
+        """
         if self.score < 0:
             msg = "score must not be negative"
             raise ValueError(msg)
@@ -29,7 +43,14 @@ class ScoreRankKey:
 
     @property
     def ordering_key(self) -> tuple[int, datetime, int]:
-        """Return a sortable key for score desc, submitted_at asc, score_id asc."""
+        """Score 降順,送信日時昇順,score ID 昇順の sort key を返す.
+
+        Returns:
+            tuple[int, datetime, int]: score を負にした値,submitted_at,score_id の順の key.
+
+        Notes:
+            Python の昇順 sort に渡すことで score の大きい候補を先頭に置ける.
+        """
         return (-self.score, self.submitted_at, self.score_id)
 
 
@@ -48,6 +69,14 @@ class LeaderboardScope:
     playstyle: Playstyle
 
     def __post_init__(self) -> None:
+        """Leaderboard scope の beatmap ID が正であることを検証する.
+
+        Returns:
+            None: beatmap_idの検証を完了し, 呼び出し側へ値を返さずに終了する.
+
+        Raises:
+            ValueError: beatmap_id が 0 以下の場合.
+        """
         if self.beatmap_id <= 0:
             msg = "beatmap_id must be positive"
             raise ValueError(msg)

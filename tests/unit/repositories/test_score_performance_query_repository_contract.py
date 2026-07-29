@@ -1,4 +1,4 @@
-"""Query repository contract tests for score performance read models."""
+"""Score performance query repositoryのread model契約を検証するtests."""
 
 from __future__ import annotations
 
@@ -27,6 +27,14 @@ _NOW = datetime(2026, 6, 16, 0, 0, 0, tzinfo=UTC)
 
 
 async def test_current_read_uses_only_current_calculation() -> None:
+    """Current calculationだけをscoreのread結果に採用する契約を検証する.
+
+    同じscoreのcurrent calculationとsuperseded calculationをstateへ置き,
+    current IDのcalculationだけが返ることを確認する.
+
+    Returns:
+        None: current calculationの選択結果を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _factory_with_state()
     state = factory.snapshot()
     current = _calculation(
@@ -56,6 +64,14 @@ async def test_current_read_uses_only_current_calculation() -> None:
 
 
 async def test_candidate_selection_reports_dry_run_counts_and_filters() -> None:
+    """再計算candidate selectionが理由別countとfilter結果を返す契約を検証する.
+
+    version差, formula差, unavailable, stale, 未計算のscoreを同一beatmapへ置き,
+    各理由を1件ずつ返すことを確認する.
+
+    Returns:
+        None: dry run candidateとreason countを検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _factory_with_state()
     _seed_scores(factory)
     state = factory.snapshot()
@@ -139,6 +155,14 @@ async def test_candidate_selection_reports_dry_run_counts_and_filters() -> None:
 
 
 async def test_candidate_selection_applies_limit_and_excludes_unavailable_by_default() -> None:
+    """Candidate selectionがlimitを適用しunavailableを既定で除外する契約を検証する.
+
+    未計算scoreとunavailable calculationを用意し,
+    include_unavailable=Falseかつlimit 1で未計算scoreだけが返ることを確認する.
+
+    Returns:
+        None: limitとunavailable既定filterを検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _factory_with_state()
     _seed_scores(factory)
     state = factory.snapshot()
@@ -173,14 +197,35 @@ async def test_candidate_selection_applies_limit_and_excludes_unavailable_by_def
 
 
 def _factory_with_state() -> InMemoryUnitOfWorkFactory:
+    """独立したInMemoryCommandRepositoryStateを持つfactoryを構築する.
+
+    Returns:
+        InMemoryUnitOfWorkFactory: score performance query用の空state factory.
+    """
     return InMemoryUnitOfWorkFactory(InMemoryCommandRepositoryState())
 
 
 def _repository(factory: InMemoryUnitOfWorkFactory) -> InMemoryScorePerformanceQueryRepository:
+    """factoryを参照するscore performance query repositoryを構築する.
+
+    Args:
+        factory (InMemoryUnitOfWorkFactory): read modelを供給するstate factory.
+
+    Returns:
+        InMemoryScorePerformanceQueryRepository: fixture stateを読むquery repository.
+    """
     return InMemoryScorePerformanceQueryRepository(factory)
 
 
 def _seed_scores(factory: InMemoryUnitOfWorkFactory) -> None:
+    """Candidate selectionの各除外条件を含むScore fixtureをstateへ保存する.
+
+    Args:
+        factory (InMemoryUnitOfWorkFactory): snapshotをcommitするstate factory.
+
+    Returns:
+        None: score fixtureを保存して完了し, 呼び出し側へ値を返さない.
+    """
     state = factory.snapshot()
     scores = (
         _score(score_id=1, user_id=10, beatmap_id=100),
@@ -206,6 +251,18 @@ def _score(
     passed: bool = True,
     beatmap_status: str = "ranked",
 ) -> Score:
+    """Candidate selection用の保存済みScore fixtureを構築する.
+
+    Args:
+        score_id (int): state mapで使うscore ID.
+        user_id (int): scoreを提出したuser ID.
+        beatmap_id (int): scoreが属するbeatmap ID.
+        passed (bool): scoreがpassedとして集計対象か.
+        beatmap_status (str): submission時のbeatmap rank status値.
+
+    Returns:
+        Score: 指定filter fieldを持つosu vanillaの保存済みscore.
+    """
     return Score(
         id=score_id,
         user_id=user_id,
@@ -245,6 +302,22 @@ def _calculation(
     beatmap_file_checksum_md5: str = "a" * 32,
     unavailable_reason: str | None = None,
 ) -> PerformanceCalculation:
+    """currentまたはhistorical状態を表すPerformanceCalculation fixtureを構築する.
+
+    Args:
+        calculation_id (int): calculationを識別するID.
+        score_id (int): calculationに関連付けるscore ID.
+        state (PerformanceCalculationState): 作成するlifecycle状態.
+        is_current (bool): scoreのcurrent calculationか.
+        calculator_version (str): calculationを生成したcalculator version.
+        formula_profile (FormulaProfile): performance formula profile.
+        beatmap_file_attachment_id (int): completed calculationが参照するattachment ID.
+        beatmap_file_checksum_md5 (str): completed calculationが参照するfile checksum.
+        unavailable_reason (str | None): unavailable状態の理由. Noneなら理由を持たない.
+
+    Returns:
+        PerformanceCalculation: 指定したcandidate理由を生むcalculation fixture.
+    """
     return PerformanceCalculation(
         id=calculation_id,
         score_id=score_id,
@@ -272,6 +345,16 @@ def _attachment(
     blob_id: int,
     checksum_md5: str,
 ) -> BeatmapFileAttachment:
+    """Beatmap file freshness比較用のattachment fixtureを構築する.
+
+    Args:
+        beatmap_id (int): attachmentが属するbeatmap ID.
+        blob_id (int): attachmentが参照するblob ID.
+        checksum_md5 (str): current fileを識別するMD5 checksum.
+
+    Returns:
+        BeatmapFileAttachment: official sourceとして検証済みのfile attachment.
+    """
     return BeatmapFileAttachment(
         beatmap_id=beatmap_id,
         blob_id=blob_id,

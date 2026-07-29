@@ -1,4 +1,7 @@
-"""スコア submit endpoint の E2E integration test。"""
+"""Stable score submit endpointのE2E contractを検証するintegration test.
+
+multipart request, projection更新, terminal reject responseの互換性を確認する.
+"""
 
 from __future__ import annotations
 
@@ -54,6 +57,11 @@ if TYPE_CHECKING:
 
 
 def _resolved_beatmap() -> Beatmap:
+    """Score submitで解決済みとみなすranked beatmapを作成する.
+
+    Returns:
+        Beatmap: fixed checksumとranked statusを持つtest beatmap.
+    """
     return Beatmap(
         id=1,
         beatmapset_id=10,
@@ -82,6 +90,11 @@ def _resolved_beatmap() -> Beatmap:
 
 
 def _eligible_result() -> BeatmapResolveResult:
+    """Score受理を許可するbeatmap resolve resultを作成する.
+
+    Returns:
+        BeatmapResolveResult: ranked beatmapとleaderboard適格eligibilityを持つ解決結果.
+    """
     return BeatmapResolveResult(
         beatmap=_resolved_beatmap(),
         beatmapset=None,
@@ -111,11 +124,21 @@ def _eligible_result() -> BeatmapResolveResult:
 
 
 class MockAuthService:
-    """常に認可成功を返す authorization fake。"""
+    """常に認可成功を返すscore submission authorization fake."""
 
     async def authorize_submission(
         self, password_md5: str, payload_username: str, payload_user_id: int
     ) -> AuthorizationContext:
+        """Password値に関係なくpayload identityを認可済みとして返す.
+
+        Args:
+            password_md5 (str): stable requestから渡されるMD5 password, fakeでは使用しない.
+            payload_username (str): payload内のuser名.
+            payload_user_id (int): payload内のuser識別子.
+
+        Returns:
+            AuthorizationContext: session, password, payload identityがすべてvalidの認可結果.
+        """
         _ = password_md5
         return AuthorizationContext(
             user_id=payload_user_id,
@@ -127,36 +150,79 @@ class MockAuthService:
 
 
 class MockBeatmapResolver:
-    """常に eligible な beatmap 解決結果を返す resolver fake。"""
+    """常にeligibleなbeatmap解決結果を返すresolver fake."""
 
     async def resolve_by_beatmap_id(
         self, beatmap_id: int, options: BeatmapResolveOptions | None = None
     ) -> BeatmapResolveResult:
+        """Beatmap識別子の解決を固定eligible resultで模擬する.
+
+        Args:
+            beatmap_id (int): 解決要求されたbeatmap識別子, fakeでは使用しない.
+            options (BeatmapResolveOptions | None): 解決option, fakeでは使用しない.
+
+        Returns:
+            BeatmapResolveResult: score受理を許可する固定解決結果.
+        """
         _ = beatmap_id, options
         return _eligible_result()
 
     async def resolve_by_checksum(
         self, checksum_md5: str, options: BeatmapResolveOptions | None = None
     ) -> BeatmapResolveResult:
+        """Beatmap checksumの解決を固定eligible resultで模擬する.
+
+        Args:
+            checksum_md5 (str): 解決要求されたMD5 checksum, fakeでは使用しない.
+            options (BeatmapResolveOptions | None): 解決option, fakeでは使用しない.
+
+        Returns:
+            BeatmapResolveResult: score受理を許可する固定解決結果.
+        """
         _ = checksum_md5, options
         return _eligible_result()
 
 
 class MockRequest:
-    """結合 test 用の Starlette request fake。"""
+    """Handlerへ直接渡す最小Starlette request fake.
+
+    Attributes:
+        headers (Headers): multipart content typeを持つrequest header.
+        _body (bytes): body()が返すrequest body bytes.
+    """
 
     headers: Headers
     _body: bytes
 
     def __init__(self, body_data: bytes, content_type: str) -> None:
+        """Multipart bodyとcontent type headerを設定する.
+
+        Args:
+            body_data (bytes): body()で返すraw multipart bytes.
+            content_type (str): request headerへ設定するmultipart content type.
+        """
         self.headers = Headers({"content-type": content_type})
         self._body = body_data
 
     async def body(self) -> bytes:
+        """設定済みのraw request bodyを返す.
+
+        Returns:
+            bytes: handlerがmultipartとして解析するbody bytes.
+        """
         return self._body
 
 
 def _request(body_data: bytes, content_type: str) -> Request:
+    """MockRequestをhandler引数として扱うRequest型へcastする.
+
+    Args:
+        body_data (bytes): request fakeへ設定するraw multipart bytes.
+        content_type (str): request fakeへ設定するmultipart content type.
+
+    Returns:
+        Request: ScoreSubmitHandlerへ渡すための構造互換request.
+    """
     return cast("Request", cast("object", MockRequest(body_data, content_type)))
 
 
@@ -166,22 +232,19 @@ def _create_valid_multipart_body(
     replay_data: bytes = b"test_replay_data",
     client_hash: bytes = b"client_hash_example",
 ) -> tuple[bytes, str]:
-    """有効な stable multipart request body を作る。
+    """有効なstable multipart request bodyを作る.
 
     Args:
-        encrypted_payload: score field に入れる暗号化済み payload の dummy bytes。
-        replay_data: replay field に入れる bytes。
-        client_hash: stable client hash field に入れる bytes。
+        encrypted_payload (bytes): score fieldへ入れる暗号化済みpayloadのdummy bytes.
+        replay_data (bytes): replay fieldへ入れるbytes.
+        client_hash (bytes): stable client hash fieldへ入れるbytes.
 
     Returns:
-        multipart body と Content-Type header value。
+        tuple[bytes, str]: multipart bodyとContent-Type header value.
 
-    Raises:
-        例外は送出しない。
-
-    Constraints:
-        encrypted_payload は base64 encode して body に入れる。復号内容は decoder fake が
-        payload_decryptor で決める。
+    Notes:
+        encrypted_payloadはbase64 encodeしてbodyへ入れ,
+        復号内容はdecoder fakeのpayload_decryptorが決める.
     """
     boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
     content_type = f"multipart/form-data; boundary={boundary}"
@@ -220,6 +283,14 @@ def _create_valid_multipart_body(
 def _make_process_score_submission_use_case(
     *, auth_service: ScoreSubmissionAuthorizer
 ) -> ProcessScoreSubmissionUseCase:
+    """In-memory依存を使うscore submission processing use-caseを構築する.
+
+    Args:
+        auth_service (ScoreSubmissionAuthorizer): submitterを認可する実装またはfake.
+
+    Returns:
+        ProcessScoreSubmissionUseCase: handlerがscore, replay, projectionを処理するuse-case.
+    """
     uow_factory = InMemoryUnitOfWorkFactory()
     return ProcessScoreSubmissionUseCase(
         submit_score_use_case=make_submit_score_use_case(uow_factory),
@@ -230,6 +301,11 @@ def _make_process_score_submission_use_case(
 
 
 def _leaderboard_scope() -> BeatmapLeaderboardUserBestScope:
+    """Test userのno-mod global user bestを検索するscopeを作成する.
+
+    Returns:
+        BeatmapLeaderboardUserBestScope: fixed beatmap, user, ruleset, playstyleを持つscope.
+    """
     return BeatmapLeaderboardUserBestScope(
         beatmap_id=1,
         beatmap_checksum="0123456789abcdef0123456789abcdef",
@@ -243,6 +319,14 @@ def _leaderboard_scope() -> BeatmapLeaderboardUserBestScope:
 async def _get_leaderboard_best_score_id(
     uow_factory: InMemoryUnitOfWorkFactory,
 ) -> int | None:
+    """Test userのglobal leaderboard best score識別子を取得する.
+
+    Args:
+        uow_factory (InMemoryUnitOfWorkFactory): global user bestを読むin-memory factory.
+
+    Returns:
+        int | None: 現在のbest score識別子, projection未作成時はNone.
+    """
     async with uow_factory() as uow:
         best = await uow.beatmap_leaderboards.get_global_user_best(
             BeatmapLeaderboardUserScope(
@@ -261,6 +345,18 @@ async def _replace_projection_with_score(
     *,
     score_id: int,
 ) -> None:
+    """Test userのprojectionを既存scoreへ戻してsnapshot検証を準備する.
+
+    Args:
+        uow_factory (InMemoryUnitOfWorkFactory): scoreとprojectionを読み書きするfactory.
+        score_id (int): replacement projectionに設定する既存score識別子.
+
+    Returns:
+        None: projection sliceを置換してcommitした後に値を返さない.
+
+    Raises:
+        AssertionError: score_idに対応するscoreが存在しない場合.
+    """
     async with uow_factory() as uow:
         score = await uow.scores.get_by_id(score_id)
         assert score is not None
@@ -283,19 +379,16 @@ async def _replace_projection_with_score(
 
 @pytest.mark.asyncio
 async def test_e2e_score_submit_completed_response() -> None:
-    """実 multipart POST が completed response を返すことを検証する。
-
-    Args:
-        なし。
+    """実multipart POSTがcompleted stable responseを返すことを検証する.
 
     Returns:
-        None。
+        None: response statusとstable chart bodyをassertして終了する.
 
     Raises:
-        AssertionError: response status や stable chart body が期待と異なる場合。
+        AssertionError: response statusまたはstable chart bodyが期待と異なる場合.
 
-    Constraints:
-        request は handler に直接渡し、network I/O は使わない。
+    Notes:
+        requestはhandlerへ直接渡し, network I/Oは使わない.
     """
     # Arrange
     auth_service = MockAuthService()
@@ -331,19 +424,16 @@ async def test_e2e_score_submit_completed_response() -> None:
 
 @pytest.mark.asyncio
 async def test_e2e_score_submit_updates_projection_and_retry_returns_saved_snapshot() -> None:
-    """安定版 submit が projection を更新し、同一 retry は保存済み snapshot を返す。
-
-    Args:
-        なし。
+    """Stable submitがprojectionを更新し同一retryが保存済みsnapshotを返すことを検証する.
 
     Returns:
-        None。
+        None: 2件のpersonal best更新とretry response snapshotをassertして終了する.
 
     Raises:
-        AssertionError: leaderboard projection や retry response が期待と異なる場合。
+        AssertionError: leaderboard projectionまたはretry responseが期待と異なる場合.
 
-    Constraints:
-        同一 request body の retry は再計算せず、初回 response body と同じ内容を返す。
+    Notes:
+        同一request bodyのretryは再計算せず, 初回response bodyと同じ内容を返す.
     """
     uow_factory = InMemoryUnitOfWorkFactory()
 
@@ -352,6 +442,16 @@ async def test_e2e_score_submit_updates_projection_and_retry_returns_saved_snaps
         _iv: bytes,
         _osu_version: str | None,
     ) -> DecryptedPayload:
+        """暗号化payload markerに対応するstable score plaintextを返す.
+
+        Args:
+            encrypted (bytes): multipart score fieldから渡される暗号化payload marker.
+            _iv (bytes): decoderから渡されるinitialization vector, fakeでは使用しない.
+            _osu_version (str | None): decoderから渡されるclient version, fakeでは使用しない.
+
+        Returns:
+            DecryptedPayload: previousまたはnew personal bestを表すchecksum検証済みplaintext.
+        """
         if encrypted == b"previous_best_payload":
             payload = (
                 "1000:test_user:0123456789abcdef0123456789abcdef:"
@@ -415,27 +515,36 @@ async def test_e2e_score_submit_updates_projection_and_retry_returns_saved_snaps
 
 @pytest.mark.asyncio
 async def test_e2e_score_submit_terminal_reject_format() -> None:
-    """認可 failure が terminal reject format を返すことを検証する。
-
-    Args:
-        なし。
+    """認可failureがterminal reject formatを返すことを検証する.
 
     Returns:
-        None。
+        None: HTTP statusとstable legacy error bodyをassertして終了する.
 
     Raises:
-        AssertionError: response status や body が期待と異なる場合。
+        AssertionError: response statusまたはbodyが期待と異なる場合.
 
-    Constraints:
-        認可失敗でも stable legacy response は HTTP 200 と ``error: no`` を返す。
+    Notes:
+        認可失敗でもstable legacy responseはHTTP 200と`error: no`を返す.
     """
 
     # Arrange
     # Mock auth service that always fails
     class FailingAuthService:
+        """常にsessionとpasswordをinvalidとして返すauthorization fake."""
+
         async def authorize_submission(
             self, password_md5: str, payload_username: str, payload_user_id: int
         ) -> AuthorizationContext:
+            """Payload値に関係なく認可失敗のcontextを返す.
+
+            Args:
+                password_md5 (str): stable requestから渡されるMD5 password, fakeでは使用しない.
+                payload_username (str): payload内のuser名, fakeでは使用しない.
+                payload_user_id (int): payload内のuser識別子, fakeでは使用しない.
+
+            Returns:
+                AuthorizationContext: すべての認可flagがFalseのterminal reject用context.
+            """
             _ = password_md5, payload_username, payload_user_id
             return AuthorizationContext(
                 user_id=0,

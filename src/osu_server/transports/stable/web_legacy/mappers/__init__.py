@@ -1,4 +1,4 @@
-"""Legacy web transport mappers."""
+"""Legacy web transportの公開mapperを集約する."""
 
 from osu_server.transports.stable.web_legacy.mappers.getscores import (
     GetscoresQueryParser,

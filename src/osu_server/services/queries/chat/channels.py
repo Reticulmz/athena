@@ -1,4 +1,4 @@
-"""Chat channel query use-cases."""
+"""channel catalogとmessage delivery targetをread-onlyに取得するqueryを定義する."""
 
 from __future__ import annotations
 
@@ -22,7 +22,12 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 @dataclass(frozen=True, slots=True)
 class ChannelCatalogQueryInput:
-    """Authorization data for a channel catalog read."""
+    """channel catalogを読むcallerのauthorization入力を表す.
+
+    Attributes:
+        user_privileges (int): channel ACL判定に使うprivilege bitset.
+        user_role_ids (tuple[int, ...]): channel ACL判定に使うrole ID列.
+    """
 
     user_privileges: int
     user_role_ids: tuple[int, ...] = ()
@@ -30,14 +35,25 @@ class ChannelCatalogQueryInput:
 
 @dataclass(frozen=True, slots=True)
 class ChannelCatalogQueryResult:
-    """Visible channel rows with current member counts."""
+    """閲覧可能channelとcurrent member countの結果を表す.
+
+    Attributes:
+        channels (tuple[tuple[Channel, int], ...]): channelとcurrent member countの組を並べた列.
+    """
 
     channels: tuple[tuple[Channel, int], ...]
 
 
 @dataclass(frozen=True, slots=True)
 class ResolveChannelMessageDeliveryQueryInput:
-    """Read input for validating channel message delivery."""
+    """channel message deliveryを検証するread-only入力を表す.
+
+    Attributes:
+        sender_id (int): messageを送ろうとするuserのID.
+        channel_name (str): delivery targetを解決するchannel名.
+        user_privileges (int): write ACL判定に使うprivilege bitset.
+        user_role_ids (tuple[int, ...]): write ACL判定に使うrole ID列.
+    """
 
     sender_id: int
     channel_name: str
@@ -47,14 +63,25 @@ class ResolveChannelMessageDeliveryQueryInput:
 
 @dataclass(frozen=True, slots=True)
 class ResolveChannelMessageDeliveryQueryResult:
-    """Read result for channel message delivery."""
+    """channel message deliveryのread-only検証結果を表す.
+
+    Attributes:
+        channel (Channel | None): 解決したchannel. 不存在またはmemberでない場合はNone.
+        delivered_to (frozenset[int] | None): sender以外のdelivery target user ID集合.
+            delivery不可の場合はNone.
+    """
 
     channel: Channel | None
     delivered_to: frozenset[int] | None
 
 
 class ListVisibleChannelsQuery:
-    """Read channels visible to a user."""
+    """userがread権限を持つchannelとmember countを取得する.
+
+    Attributes:
+        _channel_repository (ChannelQueryRepository): channelとACL overrideを読み取るrepository.
+        _channel_state (ChannelStateStore): current member countを読み取るstate store.
+    """
 
     def __init__(
         self,
@@ -62,6 +89,12 @@ class ListVisibleChannelsQuery:
         channel_repository: ChannelQueryRepository,
         channel_state: ChannelStateStore,
     ) -> None:
+        """Channel catalog queryに使うrepositoryとstate storeを保持する.
+
+        Args:
+            channel_repository (ChannelQueryRepository): channelとACL overrideを読み取るrepository.
+            channel_state (ChannelStateStore): current member countを読み取るstate store.
+        """
         self._channel_repository: ChannelQueryRepository = channel_repository
         self._channel_state: ChannelStateStore = channel_state
 
@@ -69,6 +102,14 @@ class ListVisibleChannelsQuery:
         self,
         input_data: ChannelCatalogQueryInput,
     ) -> ChannelCatalogQueryResult:
+        """userがread権限を持つ全channelとcurrent member countを返す.
+
+        Args:
+            input_data (ChannelCatalogQueryInput): callerのprivilegeとrole IDを持つ入力.
+
+        Returns:
+            ChannelCatalogQueryResult: 可視channelとmember countを並べた結果.
+        """
         channels = await self._channel_repository.get_all()
         visible = await _filter_channels_with_count(
             channel_repository=self._channel_repository,
@@ -81,7 +122,13 @@ class ListVisibleChannelsQuery:
 
 
 class ListAutojoinChannelsQuery:
-    """Read auto-join channels visible to a user."""
+    """userがread権限を持つautojoin channelとmember countを取得する.
+
+    Attributes:
+        _channel_repository (ChannelQueryRepository): autojoin channelとACL overrideを読む
+            repository.
+        _channel_state (ChannelStateStore): current member countを読み取るstate store.
+    """
 
     def __init__(
         self,
@@ -89,6 +136,13 @@ class ListAutojoinChannelsQuery:
         channel_repository: ChannelQueryRepository,
         channel_state: ChannelStateStore,
     ) -> None:
+        """Autojoin channel queryに使うrepositoryとstate storeを保持する.
+
+        Args:
+            channel_repository (ChannelQueryRepository): autojoin channelとACL overrideを読む
+                repository.
+            channel_state (ChannelStateStore): current member countを読み取るstate store.
+        """
         self._channel_repository: ChannelQueryRepository = channel_repository
         self._channel_state: ChannelStateStore = channel_state
 
@@ -96,6 +150,14 @@ class ListAutojoinChannelsQuery:
         self,
         input_data: ChannelCatalogQueryInput,
     ) -> ChannelCatalogQueryResult:
+        """userがread権限を持つautojoin channelとcurrent member countを返す.
+
+        Args:
+            input_data (ChannelCatalogQueryInput): callerのprivilegeとrole IDを持つ入力.
+
+        Returns:
+            ChannelCatalogQueryResult: 可視autojoin channelとmember countを並べた結果.
+        """
         channels = await self._channel_repository.get_auto_join()
         visible = await _filter_channels_with_count(
             channel_repository=self._channel_repository,
@@ -108,7 +170,12 @@ class ListAutojoinChannelsQuery:
 
 
 class ResolveChannelMessageDeliveryQuery:
-    """Read current channel delivery targets and rate-limit metadata."""
+    """channel messageをdeliveryできるmember targetをread-onlyに解決する.
+
+    Attributes:
+        _channel_repository (ChannelQueryRepository): channelとwrite ACL overrideを読むrepository.
+        _channel_state (ChannelStateStore): channel membershipを読むstate store.
+    """
 
     def __init__(
         self,
@@ -116,6 +183,13 @@ class ResolveChannelMessageDeliveryQuery:
         channel_repository: ChannelQueryRepository,
         channel_state: ChannelStateStore,
     ) -> None:
+        """Delivery target queryに使うrepositoryとstate storeを保持する.
+
+        Args:
+            channel_repository (ChannelQueryRepository): channelとwrite ACL overrideを読む
+                repository.
+            channel_state (ChannelStateStore): channel membershipを読むstate store.
+        """
         self._channel_repository: ChannelQueryRepository = channel_repository
         self._channel_state: ChannelStateStore = channel_state
 
@@ -123,6 +197,20 @@ class ResolveChannelMessageDeliveryQuery:
         self,
         input_data: ResolveChannelMessageDeliveryQueryInput,
     ) -> ResolveChannelMessageDeliveryQueryResult:
+        """senderのmembershipとwrite ACLを検証してdelivery targetを解決する.
+
+        Args:
+            input_data (ResolveChannelMessageDeliveryQueryInput): senderとchannelとauthorization
+                入力.
+
+        Returns:
+            ResolveChannelMessageDeliveryQueryResult: delivery可能なchannelとsender以外の
+                member集合.
+
+        Notes:
+            senderがmemberでない場合とchannelが存在しない場合とwrite権限がない場合は
+            delivered_toをNoneにして拒否結果を返す.
+        """
         if not await self._channel_state.is_member(
             input_data.channel_name,
             input_data.sender_id,
@@ -192,6 +280,18 @@ async def _filter_channels_with_count(
     user_privileges: int,
     user_role_ids: tuple[int, ...],
 ) -> list[tuple[Channel, int]]:
+    """ACLでfilterしたchannelにcurrent member countを付与する.
+
+    Args:
+        channel_repository (ChannelQueryRepository): channel ACL overrideを読むrepository.
+        channel_state (ChannelStateStore): channel member countを読むstate store.
+        channels (list[Channel]): 可視性を判定するchannel列.
+        user_privileges (int): read ACL判定に使うprivilege bitset.
+        user_role_ids (tuple[int, ...]): read ACL判定に使うrole ID列.
+
+    Returns:
+        list[tuple[Channel, int]]: callerに可視なchannelとmember countの組を並べた列.
+    """
     if has_privilege(user_privileges, Privileges.BYPASS_CHANNEL_ACL):
         visible = channels
     else:

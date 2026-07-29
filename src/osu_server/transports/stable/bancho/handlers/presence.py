@@ -1,4 +1,4 @@
-"""Stable online presence request packet handlers."""
+"""stable Banchoのonline presence request C2S packetを処理する."""
 
 from __future__ import annotations
 
@@ -40,7 +40,17 @@ logger = cast("structlog.stdlib.BoundLogger", structlog.get_logger(__name__))
 
 
 class PresenceHandlers(HandlerGroup):
-    """C2S presence request handlers."""
+    """presence request C2S packetをonline rosterのS2C packetへ変換する.
+
+    Attributes:
+        _active_sessions_query (ListActiveSessionsQuery): 全online sessionを取得するquery.
+        _active_sessions_by_user_ids_query (GetActiveSessionsByUserIdsQuery):
+            指定userのsessionを取得するquery.
+        _packet_queue (PacketQueue): presence packetをrequesterへenqueueするqueue.
+        _bot_identity (SystemUserIdentity): rosterへ常に含めるBanchoBot identity.
+        _stable_user_status_store (StableUserStatusStore | None):
+            userごとのcurrent modeを取得するstore.
+    """
 
     _active_sessions_query: ListActiveSessionsQuery
     _active_sessions_by_user_ids_query: GetActiveSessionsByUserIdsQuery
@@ -57,6 +67,18 @@ class PresenceHandlers(HandlerGroup):
         bot_identity: SystemUserIdentity | None = None,
         stable_user_status_store: StableUserStatusStore | None = None,
     ) -> None:
+        """Presence requestを処理する依存を初期化する.
+
+        Args:
+            active_sessions_query (ListActiveSessionsQuery): 全online sessionを取得するquery.
+            active_sessions_by_user_ids_query (GetActiveSessionsByUserIdsQuery):
+                指定userのsessionを取得するquery.
+            packet_queue (PacketQueue): S2C packetをenqueueするqueue.
+            bot_identity (SystemUserIdentity | None): rosterに使うBanchoBot identity.
+                Noneなら既定値を使う.
+            stable_user_status_store (StableUserStatusStore | None):
+                current modeを取得するoptional store.
+        """
         self._active_sessions_query = active_sessions_query
         self._active_sessions_by_user_ids_query = active_sessions_by_user_ids_query
         self._packet_queue = packet_queue
@@ -65,7 +87,18 @@ class PresenceHandlers(HandlerGroup):
 
     @handles(ClientPacketID.PRESENCE_REQUEST)
     async def handle_presence_request(self, payload: bytes, user_id: int) -> None:
-        """PRESENCE_REQUEST (97) - send USER_PRESENCE for requested online users."""
+        """PRESENCE_REQUESTの指定online userをUSER_PRESENCEで返す.
+
+        Args:
+            payload (bytes): request対象user ID群を含むC2S packet payload.
+            user_id (int): presence情報を要求した認証済みuserのID.
+
+        Returns:
+            None: online targetのpresence packetをenqueueして値を返さずに完了する.
+
+        Notes:
+            offline targetは除外し,BanchoBotはrequesterのcurrent modeで返す.
+        """
         requested_user_ids = _parse_presence_request(payload)
         if requested_user_ids is None:
             return
@@ -111,7 +144,18 @@ class PresenceHandlers(HandlerGroup):
 
     @handles(ClientPacketID.PRESENCE_REQUEST_ALL)
     async def handle_presence_request_all(self, payload: bytes, user_id: int) -> None:
-        """PRESENCE_REQUEST_ALL (98) - send USER_PRESENCE for online users."""
+        """PRESENCE_REQUEST_ALLでonline roster全体をUSER_PRESENCEとして返す.
+
+        Args:
+            payload (bytes): reserved int32を含むC2S packet payload.
+            user_id (int): rosterを要求した認証済みuserのID.
+
+        Returns:
+            None: online user,BanchoBot,roster bundleをenqueueして値を返さずに完了する.
+
+        Notes:
+            不正なreserved payloadはqueryとenqueueを行わずdropする.
+        """
         if not _parse_presence_request_all(payload):
             return
 
@@ -144,6 +188,15 @@ class PresenceHandlers(HandlerGroup):
         await self._packet_queue.enqueue(user_id, *packets)
 
     async def _play_modes_by_user_id(self, user_ids: tuple[int, ...]) -> dict[int, int]:
+        """指定userの保存済みstable play modeを取得する.
+
+        Args:
+            user_ids (tuple[int, ...]): modeを取得するonline user ID群.
+
+        Returns:
+            dict[int, int]: user IDからstable play modeへの対応.
+                store未設定または読取失敗時は空dict.
+        """
         if self._stable_user_status_store is None:
             return {}
         try:
@@ -156,6 +209,14 @@ class PresenceHandlers(HandlerGroup):
             return {}
 
     async def _requester_play_mode(self, user_id: int) -> int:
+        """Presence requesterに表示するBanchoBotのstable play modeを取得する.
+
+        Args:
+            user_id (int): requesterの認証済みuser ID.
+
+        Returns:
+            int: 正規化済みstable play mode. statusがないか読取失敗時はosu mode.
+        """
         if self._stable_user_status_store is None:
             return StableMode.Osu.value
         try:
@@ -173,6 +234,15 @@ def _stable_play_mode_for_user(
     user_id: int,
     play_modes_by_user_id: dict[int, int],
 ) -> int:
+    """指定userのstable play modeを正規化して返す.
+
+    Args:
+        user_id (int): modeを選択するtarget user ID.
+        play_modes_by_user_id (dict[int, int]): user IDから保存済みmodeへの対応.
+
+    Returns:
+        int: 有効なstable play mode. 値がないか不正な場合はosu mode.
+    """
     play_mode = play_modes_by_user_id.get(user_id, StableMode.Osu.value)
     try:
         return StableMode(play_mode).value
@@ -181,6 +251,14 @@ def _stable_play_mode_for_user(
 
 
 def _stable_play_mode(play_mode: int | None) -> int:
+    """optionalなplay modeを有効なstable modeへ正規化する.
+
+    Args:
+        play_mode (int | None): status storeから得た可能性のあるmode値.
+
+    Returns:
+        int: 有効なstable play mode. Noneまたは不正値の場合はosu mode.
+    """
     if play_mode is None:
         return StableMode.Osu.value
     try:
@@ -190,6 +268,14 @@ def _stable_play_mode(play_mode: int | None) -> int:
 
 
 def _parse_presence_request(payload: bytes) -> tuple[int, ...] | None:
+    """PRESENCE_REQUEST payloadを安全にparseする.
+
+    Args:
+        payload (bytes): target user ID群を含むC2S packet payload.
+
+    Returns:
+        tuple[int, ...] | None: 要求されたuser ID群. payloadが不正な場合はNone.
+    """
     try:
         return parse_presence_request_payload(payload)
     except PacketReadError as exc:
@@ -203,6 +289,14 @@ def _parse_presence_request(payload: bytes) -> tuple[int, ...] | None:
 
 
 def _parse_presence_request_all(payload: bytes) -> bool:
+    """PRESENCE_REQUEST_ALLのreserved payloadを検証する.
+
+    Args:
+        payload (bytes): reserved int32を含むC2S packet payload.
+
+    Returns:
+        bool: payloadをparseできた場合はTrue. 不正な場合はFalse.
+    """
     try:
         parse_presence_request_all_payload(payload)
     except PacketReadError as exc:

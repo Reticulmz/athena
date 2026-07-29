@@ -1,4 +1,4 @@
-"""スコア送信 use-case の unit test。"""
+"""ProcessScoreSubmissionUseCaseのscore submission契約を検証する unit test module."""
 
 import hashlib
 from dataclasses import dataclass, replace
@@ -66,10 +66,23 @@ from tests.support.fakes import (
 
 
 def _score_payload(*parts: str) -> str:
+    """Score payloadの断片を順序を保って連結する.
+
+    Args:
+        *parts (str): stable score payloadを構成する文字列断片.
+
+    Returns:
+        str: すべての断片を区切り文字なしで連結したpayload.
+    """
     return "".join(parts)
 
 
 def _eligible_beatmap() -> BeatmapEligibility:
+    """Score submissionを受理するranked beatmap用eligibilityを作成する.
+
+    Returns:
+        BeatmapEligibility: vanilla scoreを受理しranked PPを付与するbeatmapのeligibility.
+    """
     return BeatmapEligibility(
         accepts_scores=True,
         has_leaderboard=True,
@@ -88,6 +101,14 @@ def _eligible_beatmap() -> BeatmapEligibility:
 
 
 def _ineligible_beatmap(reason: str = "status_not_eligible") -> BeatmapEligibility:
+    """Score submissionを拒否するbeatmap用eligibilityを作成する.
+
+    Args:
+        reason (str): terminal rejectionへ引き継ぐmachine-readableな不適格理由.
+
+    Returns:
+        BeatmapEligibility: score受理,leaderboard,PP付与をすべて無効にしたeligibility.
+    """
     return BeatmapEligibility(
         accepts_scores=False,
         has_leaderboard=False,
@@ -106,6 +127,11 @@ def _ineligible_beatmap(reason: str = "status_not_eligible") -> BeatmapEligibili
 
 
 def _resolved_beatmap() -> Beatmap:
+    """Submission testで解決済みとして返すranked beatmapを作成する.
+
+    Returns:
+        Beatmap: file未取得だがscore submissionを判定できるosu! modeのranked beatmap.
+    """
     return Beatmap(
         id=1,
         beatmapset_id=10,
@@ -135,6 +161,13 @@ def _resolved_beatmap() -> Beatmap:
 
 @dataclass(slots=True)
 class FakeBeatmapResolver:
+    """submission test用に一定のbeatmap解決結果を返すfake resolver.
+
+    Attributes:
+        eligibility (BeatmapEligibility | None): checksum解決結果へ含めるscore submission
+            eligibility.
+    """
+
     eligibility: BeatmapEligibility | None = None
 
     async def resolve_by_beatmap_id(
@@ -142,6 +175,15 @@ class FakeBeatmapResolver:
         beatmap_id: int,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """Beatmap IDによる解決要求へmetadataのみの結果を返す.
+
+        Args:
+            beatmap_id (int): 呼び出し側が指定するbeatmap ID. fakeでは結果を変えない.
+            options (BeatmapResolveOptions | None): 解決option. fakeでは使用しない.
+
+        Returns:
+            BeatmapResolveResult: beatmap本体を含まず,設定済みeligibilityを含むfreshな解決結果.
+        """
         del beatmap_id, options
         return BeatmapResolveResult(
             beatmap=None,
@@ -161,6 +203,15 @@ class FakeBeatmapResolver:
         checksum_md5: str,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """checksumによる解決要求へranked beatmapを含む結果を返す.
+
+        Args:
+            checksum_md5 (str): 呼び出し側が指定するbeatmap checksum MD5. fakeでは結果を変えない.
+            options (BeatmapResolveOptions | None): 解決option. fakeでは使用しない.
+
+        Returns:
+            BeatmapResolveResult: 設定済みeligibilityと固定ranked beatmapを含むfreshな解決結果.
+        """
         del checksum_md5, options
         return BeatmapResolveResult(
             beatmap=_resolved_beatmap(),
@@ -177,12 +228,26 @@ class FakeBeatmapResolver:
 
 
 class RecordingWarmupUseCase:
+    """beatmap file warmupの呼び出し順とrequestを記録するtest double.
+
+    Attributes:
+        events (list[str]): workflow内の実行順を確認するために追記するevent名.
+        outcome (BeatmapFileWarmupOutcome): executeが返す固定warmup outcome.
+        requests (list[BeatmapFileWarmupRequest]): 受け取ったwarmup requestを順に保存するlist.
+    """
+
     def __init__(
         self,
         events: list[str],
         *,
         outcome: BeatmapFileWarmupOutcome = BeatmapFileWarmupOutcome.REQUESTED,
     ) -> None:
+        """warmup記録先と返却outcomeを設定する.
+
+        Args:
+            events (list[str]): execute時にwarmup eventを追記する共有list.
+            outcome (BeatmapFileWarmupOutcome): 各executeで返すwarmup outcome.
+        """
         self.events: list[str] = events
         self.outcome: BeatmapFileWarmupOutcome = outcome
         self.requests: list[BeatmapFileWarmupRequest] = []
@@ -191,6 +256,14 @@ class RecordingWarmupUseCase:
         self,
         request: BeatmapFileWarmupRequest,
     ) -> BeatmapFileWarmupResult:
+        """Warmup requestを記録し,設定済みoutcomeの結果を返す.
+
+        Args:
+            request (BeatmapFileWarmupRequest): workflowから受け取るbeatmap file warmup request.
+
+        Returns:
+            BeatmapFileWarmupResult: requestの対象情報と設定済みoutcomeを持つwarmup結果.
+        """
         self.events.append("warmup")
         self.requests.append(request)
         return BeatmapFileWarmupResult(
@@ -205,7 +278,20 @@ class RecordingWarmupUseCase:
 
 @final
 class RecordingPerformanceCalculationRequest:
+    """performance calculation requestを記録し,必要時に失敗させるtest double.
+
+    Attributes:
+        _fail (bool): TrueならexecuteでRuntimeErrorを送出するか.
+        commands (list[RequestPerformanceCalculationCommand]):
+            受け取ったcalculation commandを順に保存するlist.
+    """
+
     def __init__(self, *, fail: bool = False) -> None:
+        """Performance requestの正常または失敗動作を設定する.
+
+        Args:
+            fail (bool): Trueの場合はexecuteで意図的にRuntimeErrorを送出するか.
+        """
         self._fail = fail
         self.commands: list[RequestPerformanceCalculationCommand] = []
 
@@ -213,6 +299,17 @@ class RecordingPerformanceCalculationRequest:
         self,
         command: RequestPerformanceCalculationCommand,
     ) -> RequestPerformanceCalculationResult:
+        """Calculation commandを記録し,設定済みのrequest結果を返す.
+
+        Args:
+            command (RequestPerformanceCalculationCommand): scoreとcalculatorを指定する計算request.
+
+        Returns:
+            RequestPerformanceCalculationResult: commandのscore IDを持つ作成済みrequest結果.
+
+        Raises:
+            RuntimeError: failがTrueに設定されている場合.
+        """
         self.commands.append(command)
         if self._fail:
             msg = "performance request failed"
@@ -225,7 +322,19 @@ class RecordingPerformanceCalculationRequest:
 
 @final
 class RecordingPerformanceResponseQuery:
+    """performance submit response queryを記録して固定responseを返すtest double.
+
+    Attributes:
+        response (PerformanceSubmitResponse): waitとgetが返す固定performance response.
+        queries (list[PerformanceSubmitResponseQuery]): 呼び出し順を含めて記録するquery list.
+    """
+
     def __init__(self, response: PerformanceSubmitResponse) -> None:
+        """返却するperformance responseを設定する.
+
+        Args:
+            response (PerformanceSubmitResponse): 各query呼び出しで返す固定response.
+        """
         self.response: PerformanceSubmitResponse = response
         self.queries: list[PerformanceSubmitResponseQuery] = []
 
@@ -233,6 +342,14 @@ class RecordingPerformanceResponseQuery:
         self,
         query: PerformanceSubmitResponseQuery,
     ) -> PerformanceSubmitResponse:
+        """待機queryを記録し,設定済みperformance responseを返す.
+
+        Args:
+            query (PerformanceSubmitResponseQuery): 対象scoreのresponseを待機するquery.
+
+        Returns:
+            PerformanceSubmitResponse: 初期化時に設定した固定response.
+        """
         self.queries.append(query)
         return self.response
 
@@ -240,13 +357,35 @@ class RecordingPerformanceResponseQuery:
         self,
         query: PerformanceSubmitResponseQuery,
     ) -> PerformanceSubmitResponse:
+        """非待機queryを記録し,設定済みperformance responseを返す.
+
+        Args:
+            query (PerformanceSubmitResponseQuery): 対象scoreの現在responseを取得するquery.
+
+        Returns:
+            PerformanceSubmitResponse: 初期化時に設定した固定response.
+        """
         self.queries.append(query)
         return self.response
 
 
 @final
 class RecordingCurrentUserStatsQuery:
+    """current user stats queryを記録し,呼び出し順の固定結果を返すtest double.
+
+    Attributes:
+        _responses (tuple[UserCurrentStats | None, ...]): execute回数ごとに返すstats.
+            Noneは空結果を表す.
+        queries (list[CurrentUserStatsQueryInput]): 受け取ったquery inputを順に保存するlist.
+    """
+
     def __init__(self, responses: tuple[UserCurrentStats | None, ...]) -> None:
+        """execute回数ごとのstats結果を設定する.
+
+        Args:
+            responses (tuple[UserCurrentStats | None, ...]): queryごとに返すstatsまたは
+                空結果の並び.
+        """
         self._responses = responses
         self.queries: list[CurrentUserStatsQueryInput] = []
 
@@ -254,6 +393,15 @@ class RecordingCurrentUserStatsQuery:
         self,
         input_data: CurrentUserStatsQueryInput,
     ) -> CurrentUserStatsQueryResult:
+        """Stats queryを記録し,対応する固定stats結果を返す.
+
+        Args:
+            input_data (CurrentUserStatsQueryInput): user ID, ruleset, playstyleを指定する
+                query input.
+
+        Returns:
+            CurrentUserStatsQueryResult: 次の設定済みstatsを1件含む結果. Noneなら空結果.
+        """
         self.queries.append(input_data)
         response_index = len(self.queries) - 1
         response = self._responses[response_index]
@@ -264,7 +412,19 @@ class RecordingCurrentUserStatsQuery:
 
 @final
 class RecordingBeatmapPersonalBestRankQuery:
+    """beatmap personal best rank queryを記録し,呼び出し順の固定順位を返すtest double.
+
+    Attributes:
+        _responses (tuple[int | None, ...]): execute回数ごとに返すrank. Noneは順位未取得を表す.
+        queries (list[BeatmapPersonalBestRankQueryInput]): 受け取ったquery inputを順に保存するlist.
+    """
+
     def __init__(self, responses: tuple[int | None, ...]) -> None:
+        """execute回数ごとのrank結果を設定する.
+
+        Args:
+            responses (tuple[int | None, ...]): queryごとに返す順位または未取得値の並び.
+        """
         self._responses = responses
         self.queries: list[BeatmapPersonalBestRankQueryInput] = []
 
@@ -272,6 +432,15 @@ class RecordingBeatmapPersonalBestRankQuery:
         self,
         input_data: BeatmapPersonalBestRankQueryInput,
     ) -> BeatmapPersonalBestRankQueryResult:
+        """Rank queryを記録し,対応する固定順位結果を返す.
+
+        Args:
+            input_data (BeatmapPersonalBestRankQueryInput): user, beatmap, score scopeを指定する
+                query input.
+
+        Returns:
+            BeatmapPersonalBestRankQueryResult: 次の設定済みrankを持つquery結果.
+        """
         self.queries.append(input_data)
         response_index = len(self.queries) - 1
         return BeatmapPersonalBestRankQueryResult(rank=self._responses[response_index])
@@ -279,15 +448,34 @@ class RecordingBeatmapPersonalBestRankQuery:
 
 @final
 class StubPerformanceCalculatorIdentity:
+    """performance calculation requestを識別する固定calculator identityを提供するstub."""
+
     def calculator_name(self) -> str:
+        """test用calculator名を返す.
+
+        Returns:
+            str: performance calculation requestへ記録する固定calculator名.
+        """
         return "test-calculator"
 
     def calculator_version(self) -> str:
+        """test用calculator versionを返す.
+
+        Returns:
+            str: performance calculation requestへ記録する固定calculator version.
+        """
         return "1.2.3"
 
 
 @dataclass(slots=True)
 class FakeWarmupResolver:
+    """beatmap file状態を固定しfallback warmup分岐を検証するfake resolver.
+
+    Attributes:
+        file_status (BeatmapFileState): 解決結果へ返し,warmup要否を決めるfile状態.
+        reason (str | None): file状態のdiagnostic理由. reasonがない場合はNone.
+    """
+
     file_status: BeatmapFileState
     reason: str | None
 
@@ -296,6 +484,15 @@ class FakeWarmupResolver:
         beatmap_id: int,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """指定IDでfile状態を持つ固定beatmap解決結果を返す.
+
+        Args:
+            beatmap_id (int): 結果のbeatmap IDへ設定する値.
+            options (BeatmapResolveOptions | None): 解決option. fakeでは使用しない.
+
+        Returns:
+            BeatmapResolveResult: 設定済みfile状態とsubmission eligibilityを持つ解決結果.
+        """
         del options
         return self._result(beatmap_id)
 
@@ -304,10 +501,27 @@ class FakeWarmupResolver:
         checksum_md5: str,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """checksum解決時に固定IDと設定済みfile状態の結果を返す.
+
+        Args:
+            checksum_md5 (str): 呼び出し側が指定するchecksum. fakeでは結果を変えない.
+            options (BeatmapResolveOptions | None): 解決option. fakeでは使用しない.
+
+        Returns:
+            BeatmapResolveResult: 固定IDと設定済みfile状態を持つ解決結果.
+        """
         del checksum_md5, options
         return self._result(1)
 
     def _result(self, beatmap_id: int) -> BeatmapResolveResult:
+        """指定IDと設定済みfile状態を持つ解決結果を組み立てる.
+
+        Args:
+            beatmap_id (int): 返却beatmapへ設定するID.
+
+        Returns:
+            BeatmapResolveResult: eligibleなscore submissionと設定済みfile状態を表す解決結果.
+        """
         beatmap = replace(_resolved_beatmap(), id=beatmap_id, file_state=self.file_status)
         return BeatmapResolveResult(
             beatmap=beatmap,
@@ -324,47 +538,80 @@ class FakeWarmupResolver:
 
 
 class RecordingBlobStorageService(StubBlobStorageService):
+    """replay blob保存の実行順を記録するStubBlobStorageService.
+
+    Attributes:
+        events (list[str]): put_bytes呼び出し時にblob storage eventを追記する共有list.
+    """
+
     def __init__(self, events: list[str], *, fail_writes: bool = False) -> None:
+        """event記録先とblob write失敗動作を設定する.
+
+        Args:
+            events (list[str]): put_bytes実行時にevent名を追記する共有list.
+            fail_writes (bool): Trueの場合に親stubがblob writeを失敗させるか.
+        """
         super().__init__(fail_writes=fail_writes)
         self.events: list[str] = events
 
     @override
     async def put_bytes(self, data: bytes, *, content_type: str) -> BlobStored:
+        """blob保存eventを記録してから親stubへreplay dataを渡す.
+
+        Args:
+            data (bytes): 保存するreplay binary.
+            content_type (str): 保存するblobのMIME content type.
+
+        Returns:
+            BlobStored: 親stubが作成した保存済みblobの識別情報.
+        """
         self.events.append("blob_storage")
         return await super().put_bytes(data, content_type=content_type)
 
 
 @pytest.fixture
 def uow_factory() -> InMemoryUnitOfWorkFactory:
+    """Score submission testで共有するin-memory Unit of Work factoryを提供する fixture.
+
+    Returns:
+        InMemoryUnitOfWorkFactory: score,submission,replay状態を外部DBなしで保持するfactory.
+    """
     return InMemoryUnitOfWorkFactory()
 
 
 @pytest.fixture
 def repos(uow_factory: InMemoryUnitOfWorkFactory) -> ScoreRepositoryViews:
-    """スコア送信 test 用の in-memory repository view を作る。
+    """Score submissionの保存結果を読むin-memory repository viewを提供する fixture.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
+        uow_factory (InMemoryUnitOfWorkFactory): commandとassertionで共有するstateを持つfactory.
 
     Returns:
-        score、submission、replay repository view。
+        ScoreRepositoryViews: score,submission,replayを検証するrepository view.
 
-    Raises:
-        例外は送出しない。
-
-    Constraints:
-        DB I/O を使わず、同じ in-memory state を command と assertion で共有する。
+    Notes:
+        DB I/Oを使わず,同じin-memory stateをcommandとassertionで共有する.
     """
     return make_score_repository_views(uow_factory)
 
 
 @pytest.fixture
 def beatmap_resolver() -> FakeBeatmapResolver:
+    """score受理可能なbeatmapを返すresolverを提供する fixture.
+
+    Returns:
+        FakeBeatmapResolver: ranked vanilla scoreを受理するeligibilityを返すresolver.
+    """
     return FakeBeatmapResolver(_eligible_beatmap())
 
 
 @pytest.fixture
 def blob_storage() -> StubBlobStorageService:
+    """正常なreplay保存を行うin-memory blob storageを提供する fixture.
+
+    Returns:
+        StubBlobStorageService: replay binaryを外部storageなしで保存するstub.
+    """
     return StubBlobStorageService()
 
 
@@ -374,21 +621,19 @@ def service(
     beatmap_resolver: FakeBeatmapResolver,
     blob_storage: StubBlobStorageService,
 ) -> ProcessScoreSubmissionUseCase:
-    """インメモリ依存で ProcessScoreSubmissionUseCase を作る。
+    """in-memory依存を接続したProcessScoreSubmissionUseCaseを提供する fixture.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        beatmap_resolver: eligibility を返す fake resolver。
-        blob_storage: replay 保存を記録する fake storage。
+        uow_factory (InMemoryUnitOfWorkFactory): score状態を保持するin-memory Unit of Work factory.
+        beatmap_resolver (FakeBeatmapResolver): submission可否を返すfake beatmap resolver.
+        blob_storage (StubBlobStorageService): replay保存を行うfake blob storage.
 
     Returns:
-        score submission command workflow の use-case。
+        ProcessScoreSubmissionUseCase: credential, storage, beatmap解決をtest doubleへ接続した
+            use-case.
 
-    Raises:
-        例外は送出しない。
-
-    Constraints:
-        Production repository や external storage は使わない。
+    Notes:
+        production repositoryやexternal storageは使わない.
     """
     auth_service = make_score_authorization_service()
     return ProcessScoreSubmissionUseCase(
@@ -401,19 +646,13 @@ def service(
 
 @pytest.fixture
 def valid_input() -> ParsedSubmissionInput:
-    """有効な score submission command input を返す。
-
-    Args:
-        なし。
+    """成功score submissionを表す正規化済みinputを提供する fixture.
 
     Returns:
-        成功 score submit を表す ParsedSubmissionInput。
+        ParsedSubmissionInput: 有効なcredentialとscore payloadを含むsubmission input.
 
-    Raises:
-        例外は送出しない。
-
-    Constraints:
-        Transport wire payload ではなく正規化済み command input を返す。
+    Notes:
+        transport wire payloadではなく正規化済みcommand inputを返す.
     """
     return make_test_submission_input()
 
@@ -425,6 +664,17 @@ def _fingerprint_for(
     user_id: int = 1000,
     submitted_timestamp: str | None = None,
 ) -> str:
+    """Test inputとsubmission識別子から期待するfingerprintを計算する.
+
+    Args:
+        input_data (ParsedSubmissionInput): request hashとsubmission時刻を持つ正規化済みinput.
+        beatmap_checksum (str): fingerprintへ含めるbeatmap checksum MD5.
+        user_id (int): fingerprintへ含める認証済みuser ID.
+        submitted_timestamp (str | None): fingerprintへ明示的に渡す時刻. Noneならinputの値を使う.
+
+    Returns:
+        str: serviceが永続化する値と同じsubmission fingerprint.
+    """
     return generate_submission_fingerprint(
         user_id=user_id,
         beatmap_checksum=beatmap_checksum,
@@ -439,21 +689,18 @@ async def test_happy_path_valid_submission_creates_score(
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
 ) -> None:
-    """有効な submission が score record を作成することを検証する。
+    """有効な submission が score record を作成することを検証する.
 
     Args:
-        service: test 対象の ProcessScoreSubmissionUseCase。
-        valid_input: valid な command input。
-        repos: assertion 用 repository view。
+        service (ProcessScoreSubmissionUseCase): test 対象の ProcessScoreSubmissionUseCase.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: score や submission snapshot が期待と異なる場合。
-
-    Constraints:
-        replay storage と DB は in-memory fake だけを使う。
+    Notes:
+        replay storage と DB は in-memory fake だけを使う.
     """
     score_repo, submission_repo, _replay_repo = repos
 
@@ -491,22 +738,19 @@ async def test_completed_submission_requests_performance_calculation(
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """受理済み score 永続化後に性能計算 request を作成することを検証する。
+    """受理済み score 永続化後に性能計算 request を作成することを検証する.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        valid_input: valid な command input。
-        repos: assertion 用 repository view。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: score 保存や性能計算 command が期待と異なる場合。
-
-    Constraints:
-        性能計算 request は score 永続化後に一度だけ送る。
+    Notes:
+        性能計算 request は score 永続化後に一度だけ送る.
     """
     score_repo, _submission_repo, _replay_repo = repos
     performance_request = RecordingPerformanceCalculationRequest()
@@ -548,22 +792,19 @@ async def test_completed_submission_waits_for_performance_response_after_request
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """性能 response を組み立てる前に計算 request を送ることを検証する。
+    """性能 response を組み立てる前に計算 request を送ることを検証する.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        valid_input: valid な command input。
-        repos: assertion 用 repository view。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: 性能計算 request と response query の順序が期待と異なる場合。
-
-    Constraints:
-        request が成功した accepted score だけ performance response を待機する。
+    Notes:
+        request が成功した accepted score だけ performance response を待機する.
     """
     score_repo, _submission_repo, _replay_repo = repos
     performance_request = RecordingPerformanceCalculationRequest()
@@ -608,21 +849,18 @@ async def test_performance_wait_response_preserves_cumulative_beatmap_counts(
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """性能値待機経由の completed response でも beatmap play/pass count を保持する。
+    """性能値待機経由の completed response でも beatmap play/pass count を保持する.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        valid_input: valid な command input。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: 連続 submission の beatmap play/pass count が期待と異なる場合。
-
-    Constraints:
-        performance response 待機で補完した stable_pp は count 集計を変えない。
+    Notes:
+        performance response 待機で補完した stable_pp は count 集計を変えない.
     """
     service = ProcessScoreSubmissionUseCase(
         make_submit_score_use_case(uow_factory),
@@ -671,21 +909,18 @@ async def test_completed_submission_returns_overall_stats_delta(
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """送信 response 用に current stats の before/after を返す。
+    """送信 response 用に current stats の before/after を返す.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        valid_input: valid な command input。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: current stats query や before/after snapshot が期待と異なる場合。
-
-    Constraints:
-        stats は submission 前後で同じ ruleset/playstyle を query する。
+    Notes:
+        stats は submission 前後で同じ ruleset/playstyle を query する.
     """
     current_stats_query = RecordingCurrentUserStatsQuery(
         (
@@ -767,21 +1002,18 @@ async def test_completed_submission_returns_beatmap_rank_delta(
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """送信 response 用に beatmap rank の before/after を返す。
+    """送信 response 用に beatmap rank の before/after を返す.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        valid_input: valid な command input。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: beatmap rank delta や rank query が期待と異なる場合。
-
-    Constraints:
-        rank query は submission 前後で同じ beatmap/ruleset/playstyle を使う。
+    Notes:
+        rank query は submission 前後で同じ beatmap/ruleset/playstyle を使う.
     """
     beatmap_rank_query = RecordingBeatmapPersonalBestRankQuery((4, 2))
     service = ProcessScoreSubmissionUseCase(
@@ -836,22 +1068,19 @@ async def test_retryable_performance_response_keeps_score_accepted_without_rejec
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """性能計算 pending が retryable response でも score を durable に残す。
+    """性能計算 pending が retryable response でも score を durable に残す.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        valid_input: valid な command input。
-        repos: assertion 用 repository view。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: retryable result、score 保存、submission state が期待と異なる場合。
-
-    Constraints:
-        性能計算待ちの retryable は score 永続化を巻き戻さない。
+    Notes:
+        性能計算待ちの retryable は score 永続化を巻き戻さない.
     """
     score_repo, submission_repo, _replay_repo = repos
     performance_response = RecordingPerformanceResponseQuery(
@@ -895,22 +1124,19 @@ async def test_completed_performance_pp_is_result_only_not_submission_snapshot(
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """安定版 PP が response 専用値で submission snapshot に残らないことを検証する。
+    """安定版 PP が response 専用値で submission snapshot に残らないことを検証する.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        valid_input: valid な command input。
-        repos: assertion 用 repository view。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: response の pp や persisted snapshot が期待と異なる場合。
-
-    Constraints:
-        stable_pp は legacy response 用の派生値で、canonical snapshot には保存しない。
+    Notes:
+        stable_pp は legacy response 用の派生値で,canonical snapshot には保存しない.
     """
     _score_repo, submission_repo, _replay_repo = repos
     service = ProcessScoreSubmissionUseCase(
@@ -952,21 +1178,18 @@ async def test_performance_calculation_request_failure_keeps_completed_response(
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """性能計算 request 失敗でも accepted submission を completed として返す。
+    """性能計算 request 失敗でも accepted submission を completed として返す.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        valid_input: valid な command input。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: request 失敗時の result、log、response query が期待と異なる場合。
-
-    Constraints:
-        性能計算 request が失敗した後は performance response query に入らない。
+    Notes:
+        性能計算 request が失敗した後は performance response query に入らない.
     """
     performance_request = RecordingPerformanceCalculationRequest(fail=True)
     performance_response = RecordingPerformanceResponseQuery(
@@ -1014,21 +1237,18 @@ async def test_client_server_grade_discrepancy_is_preserved(
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
 ) -> None:
-    """クライアントと server の grade mismatch を診断用に log と snapshot へ残す。
+    """クライアントと server の grade mismatch を診断用に log と snapshot へ残す.
 
     Args:
-        service: test 対象の ProcessScoreSubmissionUseCase。
-        valid_input: valid な command input。
-        repos: assertion 用 repository view。
+        service (ProcessScoreSubmissionUseCase): test 対象の ProcessScoreSubmissionUseCase.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: discrepancy log や submission snapshot が期待と異なる場合。
-
-    Constraints:
-        grade mismatch は rejection ではなく diagnostic data として保存する。
+    Notes:
+        grade mismatch は rejection ではなく diagnostic data として保存する.
     """
     _score_repo, submission_repo, _replay_repo = repos
 
@@ -1070,21 +1290,18 @@ async def test_failed_play_handling(
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
 ) -> None:
-    """失敗 play (passed=0) を score として保存する。
+    """失敗 play (passed=0) を score として保存する.
 
     Args:
-        service: test 対象の ProcessScoreSubmissionUseCase。
-        valid_input: valid な command input。
-        repos: assertion 用 repository view。
+        service (ProcessScoreSubmissionUseCase): test 対象の ProcessScoreSubmissionUseCase.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: failed play の outcome や persisted score が期待と異なる場合。
-
-    Constraints:
-        passed=0 は validation reject ではなく保存対象の score として扱う。
+    Notes:
+        passed=0 は validation reject ではなく保存対象の score として扱う.
     """
     score_repo, _, _ = repos
     input_data = replace(
@@ -1110,22 +1327,19 @@ async def test_failed_play_without_replay_is_accepted_without_blob_write(
     repos: ScoreRepositoryViews,
     blob_storage: StubBlobStorageService,
 ) -> None:
-    """失敗 play は replay data なしでも保存できる。
+    """失敗 play は replay data なしでも保存できる.
 
     Args:
-        service: test 対象の ProcessScoreSubmissionUseCase。
-        valid_input: valid な command input。
-        repos: assertion 用 repository view。
-        blob_storage: replay storage fake。
+        service (ProcessScoreSubmissionUseCase): test 対象の ProcessScoreSubmissionUseCase.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
+        blob_storage (StubBlobStorageService): replay storage fake.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: failed play 保存や blob write 記録が期待と異なる場合。
-
-    Constraints:
-        failed play の replay data 欠落は blob storage write を発生させない。
+    Notes:
+        failed play の replay data 欠落は blob storage write を発生させない.
     """
     score_repo, _, _ = repos
     input_without_replay = replace(
@@ -1157,22 +1371,19 @@ async def test_passed_play_without_replay_is_accepted_without_blob_write(
     repos: ScoreRepositoryViews,
     blob_storage: StubBlobStorageService,
 ) -> None:
-    """成功 play でも replay data がなければ attachment なし score を作る。
+    """成功 play でも replay data がなければ attachment なし score を作る.
 
     Args:
-        service: test 対象の ProcessScoreSubmissionUseCase。
-        valid_input: valid な command input。
-        repos: assertion 用 repository view。
-        blob_storage: replay storage fake。
+        service (ProcessScoreSubmissionUseCase): test 対象の ProcessScoreSubmissionUseCase.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
+        blob_storage (StubBlobStorageService): replay storage fake.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: accepted score や blob write 記録が期待と異なる場合。
-
-    Constraints:
-        replay data がない successful play は attachment なしで完了させる。
+    Notes:
+        replay data がない successful play は attachment なしで完了させる.
     """
     score_repo, _, _ = repos
     input_without_replay = replace(
@@ -1201,22 +1412,19 @@ async def test_replay_attachment(
     repos: ScoreRepositoryViews,
     blob_storage: StubBlobStorageService,
 ) -> None:
-    """リプレイ data を score attachment として保存する。
+    """リプレイ data を score attachment として保存する.
 
     Args:
-        service: test 対象の ProcessScoreSubmissionUseCase。
-        valid_input: valid な command input。
-        repos: assertion 用 repository view。
-        blob_storage: replay storage fake。
+        service (ProcessScoreSubmissionUseCase): test 対象の ProcessScoreSubmissionUseCase.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
+        blob_storage (StubBlobStorageService): replay storage fake.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: replay checksum、repository、blob storage の状態が期待と異なる場合。
-
-    Constraints:
-        replay attachment は replay bytes の sha256 checksum で照合する。
+    Notes:
+        replay attachment は replay bytes の sha256 checksum で照合する.
     """
     _, _, replay_repo = repos
 
@@ -1245,21 +1453,18 @@ async def test_score_submit_fallback_warmup_runs_before_replay_blob_storage(
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """受理済み submission は warmup 結果を診断扱いにして replay 保存前に warm する。
+    """受理済み submission は warmup 結果を診断扱いにして replay 保存前に warm する.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        valid_input: valid な command input。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: warmup と blob storage の呼び出し順序や request が期待と異なる場合。
-
-    Constraints:
-        fallback warmup failure は accepted submission の保存を妨げない。
+    Notes:
+        fallback warmup failure は accepted submission の保存を妨げない.
     """
     events: list[str] = []
     warmup = RecordingWarmupUseCase(events, outcome=BeatmapFileWarmupOutcome.FAILED)
@@ -1300,21 +1505,18 @@ async def test_score_submit_accepts_file_pending_and_logs_fallback_warmup(
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """譜面 file pending は診断扱いにして accepted response shape を保つ。
+    """譜面 file pending は診断扱いにして accepted response shape を保つ.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        valid_input: valid な command input。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: accepted response や fallback warmup log が期待と異なる場合。
-
-    Constraints:
-        beatmap file pending は user-visible reject ではなく diagnostic log に留める。
+    Notes:
+        beatmap file pending は user-visible reject ではなく diagnostic log に留める.
     """
     warmup = RequestBeatmapFileWarmupUseCase(
         FakeWarmupResolver(
@@ -1361,21 +1563,18 @@ async def test_score_submit_fallback_warmup_precedes_retryable_replay_storage_fa
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """リプレイ storage の retryable failure は fallback warmup request 後に発生する。
+    """リプレイ storage の retryable failure は fallback warmup request 後に発生する.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        valid_input: valid な command input。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: retryable result、event 順序、warmup request が期待と異なる場合。
-
-    Constraints:
-        replay blob storage failure は fallback warmup request の後に扱う。
+    Notes:
+        replay blob storage failure は fallback warmup request の後に扱う.
     """
     events: list[str] = []
     warmup = RecordingWarmupUseCase(events)
@@ -1416,21 +1615,18 @@ async def test_score_submit_terminal_reject_does_not_request_fallback_warmup(
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """ヒット validation 前の terminal reject は fallback warmup を起動しない。
+    """ヒット validation 前の terminal reject は fallback warmup を起動しない.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        valid_input: valid な command input。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: terminal reject result や warmup 未実行状態が期待と異なる場合。
-
-    Constraints:
-        validation reject は beatmap file fallback warmup の対象外にする。
+    Notes:
+        validation reject は beatmap file fallback warmup の対象外にする.
     """
     events: list[str] = []
     warmup = RecordingWarmupUseCase(events)
@@ -1464,21 +1660,18 @@ async def test_online_checksum_duplicate_rejection(
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
 ) -> None:
-    """重複 online checksum は別 submission として terminal reject する。
+    """重複 online checksum は別 submission として terminal reject する.
 
     Args:
-        service: test 対象の ProcessScoreSubmissionUseCase。
-        valid_input: valid な command input。
-        repos: assertion 用 repository view。
+        service (ProcessScoreSubmissionUseCase): test 対象の ProcessScoreSubmissionUseCase.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: duplicate result や terminal rejected snapshot が期待と異なる場合。
-
-    Constraints:
-        fingerprint が異なっても online checksum が同じなら重複として扱う。
+    Notes:
+        fingerprint が異なっても online checksum が同じなら重複として扱う.
     """
     _score_repo, submission_repo, _ = repos
 
@@ -1521,23 +1714,19 @@ async def test_performance_integration_preserves_duplicate_terminal_rejects(
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """重複 checksum の terminal reject は performance response を待機しない。
+    """重複 checksum の terminal reject は performance response を待機しない.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        valid_input: valid な command input。
-        repos: assertion 用 repository view。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: duplicate result、performance query、submission snapshot が
-            期待と異なる場合。
-
-    Constraints:
-        terminal rejected duplicate submission は performance response wait を開始しない。
+    Notes:
+        terminal rejected duplicate submission は performance response wait を開始しない.
     """
     _score_repo, submission_repo, _replay_repo = repos
     performance_request = RecordingPerformanceCalculationRequest()
@@ -1632,22 +1821,19 @@ async def test_online_checksum_duplicate_rejection_ignores_fallback_warmup_failu
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """ウォームアップ failure 時も重複 online checksum は terminal reject のままにする。
+    """ウォームアップ failure 時も重複 online checksum は terminal reject のままにする.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        valid_input: valid な command input。
-        repos: assertion 用 repository view。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: duplicate result、warmup 呼び出し、snapshot が期待と異なる場合。
-
-    Constraints:
-        fallback warmup failure は duplicate online checksum の rejection 理由を上書きしない。
+    Notes:
+        fallback warmup failure は duplicate online checksum の rejection 理由を上書きしない.
     """
     _score_repo, submission_repo, _ = repos
     events: list[str] = []
@@ -1699,22 +1885,19 @@ async def test_online_checksum_duplicate_rejection_ignores_file_pending_warmup(
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """ファイル warmup pending 時も重複 online checksum は terminal reject のままにする。
+    """ファイル warmup pending 時も重複 online checksum は terminal reject のままにする.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        valid_input: valid な command input。
-        repos: assertion 用 repository view。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: duplicate result、warmup log、snapshot が期待と異なる場合。
-
-    Constraints:
-        file warmup pending は duplicate online checksum の terminal reject を変えない。
+    Notes:
+        file warmup pending は duplicate online checksum の terminal reject を変えない.
     """
     _score_repo, submission_repo, _ = repos
     warmup = RequestBeatmapFileWarmupUseCase(
@@ -1774,20 +1957,17 @@ async def test_replay_checksum_duplicate_rejection(
     service: ProcessScoreSubmissionUseCase,
     repos: ScoreRepositoryViews,
 ) -> None:
-    """重複 replay checksum を terminal reject する。
+    """重複 replay checksum を terminal reject する.
 
     Args:
-        service: test 対象の ProcessScoreSubmissionUseCase。
-        repos: assertion 用 repository view。
+        service (ProcessScoreSubmissionUseCase): test 対象の ProcessScoreSubmissionUseCase.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: duplicate replay checksum の result が期待と異なる場合。
-
-    Constraints:
-        online checksum が異なっても replay checksum が同じなら重複として扱う。
+    Notes:
+        online checksum が異なっても replay checksum が同じなら重複として扱う.
     """
     _, _, _replay_repo = repos
 
@@ -1818,21 +1998,18 @@ async def test_replay_checksum_duplicate_rejection_ignores_fallback_warmup_failu
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """ウォームアップ failure 時も重複 replay checksum は terminal reject のままにする。
+    """ウォームアップ failure 時も重複 replay checksum は terminal reject のままにする.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        repos: assertion 用 repository view。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: duplicate result、warmup 呼び出し、snapshot が期待と異なる場合。
-
-    Constraints:
-        fallback warmup failure は duplicate replay checksum の rejection 理由を上書きしない。
+    Notes:
+        fallback warmup failure は duplicate replay checksum の rejection 理由を上書きしない.
     """
     _score_repo, submission_repo, _replay_repo = repos
     events: list[str] = []
@@ -1881,20 +2058,17 @@ async def test_submission_fingerprint_idempotency(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
 ) -> None:
-    """同じ request content は保存済み result を cache として返す。
+    """同じ request content は保存済み result を cache として返す.
 
     Args:
-        service: test 対象の ProcessScoreSubmissionUseCase。
-        valid_input: valid な command input。
+        service (ProcessScoreSubmissionUseCase): test 対象の ProcessScoreSubmissionUseCase.
+        valid_input (ParsedSubmissionInput): valid な command input.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: cached result の outcome や score id が期待と異なる場合。
-
-    Constraints:
-        server receive time が変わっても request fingerprint が同じなら同じ result を返す。
+    Notes:
+        server receive time が変わっても request fingerprint が同じなら同じ result を返す.
     """
     input_data = replace(
         valid_input,
@@ -1923,22 +2097,19 @@ async def test_same_fingerprint_retry_rebuilds_response_from_existing_score_perf
     repos: ScoreRepositoryViews,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """同じ fingerprint の retry は既存 score の current performance を読む。
+    """同じ fingerprint の retry は既存 score の current performance を読む.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        valid_input: valid な command input。
-        repos: assertion 用 repository view。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: cached result、performance query、submission snapshot が期待と異なる場合。
-
-    Constraints:
-        same-fingerprint retry は新規計算 request を増やさず既存 score の response を再構築する。
+    Notes:
+        same-fingerprint retry は新規計算 request を増やさず既存 score の response を再構築する.
     """
     _score_repo, submission_repo, _replay_repo = repos
     performance_request = RecordingPerformanceCalculationRequest()
@@ -1998,21 +2169,18 @@ async def test_submission_fingerprint_idempotency_ignores_fallback_warmup_failur
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """代替 warmup failure は同じ fingerprint の cached result を変えない。
+    """代替 warmup failure は同じ fingerprint の cached result を変えない.
 
     Args:
-        uow_factory: test 用 Unit of Work factory。
-        valid_input: valid な command input。
-        beatmap_resolver: eligible beatmap を返す fake resolver。
+        uow_factory (InMemoryUnitOfWorkFactory): test 用 Unit of Work factory.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        beatmap_resolver (FakeBeatmapResolver): eligible beatmap を返す fake resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: cached result や warmup 呼び出し記録が期待と異なる場合。
-
-    Constraints:
-        fallback warmup failure は same-fingerprint cached result の error_reason を変えない。
+    Notes:
+        fallback warmup failure は same-fingerprint cached result の error_reason を変えない.
     """
     events: list[str] = []
     warmup = RecordingWarmupUseCase(events, outcome=BeatmapFileWarmupOutcome.FAILED)
@@ -2049,21 +2217,18 @@ async def test_in_progress_retry_returns_accepted_pending(
     valid_input: ParsedSubmissionInput,
     repos: ScoreRepositoryViews,
 ) -> None:
-    """処理中 state の同じ fingerprint は accepted_pending を返す。
+    """処理中 state の同じ fingerprint は accepted_pending を返す.
 
     Args:
-        service: test 対象の ProcessScoreSubmissionUseCase。
-        valid_input: valid な command input。
-        repos: assertion 用 repository view。
+        service (ProcessScoreSubmissionUseCase): test 対象の ProcessScoreSubmissionUseCase.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        repos (ScoreRepositoryViews): assertion 用 repository view.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: in-progress retry result が期待と異なる場合。
-
-    Constraints:
-        processing state の submission は二重実行せず accepted_pending として返す。
+    Notes:
+        processing state の submission は二重実行せず accepted_pending として返す.
     """
     _score_repo, submission_repo, _replay_repo = repos
 
@@ -2097,22 +2262,18 @@ async def test_authorization_failure_terminal_reject(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
 ) -> None:
-    """認可 failure は terminal reject を返す。
+    """認可 failure は terminal reject を返す.
 
     Args:
-        service: test 対象の ProcessScoreSubmissionUseCase。
-        valid_input: valid な command input。
+        service (ProcessScoreSubmissionUseCase): test 対象の ProcessScoreSubmissionUseCase.
+        valid_input (ParsedSubmissionInput): valid な command input.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: invalid credential の terminal reject result が期待と異なる場合。
-
-    Constraints:
-        認可 failure は score 保存前に terminal reject として表現する。
+    Notes:
+        認可 failure は score 保存前に terminal reject として表現する.
     """
-
     # Invalid password
     invalid_input = ParsedSubmissionInput(
         parsed_score=make_test_parsed_score(
@@ -2141,23 +2302,20 @@ async def test_beatmap_ineligibility_terminal_reject(
     valid_input: ParsedSubmissionInput,
     beatmap_resolver: FakeBeatmapResolver,
 ) -> None:
-    """不適格 beatmap は terminal reject を返す。
+    """不適格 beatmap は terminal reject を返す.
 
     Args:
-        service: test 対象の ProcessScoreSubmissionUseCase。
-        valid_input: valid な command input。
-        beatmap_resolver: ineligible beatmap を返すよう変更する fake resolver。
+        service (ProcessScoreSubmissionUseCase): test 対象の ProcessScoreSubmissionUseCase.
+        valid_input (ParsedSubmissionInput): valid な command input.
+        beatmap_resolver (FakeBeatmapResolver): ineligible beatmapを返すよう変更するfake
+            resolver.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: ineligible beatmap の terminal reject result が期待と異なる場合。
-
-    Constraints:
-        beatmap eligibility failure は score 保存前に terminal reject として表現する。
+    Notes:
+        beatmap eligibility failure は score 保存前に terminal reject として表現する.
     """
-
     beatmap_resolver.eligibility = _ineligible_beatmap()
 
     input_data = replace(
@@ -2177,20 +2335,17 @@ async def test_validation_failure_terminal_reject(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
 ) -> None:
-    """検証 failure は terminal reject を返す。
+    """検証 failure は terminal reject を返す.
 
     Args:
-        service: test 対象の ProcessScoreSubmissionUseCase。
-        valid_input: valid な command input。
+        service (ProcessScoreSubmissionUseCase): test 対象の ProcessScoreSubmissionUseCase.
+        valid_input (ParsedSubmissionInput): valid な command input.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: invalid score payload の terminal reject result が期待と異なる場合。
-
-    Constraints:
-        hit validation failure は retryable ではなく terminal reject として扱う。
+    Notes:
+        hit validation failure は retryable ではなく terminal reject として扱う.
     """
     input_data = replace(
         valid_input,
@@ -2210,20 +2365,17 @@ async def test_metrics_logged_on_success(
     service: ProcessScoreSubmissionUseCase,
     valid_input: ParsedSubmissionInput,
 ) -> None:
-    """成功 submission では metrics を log に出す。
+    """成功 submission では metrics を log に出す.
 
     Args:
-        service: test 対象の ProcessScoreSubmissionUseCase。
-        valid_input: valid な command input。
+        service (ProcessScoreSubmissionUseCase): test 対象の ProcessScoreSubmissionUseCase.
+        valid_input (ParsedSubmissionInput): valid な command input.
 
     Returns:
-        None。
+        None: 検証を完了し, 呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: success metrics log や latency 値が期待と異なる場合。
-
-    Constraints:
-        successful submission の latency fields は numeric metrics として出力する。
+    Notes:
+        successful submission の latency fields は numeric metrics として出力する.
     """
     input_data = replace(
         valid_input,

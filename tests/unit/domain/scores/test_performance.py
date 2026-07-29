@@ -1,4 +1,4 @@
-"""Unit tests for score performance domain policy."""
+"""Score performance calculationのstateとeligibility policyを検証する."""
 
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -24,6 +24,20 @@ def _make_score(
     leaderboard_eligible_at_submission: bool = True,
     mods: ModCombination | None = None,
 ) -> Score:
+    """Performance policy評価用の有効なScoreを指定条件で作成する.
+
+    Args:
+        passed (bool): scoreをpassedとして扱うか.
+        status (BeatmapRankStatus | str | None): submit時点のbeatmap statusまたは未設定値.
+        leaderboard_eligible_at_submission (bool): submit時点でleaderboard対象か.
+        mods (ModCombination | None): 使用するmod群. Noneならmodなしにする.
+
+    Returns:
+        Score: 指定条件以外を固定したperformance評価用score.
+
+    Raises:
+        ValueError: status文字列がBeatmapRankStatusとして無効な場合.
+    """
     status_value = status.value if isinstance(status, BeatmapRankStatus) else status
     score_mods = mods if mods is not None else ModCombination.none()
     return Score(
@@ -57,6 +71,16 @@ def _make_score(
 
 
 def test_performance_calculation_state_groups() -> None:
+    """Performance calculation lifecycleのstate分類を検証する.
+
+    pending, terminal, historicalに属するstate集合を比較する.
+
+    Returns:
+        None: state集合とSUPERSEDEDのhistorical性を検証して完了する.
+
+    Raises:
+        AssertionError: lifecycle state分類が変更された場合.
+    """
     assert PerformanceCalculationState.pending_states() == frozenset(
         {
             PerformanceCalculationState.QUEUED,
@@ -74,6 +98,14 @@ def test_performance_calculation_state_groups() -> None:
 
 
 def test_completed_calculation_requires_pp_stars_and_calculated_timestamp() -> None:
+    """COMPLETED calculationがPP, star rating, calculated timestampを保持できることを検証する.
+
+    Returns:
+        None: 構築済みcalculationの完了payloadを検証して完了する.
+
+    Raises:
+        AssertionError: completed stateの必須payload保持が変わった場合.
+    """
     calculated_at = datetime(2026, 6, 16, 0, 0, 0, tzinfo=UTC)
 
     calculation = PerformanceCalculation(
@@ -108,6 +140,17 @@ def test_completed_calculation_requires_pp_stars_and_calculated_timestamp() -> N
 def test_pending_calculation_must_not_have_pp_or_unavailable_reason(
     state: PerformanceCalculationState,
 ) -> None:
+    """Pending calculationがPPまたはunavailable reasonを保持できないことを検証する.
+
+    Args:
+        state (PerformanceCalculationState): 検証するpending lifecycle state.
+
+    Returns:
+        None: 不正payloadの構築がValueErrorになることを検証して完了する.
+
+    Raises:
+        AssertionError: pending stateが完了payloadを受理した場合.
+    """
     with pytest.raises(ValueError, match="pending calculation cannot have pp"):
         _ = PerformanceCalculation(
             id=1,
@@ -127,6 +170,14 @@ def test_pending_calculation_must_not_have_pp_or_unavailable_reason(
 
 
 def test_unavailable_calculation_requires_reason_without_pp() -> None:
+    """UNAVAILABLE calculationがreasonを持ちPPを持たないstate payloadを受理することを検証する.
+
+    Returns:
+        None: unavailable reasonを保持するcalculationを検証して完了する.
+
+    Raises:
+        AssertionError: unavailable stateのreason payloadが失われた場合.
+    """
     calculation = PerformanceCalculation(
         id=1,
         score_id=10,
@@ -147,6 +198,14 @@ def test_unavailable_calculation_requires_reason_without_pp() -> None:
 
 
 def test_superseded_calculation_cannot_be_current() -> None:
+    """SUPERSEDED calculationをcurrentとして生成できないことを検証する.
+
+    Returns:
+        None: 矛盾するstate payloadがValueErrorになることを検証して完了する.
+
+    Raises:
+        AssertionError: historical calculationをcurrentとして受理した場合.
+    """
     with pytest.raises(ValueError, match="superseded calculation cannot be current"):
         _ = PerformanceCalculation(
             id=1,
@@ -172,6 +231,17 @@ def test_superseded_calculation_cannot_be_current() -> None:
 def test_ranked_and_approved_passed_vanilla_scores_are_eligible(
     status: BeatmapRankStatus,
 ) -> None:
+    """passedのRANKEDまたはAPPROVED vanilla scoreをPP対象にすることを検証する.
+
+    Args:
+        status (BeatmapRankStatus): PP対象として許可するbeatmap status.
+
+    Returns:
+        None: eligibilityがTrueで除外reasonがないことを検証して完了する.
+
+    Raises:
+        AssertionError: 対象statusのpassed vanilla scoreを除外した場合.
+    """
     decision = PerformanceEligibilityPolicy().evaluate(_make_score(status=status))
 
     assert decision.is_eligible
@@ -191,6 +261,18 @@ def test_non_ranked_pp_statuses_are_out_of_scope(
     status: BeatmapRankStatus,
     reason: str,
 ) -> None:
+    """Ranked scope外のbeatmap statusをmachine-readable reason付きで除外することを検証する.
+
+    Args:
+        status (BeatmapRankStatus): PP対象外として扱うbeatmap status.
+        reason (str): 期待する除外reason.
+
+    Returns:
+        None: eligibility否定と固定reasonを検証して完了する.
+
+    Raises:
+        AssertionError: scope外statusを受理するかreasonが変わった場合.
+    """
     decision = PerformanceEligibilityPolicy().evaluate(_make_score(status=status))
 
     assert not decision.is_eligible
@@ -198,6 +280,14 @@ def test_non_ranked_pp_statuses_are_out_of_scope(
 
 
 def test_failed_score_is_out_of_scope() -> None:
+    """Failed scoreをranked PP scopeからscore_failed reasonで除外することを検証する.
+
+    Returns:
+        None: eligibility否定とscore_failed reasonを検証して完了する.
+
+    Raises:
+        AssertionError: failed scoreをPP対象にした場合.
+    """
     decision = PerformanceEligibilityPolicy().evaluate(_make_score(passed=False))
 
     assert not decision.is_eligible
@@ -205,6 +295,14 @@ def test_failed_score_is_out_of_scope() -> None:
 
 
 def test_submission_ineligible_score_is_out_of_scope() -> None:
+    """submit時にleaderboard対象外だったscoreをbest candidateから除外することを検証する.
+
+    Returns:
+        None: eligibility否定とscore_not_eligible reasonを検証して完了する.
+
+    Raises:
+        AssertionError: submit eligibilityを無視してcandidateを受理した場合.
+    """
     decision = PerformanceEligibilityPolicy().evaluate_best_candidate(
         _make_score(leaderboard_eligible_at_submission=False)
     )
@@ -224,6 +322,18 @@ def test_relax_and_autopilot_scores_are_out_of_scope(
     mods: ModCombination,
     reason: str,
 ) -> None:
+    """RELAXまたはAUTOPILOT modのscoreをplaystyle scope外として除外することを検証する.
+
+    Args:
+        mods (ModCombination): scope外playstyleを表すmod組合せ.
+        reason (str): 期待する除外reason.
+
+    Returns:
+        None: eligibility否定と固定reasonを検証して完了する.
+
+    Raises:
+        AssertionError: scope外playstyleをPP対象にした場合.
+    """
     decision = PerformanceEligibilityPolicy().evaluate(_make_score(mods=mods))
 
     assert not decision.is_eligible
@@ -231,6 +341,14 @@ def test_relax_and_autopilot_scores_are_out_of_scope(
 
 
 def test_missing_beatmap_status_is_out_of_scope() -> None:
+    """submit時のbeatmap statusがないscoreをPP対象外にすることを検証する.
+
+    Returns:
+        None: eligibility否定とbeatmap_status_missing reasonを検証して完了する.
+
+    Raises:
+        AssertionError: status不明scoreをPP対象にした場合.
+    """
     decision = PerformanceEligibilityPolicy().evaluate(_make_score(status=None))
 
     assert not decision.is_eligible
@@ -238,12 +356,28 @@ def test_missing_beatmap_status_is_out_of_scope() -> None:
 
 
 def test_formula_profile_policy_returns_one_profile_per_playstyle() -> None:
+    """VANILLA playstyleに現行VANILLA_RANKED formula profileだけを対応付けることを検証する.
+
+    Returns:
+        None: active profileのidentityを検証して完了する.
+
+    Raises:
+        AssertionError: VANILLAのactive formula profileが変わった場合.
+    """
     policy = FormulaProfilePolicy()
 
     assert policy.active_profile_for(Playstyle.VANILLA) is FormulaProfile.VANILLA_RANKED
 
 
 def test_future_loved_relax_and_autopilot_pp_scopes_remain_disabled() -> None:
+    """未採用のLOVED, RELAX, AUTOPILOT PP scopeが明示的に無効なままであることを検証する.
+
+    Returns:
+        None: profile mappingと三つのeligibility否定を検証して完了する.
+
+    Raises:
+        AssertionError: 将来用scopeを意図せず有効化した場合.
+    """
     eligibility_policy = PerformanceEligibilityPolicy()
     profile_policy = FormulaProfilePolicy()
 
@@ -258,6 +392,14 @@ def test_future_loved_relax_and_autopilot_pp_scopes_remain_disabled() -> None:
 
 
 def test_formula_profile_policy_rejects_unknown_playstyle_object() -> None:
+    """FormulaProfilePolicyが未知objectをplaystyleとして受理しないことを検証する.
+
+    Returns:
+        None: 未知入力がValueErrorになることを検証して完了する.
+
+    Raises:
+        AssertionError: 型外のplaystyle objectをprofileへ対応付けた場合.
+    """
     policy = FormulaProfilePolicy()
 
     with pytest.raises(ValueError, match="unsupported playstyle"):

@@ -1,4 +1,4 @@
-"""Stable presence request C2S payload parsing."""
+"""stable presence requestのC2S payloadを解析する."""
 
 from typing import Annotated
 
@@ -16,7 +16,12 @@ _PRESENCE_REQUEST_ALL_RESERVED_PAYLOAD_SIZE = 4
 
 @cpstruct(order=LittleEndian)
 class PresenceRequestPayload:
-    """PRESENCE_REQUEST の user id list payload。"""
+    """PRESENCE_REQUESTのuser ID list payloadを表す.
+
+    Attributes:
+        count (int): user_idsの件数を表すuint16 wire値.
+        user_ids (list[int]): count件のsigned int32 user IDをwire順に保持する一覧.
+    """
 
     count: Annotated[int, uint16]
     user_ids: Annotated[list[int], int32[this.count]]
@@ -24,40 +29,42 @@ class PresenceRequestPayload:
 
 @cpstruct(order=LittleEndian)
 class PresenceRequestAllReservedPayload:
-    """PRESENCE_REQUEST_ALL の互換 reserved int32 payload。"""
+    """PRESENCE_REQUEST_ALLの互換reserved int32 payloadを表す.
+
+    Attributes:
+        reserved (int): semanticsを持たず互換性のためだけに読むsigned int32値.
+    """
 
     reserved: Annotated[int, int32]
 
 
 def presence_request_payload(user_ids: list[int]) -> bytes:
-    """C2S fixture 用の PRESENCE_REQUEST payload を構築する。
+    """fixture用のPRESENCE_REQUEST payloadを構築する.
 
-    引数:
-        user_ids: stable client が presence を要求する user id の一覧。
+    Args:
+        user_ids (list[int]): stable clientがpresenceを要求するuser IDの一覧.
 
-    戻り値:
-        `count + int32[]` の wire 形式で構築した payload。
+    Returns:
+        bytes: countとsigned int32 user ID列を連結したpayload.
 
-    制約:
-        `user_ids` の件数上限は parse 側で検証する。fixture builder は
-        入力順を保持して wire bytes を生成する。
+    Notes:
+        件数上限はparse側で検証し, このbuilderは入力順を保ったwire bytesを生成する.
     """
     payload: bytes = pack(PresenceRequestPayload(count=len(user_ids), user_ids=user_ids))
     return payload
 
 
 def parse_presence_request_payload(payload: bytes) -> tuple[int, ...]:
-    """PRESENCE_REQUEST payload を検証して user id 順で返す。
+    """PRESENCE_REQUEST payloadを検証してuser ID順で返す.
 
-    引数:
-        payload: stable client から受け取った C2S payload bytes。
+    Args:
+        payload (bytes): stable clientから受け取ったC2S payload bytes.
 
-    戻り値:
-        payload に含まれる user id を wire 順に並べた tuple。
+    Returns:
+        tuple[int, ...]: payloadに含まれるuser IDをwire順に並べたtuple.
 
-    例外:
-        PacketReadError: payload が壊れている、非 canonical、または 256 件を
-            超える user id を含む場合。
+    Raises:
+        PacketReadError: payloadが壊れている, 非canonical, または256件を超えるuser IDを含む場合.
     """
     try:
         parsed = unpack(PresenceRequestPayload, payload)
@@ -77,20 +84,19 @@ def parse_presence_request_payload(payload: bytes) -> tuple[int, ...]:
 
 
 def parse_presence_request_all_payload(payload: bytes) -> None:
-    """PRESENCE_REQUEST_ALL payload を検証する。
+    """PRESENCE_REQUEST_ALL payloadを検証する.
 
-    引数:
-        payload: stable client から受け取った C2S payload bytes。
+    Args:
+        payload (bytes): stable clientから受け取ったC2S payload bytes.
 
-    戻り値:
-        なし。payload が許容される wire shape の場合は正常に戻る。
+    Returns:
+        None: payloadが許可されたwire shapeなら値を返さず完了する.
 
-    例外:
-        PacketReadError: payload が空でも互換 reserved int32 でもない場合。
+    Raises:
+        PacketReadError: payloadが空でも互換reserved int32でもない場合.
 
-    制約:
-        参照実装には reserved int32 を読む実装がある一方で、
-        他の資料では empty packet とされているため、両方の wire shape を許容する。
+    Notes:
+        参照実装と資料間の互換性のため, empty packetとreserved int32の両方を許容する.
     """
     if len(payload) == 0:
         return

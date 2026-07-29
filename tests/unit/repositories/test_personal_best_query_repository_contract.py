@@ -1,3 +1,5 @@
+"""PersonalBest query repositoryのread model契約を検証するtests."""
+
 from datetime import UTC, datetime
 
 import pytest
@@ -22,6 +24,14 @@ _NOW = datetime(2026, 6, 17, tzinfo=UTC)
 
 @pytest.mark.asyncio
 async def test_personal_best_query_returns_current_score_listing() -> None:
+    """保存済みPersonalBestをscore listingのread modelへ写す契約を検証する.
+
+    userとscoreとPersonalBestとreplayを保存し,
+    query結果がscore fieldとrankとreplay有無を公開することを確認する.
+
+    Returns:
+        None: PersonalBest listingのfield値を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = InMemoryUnitOfWorkFactory()
 
     async with factory() as uow:
@@ -61,6 +71,13 @@ async def test_personal_best_query_returns_current_score_listing() -> None:
 
 @pytest.mark.asyncio
 async def test_personal_best_query_ranks_against_same_scope_personal_bests() -> None:
+    """同じscope内の高いPersonalBestに基づくrankを返す契約を検証する.
+
+    対象userとより高得点のuserを同一scopeへ保存し, 対象read modelが2位になることを確認する.
+
+    Returns:
+        None: scope内の順位計算を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = InMemoryUnitOfWorkFactory()
 
     async with factory() as uow:
@@ -115,6 +132,14 @@ async def test_personal_best_query_ranks_against_same_scope_personal_bests() -> 
 
 @pytest.mark.asyncio
 async def test_personal_best_query_returns_none_when_projection_is_missing() -> None:
+    """PersonalBest projectionがないscopeではNoneを返す契約を検証する.
+
+    空のrepositoryに存在しないuserとbeatmapのqueryを送信し,
+    listingを合成せずNoneを返すことを確認する.
+
+    Returns:
+        None: projection不在時のquery結果を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = InMemoryUnitOfWorkFactory()
     repository = InMemoryPersonalBestQueryRepository(factory)
 
@@ -130,6 +155,14 @@ async def test_personal_best_query_returns_none_when_projection_is_missing() -> 
 
 
 def _user(*, username: str = "PlayerOne") -> User:
+    """PersonalBest query用のUser fixtureを構築する.
+
+    Args:
+        username (str): read modelへ反映する表示名.
+
+    Returns:
+        User: 固定日時とusername由来のsafe usernameを持つ保存前user.
+    """
     safe_username = username.lower()
     return User(
         id=0,
@@ -144,6 +177,15 @@ def _user(*, username: str = "PlayerOne") -> User:
 
 
 def _scope(*, user_id: int, beatmap_id: int) -> PersonalBestScope:
+    """指定userとbeatmapに対するglobal PersonalBest scopeを構築する.
+
+    Args:
+        user_id (int): PersonalBestを所有するuser ID.
+        beatmap_id (int): PersonalBestを比較するbeatmap ID.
+
+    Returns:
+        PersonalBestScope: osu vanilla global leaderboardを表すscope.
+    """
     return PersonalBestScope(
         user_id=user_id,
         beatmap_id=beatmap_id,
@@ -159,6 +201,16 @@ def _score(
     score: int = 987_654,
     online_checksum: str = "online-checksum",
 ) -> Score:
+    """PersonalBest queryで参照する保存前Score fixtureを構築する.
+
+    Args:
+        user_id (int): scoreを提出したuser ID.
+        score (int): rank比較に使う得点.
+        online_checksum (str): scoreを識別するonline checksum.
+
+    Returns:
+        Score: 指定userと得点を持つosu vanillaのscore.
+    """
     return Score(
         id=None,
         user_id=user_id,
@@ -187,6 +239,14 @@ def _score(
 
 
 def _replay(*, score_id: int) -> Replay:
+    """scoreにreplayがあることを示すReplay fixtureを構築する.
+
+    Args:
+        score_id (int): replayを関連付ける保存済みscore ID.
+
+    Returns:
+        Replay: read modelのhas_replayを真にする最小replay metadata.
+    """
     return Replay(
         id=None,
         score_id=score_id,

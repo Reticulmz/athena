@@ -1,3 +1,5 @@
+"""BlobModelの永続化schema契約を検証する."""
+
 from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import CheckConstraint, Column, String, Table, UniqueConstraint
@@ -11,29 +13,72 @@ if TYPE_CHECKING:
 
 
 def _table() -> Table:
+    """BlobModelに対応するSQLAlchemy tableを取得する.
+
+    Returns:
+        Table: BlobModelが登録したtable metadata.
+    """
     return cast("Table", BlobModel.__table__)
 
 
 def _column(table: Table, name: str) -> Column[object]:
+    """指定名のcolumnをtable metadataから取得する.
+
+    Args:
+        table (Table): columnを保持するSQLAlchemy table.
+        name (str): 取得するcolumn名.
+
+    Returns:
+        Column[object]: 指定名に対応するcolumn metadata.
+    """
     return cast("Column[object]", table.c[name])
 
 
 def _string_length(column: Column[object]) -> int | None:
+    """文字列columnに設定された最大長を取得する.
+
+    Args:
+        column (Column[object]): String型として検証するcolumn metadata.
+
+    Returns:
+        int | None: SQLAlchemy String型に設定された最大長.
+    """
     return cast("String", column.type).length
 
 
 def _enum_type(column: Column[object]) -> SQLAlchemyEnum:
+    """Enum columnのSQLAlchemy enum型設定を検証用に取得する.
+
+    Args:
+        column (Column[object]): SQLAlchemyEnum型であることを期待するcolumn metadata.
+
+    Returns:
+        SQLAlchemyEnum: columnに設定されたenum型metadata.
+
+    Raises:
+        AssertionError: columnの型がSQLAlchemyEnumではない場合.
+    """
     enum_type = column.type
     assert isinstance(enum_type, SQLAlchemyEnum)
     return enum_type
 
 
 def test_blob_model_is_registered_for_migration_discovery() -> None:
+    """BlobModelがmigration discovery用metadataへ登録される契約を検証する.
+
+    Returns:
+        None: table名とmetadata登録を検証して完了する.
+    """
     assert BlobModel.__tablename__ == "blobs"
     assert Base.metadata.tables["blobs"] is _table()
 
 
 def test_blob_model_defines_immutable_metadata_columns() -> None:
+    """Blob metadataのcolumn構成と不変制約を検証する.
+
+    Returns:
+        None: 必須columnと長さおよびnull制約とenum制約を検証して完了する.
+    """
     table = _table()
 
     assert set(table.columns.keys()) == {
@@ -67,6 +112,11 @@ def test_blob_model_defines_immutable_metadata_columns() -> None:
 
 
 def test_blob_storage_does_not_register_shared_attachment_table() -> None:
+    """Blob storageが共有attachment tableを所有しない境界を検証する.
+
+    Returns:
+        None: 禁止されたtable名がmetadataに存在しないことを検証して完了する.
+    """
     shared_attachment_table_names = {
         "blob_attachments",
         "blob_attachment",
@@ -78,6 +128,11 @@ def test_blob_storage_does_not_register_shared_attachment_table() -> None:
 
 
 def test_blob_model_enforces_unique_sha256_and_non_negative_size() -> None:
+    """BlobのSHA-256一意性とbyte size下限のdatabase制約を検証する.
+
+    Returns:
+        None: unique constraintとcheck constraintの定義を検証して完了する.
+    """
     table = _table()
 
     unique_constraints = {

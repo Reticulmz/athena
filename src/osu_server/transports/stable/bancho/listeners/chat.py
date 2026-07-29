@@ -1,4 +1,4 @@
-"""chat の local listener と切断時 cleanup。"""
+"""chatのlocal event listenerとdisconnect時channel cleanupを提供する."""
 
 from __future__ import annotations
 
@@ -14,10 +14,13 @@ if TYPE_CHECKING:
 
 
 class ChatListeners(ListenerGroup):
-    """切断 event を channel state cleanup に適応する listener。
+    """disconnect eventをchannel state cleanupへ適応するlistenerを提供する.
 
-    chat history persistence は durable work 側の責務であり、この listener では
-    process-local な membership cleanup だけを best-effort で実行する。
+    Attributes:
+        _channel_state (ChannelStateStore): process-local channel membershipを管理するstore.
+
+    Notes:
+        chat historyのdurable persistenceはこのlistenerの責務外である.
     """
 
     _channel_state: ChannelStateStore
@@ -27,9 +30,21 @@ class ChatListeners(ListenerGroup):
         *,
         channel_state: ChannelStateStore,
     ) -> None:
+        """Channel state cleanup依存を初期化する.
+
+        Args:
+            channel_state (ChannelStateStore): disconnect userをchannelから除去するstore.
+        """
         self._channel_state = channel_state
 
     @listens(UserDisconnected)
     async def on_user_disconnected(self, event: UserDisconnected) -> None:
-        """チャンネルステートから切断ユーザーを全チャンネル除去。"""
+        """切断userを全channelのprocess-local membershipから除去する.
+
+        Args:
+            event (UserDisconnected): 除去対象userのdisconnect domain event.
+
+        Returns:
+            None: channel cleanupを実行し,呼び出し側へ値を返さずに完了する.
+        """
         _ = await self._channel_state.remove_user_from_all(event.user_id)

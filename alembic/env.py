@@ -1,7 +1,7 @@
-"""Alembic async migration environment.
+"""Alembicの非同期migration実行環境を構成するmodule.
 
-Reads DATABASE_URL from AppConfig and converts it to the
-``postgresql+asyncpg://`` scheme for async engine creation.
+AppConfigからDATABASE_URLを取得し, 非同期engine用の
+`postgresql+asyncpg://` URLへ変換する.
 """
 
 import asyncio
@@ -41,9 +41,6 @@ def run_migrations_offline() -> None:
 
     Returns:
         None: transaction単位をmigration fileごとに分けてSQL生成を完了したことを示す.
-
-    Raises:
-        Exception: Alembic contextの構成またはmigration SQL生成に失敗した場合.
 
     Notes:
         autocommit blockを含むmigrationと同じtransaction境界をoffline SQLにも適用する.
@@ -88,7 +85,17 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    """Create an async engine and run migrations."""
+    """非同期engineを作成してonline migrationを実行する.
+
+    Returns:
+        None: migration実行後にconnectionとengineを破棄したことを示す.
+
+    Raises:
+        SQLAlchemyError: engine作成, database接続, またはmigration実行に失敗した場合.
+
+    Notes:
+        engineはmigration実行だけに使用し, connection poolを保持しない.
+    """
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
@@ -102,7 +109,14 @@ async def run_async_migrations() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode."""
+    """Online modeのmigration実行を同期entry pointから開始する.
+
+    Returns:
+        None: 非同期migration coroutineの完了を待機したことを示す.
+
+    Raises:
+        RuntimeError: 実行中のevent loop内で`asyncio.run()`を呼び出した場合.
+    """
     asyncio.run(run_async_migrations())
 
 

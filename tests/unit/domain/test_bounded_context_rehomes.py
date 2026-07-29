@@ -1,4 +1,7 @@
-"""Bounded-context ownership tests for moved domain language."""
+"""移動済みdomain languageのbounded-context所有を検証するmodule.
+
+旧pathの不在とdomain packageがadapter依存を持たない境界を確認する.
+"""
 
 from __future__ import annotations
 
@@ -52,6 +55,13 @@ FORBIDDEN_DOMAIN_IMPORT_ROOTS = (
 
 
 def test_rehomed_domain_concepts_import_from_bounded_contexts() -> None:
+    """移動済みdomain conceptが新しいbounded contextからimportできることを検証する.
+
+    BeatmapとChannelおよびBlob関連の型名を確認し新しいpackageが公開modelを提供することを確認する.
+
+    Returns:
+        None: rehome後のimport surface検証を完了する.
+    """
     assert Beatmap.__name__ == "Beatmap"
     assert BeatmapResolveResult.__name__ == "BeatmapResolveResult"
     assert Channel.__name__ == "Channel"
@@ -63,6 +73,13 @@ def test_rehomed_domain_concepts_import_from_bounded_contexts() -> None:
 
 
 def test_old_domain_concept_locations_are_not_supported() -> None:
+    """Deprecated domain pathがrepository内に残っていないことを検証する.
+
+    旧beatmapとblobおよびchannel pathを走査しdeprecated fileが存在しないことを確認する.
+
+    Returns:
+        None: 旧domain path不在の検証を完了する.
+    """
     remaining = [
         path.relative_to(PROJECT_ROOT).as_posix()
         for path in OLD_DOMAIN_CONCEPT_PATHS
@@ -73,6 +90,13 @@ def test_old_domain_concept_locations_are_not_supported() -> None:
 
 
 def test_moved_domain_contexts_have_no_adapter_or_io_imports() -> None:
+    """移動済みdomain contextがadapterまたはI/O依存をimportしないことを検証する.
+
+    対象packageのPython sourceをAST解析し禁止rootと一致するimportが空であることを確認する.
+
+    Returns:
+        None: domain dependency境界の検証を完了する.
+    """
     violations = [
         f"{path.relative_to(PROJECT_ROOT).as_posix()} imports {forbidden}"
         for root in MOVED_DOMAIN_CONTEXT_ROOTS
@@ -87,6 +111,18 @@ def test_moved_domain_contexts_have_no_adapter_or_io_imports() -> None:
 
 
 def _imported_modules(path: Path) -> set[str]:
+    """Python sourceからabsolute import module名の集合を抽出する.
+
+    Args:
+        path (Path): 解析するPython source fileのpath.
+
+    Returns:
+        set[str]: direct importとabsolute from importから得たmodule名の集合.
+
+    Raises:
+        OSError: pathのsource textを読み取れない場合.
+        SyntaxError: source textがPython構文として解析できない場合.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.as_posix())
     modules: set[str] = set()
 
@@ -103,4 +139,13 @@ def _imported_modules(path: Path) -> set[str]:
 
 
 def _module_matches_root(module: str, root: str) -> bool:
+    """Module名が禁止dependency rootまたはそのchildか判定する.
+
+    Args:
+        module (str): sourceから抽出したabsolute module名.
+        root (str): 比較するdependency root.
+
+    Returns:
+        bool: moduleがrootと等しいかrootのchildならTrue.
+    """
     return module == root or module.startswith(f"{root}.")

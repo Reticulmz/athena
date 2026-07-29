@@ -1,4 +1,4 @@
-"""Score performance command runtime helpers."""
+"""スコア performance command workflow の公開 API を提供する."""
 
 from osu_server.services.commands.scores.performance.beatmap_file_provider import (
     BeatmapMirrorPerformanceBeatmapFileProvider,

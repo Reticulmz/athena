@@ -1,4 +1,4 @@
-"""Base event type for domain events."""
+"""Domain eventの共通基底型を定義するmodule."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class Event:
-    """Base class for all domain events.
+    """不変domain eventが継承する属性なしの共通基底型を表す.
 
-    Concrete event types (e.g. ``ChatMessageSent``, ``UserPresenceUpdated``)
-    inherit from this and add their own fields.  All events are immutable.
+    Notes:
+        具体eventはこの型を継承してpayload fieldを追加し,frozen dataclassとして不変に扱う.
     """

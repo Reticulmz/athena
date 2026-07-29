@@ -1,4 +1,4 @@
-"""SQLAlchemy query-side personal best repository."""
+"""SQLAlchemyでstable getscores用personal bestをread-onlyで取得するquery repositoryを提供する."""
 
 from __future__ import annotations
 
@@ -23,11 +23,23 @@ _ROW_TUPLE_LENGTH = 4
 
 
 class SQLAlchemyPersonalBestQueryRepository:
-    """Read-only personal best projection repository backed by short sessions."""
+    """短命なSQLAlchemy read sessionでpersonal best projectionを取得する.
+
+    Attributes:
+        _session_factory (SQLAlchemyQuerySessionFactory): queryごとに閉じるread sessionのfactory.
+    """
 
     _session_factory: SQLAlchemyQuerySessionFactory
 
     def __init__(self, session_factory: SQLAlchemyQuerySessionFactory) -> None:
+        """読み取り用session factoryを保持してrepositoryを初期化する.
+
+        Args:
+            session_factory (SQLAlchemyQuerySessionFactory): query用の非同期read session factory.
+
+        Notes:
+            初期化時にはsessionを生成せず,personal best projectionを変更しない.
+        """
         self._session_factory = session_factory
 
     async def get_personal_best(
@@ -39,6 +51,26 @@ class SQLAlchemyPersonalBestQueryRepository:
         playstyle: Playstyle,
         category: LeaderboardCategory,
     ) -> GetscoresPersonalBest | None:
+        """UserのBeatmap別personal bestをstable getscores read modelとして取得する.
+
+        Args:
+            user_id (int): personal bestを検索するUserの永続ID.
+            beatmap_id (int): personal bestを検索するBeatmapの永続ID.
+            ruleset (Ruleset): Scoreを絞り込むruleset.
+            playstyle (Playstyle): Scoreを絞り込むplaystyle.
+            category (LeaderboardCategory): personal best projectionを絞り込むleaderboard category.
+
+        Returns:
+            GetscoresPersonalBest | None: rankとreplay有無を含むstable getscores用read model.
+            対象projectionがない場合はNone.
+
+        Raises:
+            SQLAlchemyError: sessionのreadまたはrow取得に失敗した場合.
+            ValueError: result Score modelのrulesetまたはplaystyleをdomain enumへ変換できない場合.
+
+        Notes:
+            queryは最大1rowを返し,projectionとScoreの永続stateを変更しない.
+        """
         async with self._session_factory() as session:
             rows = (
                 await session.execute(
@@ -71,6 +103,21 @@ def _personal_best_statement(
     playstyle: Playstyle,
     category: LeaderboardCategory,
 ) -> Executable:
+    """Personal best Score,表示User名,replay有無,rankを取得するstatementを構築する.
+
+    Args:
+        user_id (int): personal bestを検索するUserの永続ID.
+        beatmap_id (int): personal bestを検索するBeatmapの永続ID.
+        ruleset (Ruleset): Scoreを絞り込むruleset.
+        playstyle (Playstyle): Scoreを絞り込むplaystyle.
+        category (LeaderboardCategory): personal best projectionを絞り込むleaderboard category.
+
+    Returns:
+        Executable: 最大1rowのScore,username,has_replay,rankを返すSELECT statement.
+
+    Notes:
+        rankは同一Beatmap,ruleset,playstyle,category内でranking valueが大きいrowの数に1を加える.
+    """
     better_personal_best = aliased(PersonalBestModel)
     replay_exists = (
         select(ReplayModel.id).where(ReplayModel.score_id == ScoreModel.id).limit(1).exists()
@@ -109,6 +156,18 @@ def _personal_best_statement(
 def _iter_personal_best_rows(
     rows: object,
 ) -> list[tuple[ScoreModel, str, bool, int]]:
+    """SQLAlchemy result rowを型検証済みpersonal best tupleへ正規化する.
+
+    Args:
+        rows (object): tuple形式またはattribute形式のSQLAlchemy result row list.
+
+    Returns:
+        list[tuple[ScoreModel, str, bool, int]]: Score,username,replay有無,rankの順のtuple.
+        必須fieldの型が一致しないrowは含めない.
+
+    Notes:
+        has_replayはtruthinessでboolへ変換し,tuple形式とnamed row形式の両方を受け入れる.
+    """
     result: list[tuple[ScoreModel, str, bool, int]] = []
     for row in cast("list[object]", rows):
         if isinstance(row, tuple):
@@ -143,6 +202,23 @@ def _score_listing_from_models(
     has_replay: bool,
     rank: int,
 ) -> GetscoresPersonalBest:
+    """Score modelとprojection fieldをstable getscores用personal bestへ変換する.
+
+    Args:
+        score_model (ScoreModel): personal bestに対応する永続Score model.
+        username (str): Score ownerの表示名.
+        has_replay (bool): replay attachmentが存在するかを示すflag.
+        rank (int): category内で計算済みの順位.
+
+    Returns:
+        GetscoresPersonalBest: stable getscores responseが必要とするScore listing read model.
+
+    Raises:
+        ValueError: score_modelのrulesetまたはplaystyleをdomain enumへ変換できない場合.
+
+    Notes:
+        Score fieldは変換せずに転記し,rulesetとplaystyleだけをdomain enumへ変換する.
+    """
     return GetscoresPersonalBest(
         score_id=score_model.id,
         user_id=score_model.user_id,

@@ -1,1 +1,1 @@
-"""First-party API transport family package."""
+"""Athena所有APIのtransport familyを提供するpackage."""

@@ -1,4 +1,4 @@
-"""User lifecycle event listeners for stable presence broadcasts."""
+"""stable Bancho user lifecycle eventをpresence packet fan-outへ適応する."""
 
 from __future__ import annotations
 
@@ -25,11 +25,14 @@ logger = cast("structlog.stdlib.BoundLogger", structlog.get_logger(__name__))
 
 
 class LifecycleListeners(ListenerGroup):
-    """Listens for user lifecycle domain events and broadcasts S2C packets.
+    """user lifecycle eventをstable presence packet fan-outへ変換する.
 
-    Currently handles:
-    - ``UserConnected``: ``USER_PRESENCE`` to all other online users
-    - ``UserDisconnected``: ``USER_QUIT`` to all online users
+    Attributes:
+        _active_sessions_query (ListActiveSessionsQuery): online sessionを取得するquery.
+        _packet_queue (PacketQueue): S2C packetをrecipientへenqueueするqueue.
+        _presence_roster (StablePresenceRoster): presenceとquitのfan-outを組み立てるworkflow.
+        _stable_user_status_store (StableUserStatusStore | None):
+            connected userのcurrent modeを取得するstore.
     """
 
     _active_sessions_query: ListActiveSessionsQuery
@@ -44,6 +47,16 @@ class LifecycleListeners(ListenerGroup):
         stable_user_status_store: StableUserStatusStore | None = None,
         presence_roster: StablePresenceRoster | None = None,
     ) -> None:
+        """Lifecycle presence fan-outの依存を初期化する.
+
+        Args:
+            active_sessions_query (ListActiveSessionsQuery): online sessionを取得するquery.
+            packet_queue (PacketQueue): S2C packetを配信するqueue.
+            stable_user_status_store (StableUserStatusStore | None):
+                current mode読取用のoptional store.
+            presence_roster (StablePresenceRoster | None): fan-out構築workflow.
+                Noneなら既定instanceを使う.
+        """
         self._active_sessions_query = active_sessions_query
         self._packet_queue = packet_queue
         self._stable_user_status_store = stable_user_status_store
@@ -51,7 +64,17 @@ class LifecycleListeners(ListenerGroup):
 
     @listens(UserConnected)
     async def on_user_connected(self, event: UserConnected) -> None:
-        """接続した user の USER_PRESENCE を他 online user へ配信する。"""
+        """接続userのUSER_PRESENCEを既存online userへfan-outする.
+
+        Args:
+            event (UserConnected): 接続したuserを表すdomain event.
+
+        Returns:
+            None: recipientがある場合にUSER_PRESENCEをenqueueし,値を返さずに完了する.
+
+        Notes:
+            active sessionに存在しないuserと接続user自身にはpacketを配信しない.
+        """
         active_sessions = await self._active_sessions_query.execute(ListActiveSessionsQueryInput())
         play_mode = await self._play_mode_for_user(event.user_id)
         fanout = self._presence_roster.connected_user_fanout(
@@ -65,6 +88,14 @@ class LifecycleListeners(ListenerGroup):
             await self._packet_queue.enqueue(recipient_user_id, fanout.packet)
 
     async def _play_mode_for_user(self, user_id: int) -> int:
+        """Connected userの保存済みstable play modeを正規化して取得する.
+
+        Args:
+            user_id (int): modeを取得するconnected userのID.
+
+        Returns:
+            int: 有効なstable play mode. store未設定,値なし,読取失敗,不正値ではosu mode.
+        """
         if self._stable_user_status_store is None:
             return StableMode.Osu.value
         try:
@@ -84,10 +115,16 @@ class LifecycleListeners(ListenerGroup):
 
     @listens(UserDisconnected)
     async def on_user_disconnected(self, event: UserDisconnected) -> None:
-        """Broadcast USER_QUIT to all online users.
+        """切断userのUSER_QUITをonline recipientへfan-outする.
 
-        The disconnecting user is excluded from the broadcast because stable
-        clients do not need their own quit notification.
+        Args:
+            event (UserDisconnected): 切断したuserを表すdomain event.
+
+        Returns:
+            None: recipientごとにUSER_QUITをenqueueし,呼び出し側へ値を返さずに完了する.
+
+        Notes:
+            切断user自身には自身のquit通知を配信しない.
         """
         active_sessions = await self._active_sessions_query.execute(ListActiveSessionsQueryInput())
         fanout = self._presence_roster.disconnected_user_fanout(

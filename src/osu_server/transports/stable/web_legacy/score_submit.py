@@ -1,4 +1,4 @@
-"""安定版 POST /web/osu-submit-modular-selector.php の score submit handler。"""
+"""Stable score submit requestをcommand workflowへ適合させるhandlerを提供する."""
 
 from __future__ import annotations
 
@@ -39,21 +39,54 @@ logger: structlog.stdlib.BoundLogger = cast(
 
 
 class ScoreSubmissionCommand(Protocol):
-    async def execute(self, input_data: ParsedSubmissionInput) -> SubmissionResult: ...
+    """正規化済みscore submission inputを処理するcommand boundaryを表す."""
+
+    async def execute(self, input_data: ParsedSubmissionInput) -> SubmissionResult:
+        """Score submission inputを処理して結果を返す.
+
+        Args:
+            input_data (ParsedSubmissionInput): transportで正規化済みのscore submission input.
+
+        Returns:
+            SubmissionResult: stable response選択に使うsubmission処理結果.
+        """
+        ...
 
 
 class CurrentUserStatsQueryPort(Protocol):
+    """Completed score response用のcurrent user statsを取得するquery boundaryを表す."""
+
     async def execute(
         self,
         input_data: CurrentUserStatsQueryInput,
-    ) -> CurrentUserStatsQueryResult: ...
+    ) -> CurrentUserStatsQueryResult:
+        """指定userのrulesetとplaystyleに対応するcurrent statsを取得する.
+
+        Args:
+            input_data (CurrentUserStatsQueryInput): user ID, ruleset, playstyleを指定するquery
+                input.
+
+        Returns:
+            CurrentUserStatsQueryResult: 指定userの取得済みcurrent stats.
+        """
+        ...
 
 
 class ScoreSubmitHandler:
-    """安定版 POST /web/osu-submit-modular-selector.php を処理する handler。
+    """Stable `POST /web/osu-submit-modular-selector.php`を処理するhandler.
 
-    Stable client の multipart score submission を request mapping に変換し、
-    decoder で command input 化して score submission command workflow へ渡す。
+    Stable clientのmultipart score submissionをrequest mappingへ変換し, decoderでcommand
+    input化してscore submission command workflowへ渡す.
+
+    Attributes:
+        _submit_score_command (ScoreSubmissionCommand): 正規化済みsubmission inputを
+            処理するcommand.
+        _decoder (StableScoreSubmitDecoder): stable request mappingをcommand inputへ変換
+            するdecoder.
+        _mapper (StableScoreSubmitMapper): stable requestとresponseを変換するmapper.
+        _current_user_stats_query (CurrentUserStatsQueryPort | None): completed response用statsを
+            補完するquery.
+        _event_bus (LocalEventBus | None): current stats update eventを発火するbus.
     """
 
     def __init__(
@@ -65,24 +98,22 @@ class ScoreSubmitHandler:
         current_user_stats_query: CurrentUserStatsQueryPort | None = None,
         event_bus: LocalEventBus | None = None,
     ) -> None:
-        """処理 handler の command, decoder, mapper, side-effect 境界を設定する。
+        """Handlerのcommand, decoder, mapper, side-effect境界を設定する.
 
         Args:
-            submit_score_command: 正規化済み入力を処理する score submission command。
-            decoder: stable encrypted payload を ParsedSubmissionInput へ変換する decoder。
-            limits: mapper を省略した場合に使う multipart parser 制限。
-            mapper: stable request/response mapper。None の場合は limits から生成する。
-            current_user_stats_query: completed response 用 stats を補完する query。
-            event_bus: completed 後に current stats update event を発火する bus。
+            submit_score_command (ScoreSubmissionCommand): 正規化済みinputを処理するscore
+                submission command.
+            decoder (StableScoreSubmitDecoder): stable encrypted payloadをParsedSubmissionInputへ
+                変換するdecoder.
+            limits (MultipartLimits | None): mapper省略時に使うmultipart parser制限.
+            mapper (StableScoreSubmitMapper | None): stable request/response mapper.
+                Noneならlimitsから生成する.
+            current_user_stats_query (CurrentUserStatsQueryPort | None):
+                completed response用statsを補完するquery.
+            event_bus (LocalEventBus | None): completed後にcurrent stats update eventを発火するbus.
 
-        Returns:
-            None。
-
-        Raises:
-            生成時に独自例外は送出しない。
-
-        Constraints:
-            Handler は transport adaptation に閉じ、repository や DB session を直接扱わない。
+        Notes:
+            handlerはtransport adaptationに閉じ, repositoryやDB sessionを直接扱わない.
         """
         self._submit_score_command: ScoreSubmissionCommand = submit_score_command
         self._decoder: StableScoreSubmitDecoder = decoder
@@ -91,23 +122,19 @@ class ScoreSubmitHandler:
         self._event_bus: LocalEventBus | None = event_bus
 
     async def __call__(self, request: Request) -> Response:
-        """安定版 score submit request を command workflow へ適用する。
+        """Stable score submit requestをcommand workflowへ適用する.
 
         Args:
-            request: stable client から届いた multipart HTTP request。
+            request (Request): stable clientから届いたmultipart HTTP request.
 
         Returns:
-            stable client 互換の score submit response。
+            Response: stable client互換のscore submit response.
 
-        Raises:
-            公開境界では decode や command の失敗を送出しない。multipart parse 失敗と
-            decoder 失敗は stable terminal response に変換し、command の retryable や
-            pending 結果も stable response body へ変換する。
-
-        Constraints:
-            復号済み payload、password-md5、replay binary、opaque metadata の生値を
-            logging しない。current stats 補完と event 発火の失敗は submission response を
-            失敗扱いにしない。
+        Notes:
+            multipart parseとdecoder失敗はterminal responseへ変換する. retryableとpending結果も
+            stable response bodyへ変換する. 復号済みpayload, password-md5, replay binary, opaque
+            metadataの生値はloggingせず, current stats補完とevent発火の失敗はresponseを
+            失敗扱いにしない.
         """
         try:
             body = await request.body()
@@ -183,6 +210,19 @@ class ScoreSubmitHandler:
         self,
         result: SubmissionResult,
     ) -> UserCurrentStats | None:
+        """Completed submission後のcurrent user statsを取得してupdate eventを発火する.
+
+        Args:
+            result (SubmissionResult): completed submissionのuser, ruleset, playstyle, statsを
+                持つ結果.
+
+        Returns:
+            UserCurrentStats | None: responseへ使うcurrent stats. userまたはstatsが得られない
+                場合はNone.
+
+        Notes:
+            stats queryまたはevent発火の失敗は記録して抑制し, submission responseを変えない.
+        """
         if result.user_id is None:
             return None
 
@@ -233,6 +273,14 @@ class ScoreSubmitHandler:
 def _score_submit_overall_stats(
     current_stats: UserCurrentStats | None,
 ) -> StableScoreSubmitOverallStats | None:
+    """Domain current statsをstable overall chart用の値へ変換する.
+
+    Args:
+        current_stats (UserCurrentStats | None): completed submission後に取得したdomain stats.
+
+    Returns:
+        StableScoreSubmitOverallStats | None: stable chart用の丸め済みstats. inputがNoneならNone.
+    """
     if current_stats is None:
         return None
     return StableScoreSubmitOverallStats(

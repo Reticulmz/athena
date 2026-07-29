@@ -1,4 +1,4 @@
-"""Stable replay download compatibility vocabulary tests."""
+"""Stable replay download compatibility vocabulary の契約を検証する."""
 
 from __future__ import annotations
 
@@ -30,22 +30,54 @@ DOMAIN_MODULE = (
 
 
 class BodyDecisionPayload(TypedDict):
+    """body assembly decision fixture に含まれるpayloadを表す.
+
+    Attributes:
+        download_body_strategy (str): fixtureが宣言するresponse body生成方針.
+    """
+
     download_body_strategy: str
 
 
 class BodyDecisionFixture(TypedDict):
+    """body assembly decision fixture全体の構造を表す.
+
+    Attributes:
+        decision (BodyDecisionPayload): response bodyの生成方針を含むdecision.
+    """
+
     decision: BodyDecisionPayload
 
 
 class ResponseContractBranchFixture(TypedDict):
+    """response contract fixture内の一つのbranchを表す.
+
+    Attributes:
+        branch (str): client-visible response branch label.
+    """
+
     branch: str
 
 
 class ResponseContractFixture(TypedDict):
+    """response contract fixture全体の構造を表す.
+
+    Attributes:
+        branches (list[ResponseContractBranchFixture]): 検証対象のclient-visible branch群.
+    """
+
     branches: list[ResponseContractBranchFixture]
 
 
 def test_replay_download_branch_values_cover_runtime_response_vocabulary() -> None:
+    """全runtime response branchが固定のclient-visible語彙を持つことを検証する.
+
+    Returns:
+        None: enum member名と値を完全一致で検証して完了する.
+
+    Raises:
+        AssertionError: branchの追加, 欠落, 順序またはwire value変更があった場合.
+    """
     members = [(member.name, member.value) for member in ReplayDownloadBranch]
 
     assert members == [
@@ -60,6 +92,14 @@ def test_replay_download_branch_values_cover_runtime_response_vocabulary() -> No
 
 
 def test_replay_download_body_strategy_values_match_decision_fixture() -> None:
+    """Body strategy enumがfixtureで許可されたdecision valueを表すことを検証する.
+
+    Returns:
+        None: enum語彙とfixtureのstrategy参照を検証して完了する.
+
+    Raises:
+        AssertionError: enumの固定語彙またはfixtureとの対応が壊れた場合.
+    """
     members = [(member.name, member.value) for member in ReplayDownloadBodyStrategy]
     decision = cast(
         "BodyDecisionFixture",
@@ -77,6 +117,14 @@ def test_replay_download_body_strategy_values_match_decision_fixture() -> None:
 
 
 def test_replay_download_branch_contract_labels_match_response_fixture() -> None:
+    """Branch label mappingがresponse contract fixtureの全labelを過不足なく表すことを検証する.
+
+    Returns:
+        None: fixture labelとbranch別contract labelを検証して完了する.
+
+    Raises:
+        AssertionError: labelの欠落, 追加, またはbranch別の固定対応が変わった場合.
+    """
     contract = cast(
         "ResponseContractFixture",
         json.loads((FIXTURE_DIR / "response_contract.json").read_text()),
@@ -111,6 +159,14 @@ def test_replay_download_branch_contract_labels_match_response_fixture() -> None
 
 
 def test_replay_download_response_body_is_not_stored_blob_object() -> None:
+    """同一payloadでもresponse bodyとstored blob objectを別型かつ非公開値として扱うことを検証する.
+
+    Returns:
+        None: byte数の一致, 型の分離, reprからのpayload秘匿を検証して完了する.
+
+    Raises:
+        AssertionError: value objectの同一視またはpayloadのrepr露出が発生した場合.
+    """
     response_body = ReplayDownloadResponseBody(payload=b"synthetic-response-body")
     stored_blob = ReplayDownloadStoredBlobObject(payload=b"synthetic-response-body")
 
@@ -122,6 +178,14 @@ def test_replay_download_response_body_is_not_stored_blob_object() -> None:
 
 
 def test_replay_download_compatibility_module_has_no_runtime_boundary_imports() -> None:
+    """Replay download domain moduleがruntime adapter境界へ依存しないことを検証する.
+
+    Returns:
+        None: ASTから収集したimport集合に禁止rootがないことを検証して完了する.
+
+    Raises:
+        AssertionError: transport, repository, serviceまたはinfrastructure依存を追加した場合.
+    """
     forbidden_roots = (
         "athena_cli",
         "fastapi",

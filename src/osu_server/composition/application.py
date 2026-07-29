@@ -1,4 +1,8 @@
-"""Starlette application factory."""
+"""Starlette root applicationを組み立てるfactoryを提供する.
+
+stable transportのhost-based route,local development向けfallback route,lifespan,
+request middlewareをtop-levelで結合する.
+"""
 
 from __future__ import annotations
 
@@ -32,19 +36,21 @@ if TYPE_CHECKING:
 
 
 def create_app(provider_overrides: Iterable[Provider] = ()) -> Starlette:
-    """Create and return the Starlette root application.
+    """明示provider overrideを持つStarlette root applicationを作成する.
 
-    Routing (domain from ``DOMAIN`` env var or ``.env.$ENVIRONMENT``,
-    default ``athena.localhost``):
-        - ``Host("c.$domain")`` -> bancho (POST /, GET /, GET /health)
-        - ``Host("c<digits>.$domain")`` -> bancho stable fallback hosts
-        - ``Host("ce.$domain")`` -> bancho stable fallback host
-        - ``Host("osu.$domain")`` -> web_legacy (POST /users, GET /, GET /health)
-        - ``GET /health`` -> DB/Redis health check (all routes)
-        - Path-based fallbacks for local dev without DNS/subdomains:
-            - ``GET /`` -> version info
-            - ``GET /health`` -> health check
-            - ``POST /web/users`` -> registration handler
+    Args:
+        provider_overrides (Iterable[Provider]): lifespan内のDishka containerへ追加する
+            provider override. 未指定時はproduction provider graphを使用する.
+
+    Returns:
+        Starlette: host/path routingとrequest middlewareを設定済みのapplication.
+
+    Notes:
+        routing domainは`load_routing_config()`から取得する. stable client用host routeと,
+        DNSなしのlocal development向けpath fallbackを同時に登録する.
+        `Host("c.$domain")`,`Host("c<digits>.$domain")`,`Host("ce.$domain")`には
+        Bancho routeを,`Host("osu.$domain")`にはweb legacy routeを登録する. path fallbackとして
+        `GET /`,`GET /health`,`POST /web/users`も登録する.
     """
     domain = load_routing_config().domain
 

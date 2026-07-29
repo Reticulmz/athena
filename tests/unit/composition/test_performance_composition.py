@@ -1,4 +1,4 @@
-"""Composition tests for performance subsystem defaults."""
+"""Performance subsystem の既定 dependency composition を検証する."""
 
 from __future__ import annotations
 
@@ -55,7 +55,18 @@ if TYPE_CHECKING:
 
 
 class _FakePerformanceCompletionPublisher:
+    """Valkey publisher を使わず completion 通知を受け取る fake."""
+
     async def publish(self, message: str, channel: str) -> int:
+        """通知を送信せず成功した publish 件数を返す.
+
+        Args:
+            message (str): 送信対象の completion message.
+            channel (str): 送信対象 channel.
+
+        Returns:
+            int: 通知先がないため0.
+        """
         _ = message
         _ = channel
         return 0
@@ -63,6 +74,14 @@ class _FakePerformanceCompletionPublisher:
 
 @pytest.mark.asyncio
 async def test_app_container_resolves_performance_defaults(tmp_path: Path) -> None:
+    """In-memory app container が performance subsystem の既定 dependency を解決する契約を検証する.
+
+    Args:
+        tmp_path (Path): test 用 blob storage root を作る一時 directory.
+
+    Returns:
+        None: 設定値と解決した provider, use case, query の型を検証して完了する.
+    """
     config = make_app_config(environment="test", blob_storage_local_root=str(tmp_path / "blobs"))
     container = make_app_container(
         config,
@@ -105,6 +124,13 @@ async def test_app_container_resolves_performance_defaults(tmp_path: Path) -> No
 
 @pytest.mark.asyncio
 async def test_app_container_resolves_valkey_completion_signal_by_default() -> None:
+    """開発用app containerがpublisher override下でもValkey completion signalを選ぶ.
+
+    この契約を検証する.
+
+    Returns:
+        None: 解決した signal が Valkey implementation であることを検証して完了する.
+    """
     config = make_app_config(environment="development")
     container = make_app_container(
         config,
@@ -128,6 +154,16 @@ async def test_app_container_resolves_valkey_completion_signal_by_default() -> N
 
 @pytest.mark.asyncio
 async def test_worker_container_resolves_performance_defaults(tmp_path: Path) -> None:
+    """In-memory worker containerがperformance subsystemの共有既定dependencyを解決する.
+
+    この契約を検証する.
+
+    Args:
+        tmp_path (Path): test 用 blob storage root を作る一時 directory.
+
+    Returns:
+        None: worker 用設定値と解決した provider, use case の型を検証して完了する.
+    """
     config = make_app_config(environment="test", blob_storage_local_root=str(tmp_path / "blobs"))
     container = make_worker_container(
         config,

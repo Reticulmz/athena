@@ -1,4 +1,4 @@
-"""HTTP infrastructure の公開 interface です."""
+"""HTTP infrastructure が公開する最小限の interface を定義します."""
 
 from __future__ import annotations
 
@@ -11,11 +11,12 @@ if TYPE_CHECKING:
 
 @dataclass(slots=True)
 class HttpFetchResult:
-    """HTTP から取得したバイト列と付随 metadata です.
+    """HTTP から取得した byte 列と付随 metadata です.
 
     Attributes:
-        content: 取得した response body です.
-        filename: Content-Disposition 等から判定したファイル名です. 未判定の場合は None です.
+        content (bytes): 取得した response body です.
+        filename (str | None): Content-Disposition 等から判定したファイル名です. 未判定の場合は
+            None です.
     """
 
     content: bytes
@@ -23,28 +24,25 @@ class HttpFetchResult:
 
 
 class HttpResponse(Protocol):
-    """HTTP response のうち service が参照する最小 interface です."""
+    """利用側 service が参照する HTTP response の最小 interface です."""
 
     @property
     def status_code(self) -> int:
         """HTTP status code を返します.
 
         Returns:
-            HTTP status code です.
-
-        Raises:
-            送出しません.
+            int: HTTP status code です.
         """
         ...
 
     def json(self) -> object:
-        """response body を JSON として decode します.
+        """Response body を JSON として decode します.
 
         Returns:
-            JSON decode 後の Python object です.
+            object: JSON decode 後の Python object です.
 
-        Raises:
-            body が JSON として解釈できない場合は実装側の例外を送出します.
+        Notes:
+            JSON decode failure の具体的な例外型は response 実装が定義します.
         """
         ...
 
@@ -62,15 +60,15 @@ class BeatmapHttpTransport(Protocol):
         """HTTP GET を実行します.
 
         Args:
-            url: request 先 URL です.
-            headers: request header です.
-            follow_redirects: redirect を追跡するかどうかです.
+            url (str): request 先 URL です.
+            headers (Mapping[str, str] | None): request header です.
+            follow_redirects (bool): redirect を追跡するかどうかです.
 
         Returns:
-            HTTP response です.
+            HttpResponse: HTTP request の response です.
 
-        Raises:
-            network error や timeout は実装側の例外を送出します.
+        Notes:
+            network error と timeout の具体的な例外型は transport 実装が定義します.
         """
         ...
 
@@ -83,14 +81,14 @@ class BeatmapHttpTransport(Protocol):
         """HTTP POST を実行します.
 
         Args:
-            url: request 先 URL です.
-            data: form body として送る key-value です.
+            url (str): request 先 URL です.
+            data (Mapping[str, str]): form body として送る key-value です.
 
         Returns:
-            HTTP response です.
+            HttpResponse: HTTP request の response です.
 
-        Raises:
-            network error や timeout は実装側の例外を送出します.
+        Notes:
+            network error と timeout の具体的な例外型は transport 実装が定義します.
         """
         ...
 
@@ -102,10 +100,7 @@ class BeatmapHttpClient(Protocol):
         """認証付き request などに使う低水準 HTTP transport を返します.
 
         Returns:
-            HTTP request を実行する transport です.
-
-        Raises:
-            送出しません.
+            BeatmapHttpTransport: HTTP request を実行する transport です.
         """
         ...
 
@@ -119,15 +114,16 @@ class BeatmapHttpClient(Protocol):
         """URL からバイト列を取得します.
 
         Args:
-            url: 取得対象 URL です.
-            source: error と log に使う取得元 label です.
-            lookup_key: error と log に使う検索 key です.
+            url (str): 取得対象 URL です.
+            source (str): error と log に使う取得元 label です.
+            lookup_key (str): error と log に使う検索 key です.
 
         Returns:
-            取得した body と filename metadata です.
+            HttpFetchResult: 取得した body と filename metadata です.
 
         Raises:
-            取得失敗時は BeatmapSourceError 等の実装側例外を送出します.
+            BeatmapSourceError: HTTP error,timeout,または connection failure を分類して
+                送出する場合.
         """
         ...
 
@@ -141,15 +137,16 @@ class BeatmapHttpClient(Protocol):
         """URL から JSON を取得します.
 
         Args:
-            url: 取得対象 URL です.
-            source: error と log に使う取得元 label です.
-            lookup_key: error と log に使う検索 key です.
+            url (str): 取得対象 URL です.
+            source (str): error と log に使う取得元 label です.
+            lookup_key (str): error と log に使う検索 key です.
 
         Returns:
-            JSON object または array です.
+            dict[str, object] | list[object]: JSON object または array です.
 
         Raises:
-            取得失敗または JSON decode 失敗時は BeatmapSourceError 等の実装側例外を送出します.
+            BeatmapSourceError: HTTP,接続,JSON decode の失敗,または top-level JSON primitive
+                の場合.
         """
         ...
 

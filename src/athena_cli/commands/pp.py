@@ -1,3 +1,5 @@
+"""performance point recalculationを実行するCLI command groupを定義する."""
+
 from __future__ import annotations
 
 import asyncio
@@ -37,24 +39,47 @@ _SUPPORTED_RULESETS_LABEL = "osu, taiko, catch, mania"
 
 
 class PerformanceRecalculationRunner(Protocol):
+    """performance recalculation use caseを実行する抽象boundaryを定義する."""
+
     async def run(
         self,
         *,
         environment: EnvironmentName,
         command: CreatePerformanceRecalculationBatchCommand,
     ) -> CreatePerformanceRecalculationBatchResult:
-        """Run PP recalculation candidate selection or batch creation."""
+        """candidate選択またはdurable recalculation batch作成を実行する.
+
+        Args:
+            environment (EnvironmentName): use caseを構成するvalidation済みenvironment名.
+            command (CreatePerformanceRecalculationBatchCommand):
+                recalculationのscopeとmodeを持つcommand.
+
+        Returns:
+            CreatePerformanceRecalculationBatchResult: candidate数または作成済みbatchを含む結果.
+        """
         ...
 
 
 @final
 class CompositionPerformanceRecalculationRunner:
+    """composition rootからperformance recalculation use caseを解決するrunnerを提供する."""
+
     async def run(
         self,
         *,
         environment: EnvironmentName,
         command: CreatePerformanceRecalculationBatchCommand,
     ) -> CreatePerformanceRecalculationBatchResult:
+        """environment設定でuse caseを構成してrecalculation commandを実行する.
+
+        Args:
+            environment (EnvironmentName): use caseを構成するvalidation済みenvironment名.
+            command (CreatePerformanceRecalculationBatchCommand):
+                recalculationのscopeとmodeを持つcommand.
+
+        Returns:
+            CreatePerformanceRecalculationBatchResult: candidate数または作成済みbatchを含む結果.
+        """
         with selected_environment_variable(environment):
             config = load_config()
         async with create_performance_recalculation_batch_use_case(config) as use_case:
@@ -63,10 +88,14 @@ class CompositionPerformanceRecalculationRunner:
 
 @app.callback()
 def pp() -> None:
-    """Manage PP recalculation operations."""
+    """PP recalculation operationのcommand groupを登録する.
+
+    Returns:
+        None: command groupのmetadataを登録し値を返さずに完了する.
+    """
 
 
-@app.command(name="recalculate")
+@app.command(name="recalculate", help="")
 def recalculate(
     score_id: Annotated[
         int | None,
@@ -108,6 +137,34 @@ def recalculate(
         typer.Option("--env", help="Target environment."),
     ] = None,
 ) -> None:
+    """指定scopeのscore performance recalculationをdry-runまたは実行する.
+
+    Args:
+        score_id (int | None):
+            1件のscoreへ絞り込むoptionalなID.
+        beatmap_id (int | None):
+            1件のbeatmapへ絞り込むoptionalなID.
+        user_id (int | None):
+            1件のuserへ絞り込むoptionalなID.
+        ruleset (str | None):
+            osuまたはtaikoまたはcatchまたはmaniaに絞り込むoptionalなlabel.
+        limit (int | None):
+            選択するcandidate数のoptionalな上限.
+        full_scope (bool):
+            narrow filterなしで全candidateを選択する場合はTrue.
+        include_unavailable (bool):
+            unavailableなcurrent performanceも選択する場合はTrue.
+        execute (bool):
+            durable recalculation workを作成する場合はTrue. Falseではdry-runを行う.
+        environment (str | None):
+            commandを実行するtarget environment. 未指定時はprocess環境を使用する.
+
+    Returns:
+        None: recalculation結果をCLIへ表示し値を返さずに完了する.
+
+    Raises:
+        typer.Exit: filter validationまたはrecalculation実行が失敗した場合.
+    """
     try:
         _recalculate(
             score_id=score_id,
@@ -127,6 +184,11 @@ def recalculate(
 
 
 def create_recalculation_runner() -> PerformanceRecalculationRunner:
+    """Composition rootに接続するperformance recalculation runnerを生成する.
+
+    Returns:
+        PerformanceRecalculationRunner: use caseをcomposition rootから解決するrunner.
+    """
     return CompositionPerformanceRecalculationRunner()
 
 
@@ -142,6 +204,26 @@ def _recalculate(
     execute: bool,
     environment: str | None,
 ) -> None:
+    """filterをvalidationしてperformance recalculation use caseを実行する.
+
+    Args:
+        score_id (int | None): 1件のscoreへ絞り込むoptionalなID.
+        beatmap_id (int | None): 1件のbeatmapへ絞り込むoptionalなID.
+        user_id (int | None): 1件のuserへ絞り込むoptionalなID.
+        ruleset (str | None): rulesetのoptionalなlabel.
+        limit (int | None): candidate数のoptionalな上限.
+        full_scope (bool): narrow filterなしで全candidateを選択する場合はTrue.
+        include_unavailable (bool): unavailableなcurrent performanceも選択する場合はTrue.
+        execute (bool): durable recalculation workを作成する場合はTrue.
+        environment (str | None): use caseを構成するtarget environment.
+
+    Returns:
+        None: recalculation結果を表示し値を返さずに完了する.
+
+    Raises:
+        CliUserError: rulesetまたはfilter scopeまたは正数validationを満たさない場合.
+        UnsupportedEnvironmentError: environmentがsupport対象外の場合.
+    """
     selected_ruleset = _parse_ruleset(ruleset)
     _validate_positive("score id", score_id)
     _validate_positive("beatmap id", beatmap_id)
@@ -184,6 +266,17 @@ def _recalculate(
 
 
 def _parse_ruleset(value: str | None) -> Ruleset | None:
+    """Ruleset labelをdomain Rulesetへ変換する.
+
+    Args:
+        value (str | None): optionalなruleset label.
+
+    Returns:
+        Ruleset | None: support対象のrulesetまたは未指定を表すNone.
+
+    Raises:
+        CliUserError: valueがsupport対象のruleset labelでない場合.
+    """
     if value is None:
         return None
     normalized = value.lower()
@@ -195,6 +288,18 @@ def _parse_ruleset(value: str | None) -> Ruleset | None:
 
 
 def _validate_positive(field_name: str, value: int | None) -> None:
+    """optionalなnumeric filterが指定時に正数であることを確認する.
+
+    Args:
+        field_name (str): error messageへ表示するfilter名.
+        value (int | None): validationするoptionalなfilter値.
+
+    Returns:
+        None: valueが未指定または正数で値を返さずに完了する.
+
+    Raises:
+        CliUserError: valueが0以下の場合.
+    """
     if value is not None and value <= 0:
         raise CliUserError(f"{field_name} must be positive.")
 
@@ -207,6 +312,21 @@ def _validate_scope(
     ruleset: Ruleset | None,
     full_scope: bool,
 ) -> None:
+    """full-scope flagとnarrow filterの組み合わせをvalidationする.
+
+    Args:
+        score_id (int | None): optionalなscore filter.
+        beatmap_id (int | None): optionalなbeatmap filter.
+        user_id (int | None): optionalなuser filter.
+        ruleset (Ruleset | None): optionalなruleset filter.
+        full_scope (bool): narrow filterなしの全candidate選択を要求する場合はTrue.
+
+    Returns:
+        None: filter scopeが有効で値を返さずに完了する.
+
+    Raises:
+        CliUserError: --allとnarrow filterを併用するかscope指定がない場合.
+    """
     has_narrow_filter = any(
         value is not None for value in (score_id, beatmap_id, user_id, ruleset)
     )
@@ -217,6 +337,17 @@ def _validate_scope(
 
 
 def _report_result(result: CreatePerformanceRecalculationBatchResult) -> None:
+    """Performance recalculation resultをCLI表示またはuser errorへ変換する.
+
+    Args:
+        result (CreatePerformanceRecalculationBatchResult): use caseが返したrecalculation結果.
+
+    Returns:
+        None: dry-runまたは作成済みbatchの結果を表示し値を返さずに完了する.
+
+    Raises:
+        CliUserError: use caseがrecalculation requestを拒否した場合.
+    """
     if result.outcome is CreatePerformanceRecalculationBatchOutcome.DRY_RUN:
         typer.echo("PP recalculation dry-run")
         _print_candidate_breakdown(result)
@@ -231,6 +362,17 @@ def _report_result(result: CreatePerformanceRecalculationBatchResult) -> None:
 
 
 def _print_created_batch(result: CreatePerformanceRecalculationBatchResult) -> None:
+    """作成済みrecalculation batchのIDとcandidate内訳を表示する.
+
+    Args:
+        result (CreatePerformanceRecalculationBatchResult): CREATED outcomeを持つrecalculation結果.
+
+    Returns:
+        None: batch情報とcandidate内訳を表示し値を返さずに完了する.
+
+    Raises:
+        RuntimeError: CREATED outcomeにbatch IDが含まれない場合.
+    """
     batch = result.batch
     if batch is None or batch.id is None:
         msg = "created recalculation batch did not include a batch id"
@@ -246,6 +388,14 @@ def _print_created_batch(result: CreatePerformanceRecalculationBatchResult) -> N
 def _print_candidate_breakdown(
     result: CreatePerformanceRecalculationBatchResult,
 ) -> None:
+    """Recalculation candidate数とreason別内訳を表示する.
+
+    Args:
+        result (CreatePerformanceRecalculationBatchResult): candidate数とreason countを持つ結果.
+
+    Returns:
+        None: candidate内訳とtarget calculator情報を表示し値を返さずに完了する.
+    """
     typer.echo(f"Candidates: {result.candidate_count}")
     if result.reason_counts:
         typer.echo("Reasons:")
@@ -263,6 +413,11 @@ def _print_candidate_breakdown(
 
 
 def _now() -> datetime:
+    """Recalculation requestへ設定するUTC基準の現在時刻を返す.
+
+    Returns:
+        datetime: UTC timezoneを持つ現在時刻.
+    """
     return datetime.now(tz=UTC)
 
 

@@ -1,4 +1,4 @@
-"""Replay download accounting gate の抽象 interface."""
+"""Replay download accounting 用の一時 claim contract を定義する module."""
 
 from __future__ import annotations
 
@@ -7,10 +7,11 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class ReplayDownloadAccountingGate(Protocol):
-    """Replay download accounting の一時 first-claim marker を扱う。
+    """Replay download accounting の一時 first-claim marker を扱う contract.
 
-    実装は replay view duplicate cooldown と latest activity throttle を
-    temporary state として扱い、durable source of truth にはしない。
+    Notes:
+        replay view duplicate cooldown と latest activity throttle は temporary state であり,
+        durable source of truth として利用しない.
     """
 
     async def claim_replay_view(
@@ -19,21 +20,21 @@ class ReplayDownloadAccountingGate(Protocol):
         score_id: int,
         ttl_seconds: int,
     ) -> bool:
-        """viewer と score の replay view marker を first-claim する。
+        """閲覧者と score の replay view marker を first-claim する.
 
         Args:
-            viewer_user_id: 認証済み viewer user id。
-            score_id: download 対象 score id。
-            ttl_seconds: marker を保持する秒数。caller が policy TTL を渡す。
+            viewer_user_id (int): 認証済み viewer user id.
+            score_id (int): download 対象 score id.
+            ttl_seconds (int): caller が policy として渡す marker の保持秒数.
 
         Returns:
-            marker を新規作成した場合は True。既存 marker がある場合は False。
+            bool: marker を新規作成した場合は True,既存 marker がある場合は False.
 
         Raises:
-            ValueError: ttl_seconds が 1 未満の場合。
+            ValueError: ttl_seconds が 1 未満の場合.
 
-        Constraints:
-            duplicate identity は viewer_user_id と score_id だけで構成する。
+        Notes:
+            duplicate identity は viewer_user_id と score_id だけで構成する.
         """
         ...
 
@@ -42,20 +43,17 @@ class ReplayDownloadAccountingGate(Protocol):
         viewer_user_id: int,
         score_id: int,
     ) -> None:
-        """viewer と score の replay view marker を削除する.
+        """閲覧者と score の replay view marker を削除する.
 
         Args:
-            viewer_user_id: 認証済み viewer user id。
-            score_id: download 対象 score id。
+            viewer_user_id (int): 認証済み viewer user id.
+            score_id (int): download 対象 score id.
 
         Returns:
-            None。
+            None: marker 削除処理の完了を表す.
 
-        Raises:
-            実装依存の一時 state 削除エラー。
-
-        Constraints:
-            durable mutation 失敗後の best-effort 補償で使う。
+        Notes:
+            durable mutation の失敗後に best-effort 補償として使う.
         """
         ...
 
@@ -64,20 +62,20 @@ class ReplayDownloadAccountingGate(Protocol):
         viewer_user_id: int,
         ttl_seconds: int,
     ) -> bool:
-        """viewer の latest activity marker を first-claim する。
+        """閲覧者の latest activity marker を first-claim する.
 
         Args:
-            viewer_user_id: 認証済み viewer user id。
-            ttl_seconds: marker を保持する秒数。caller が policy TTL を渡す。
+            viewer_user_id (int): 認証済み viewer user id.
+            ttl_seconds (int): caller が policy として渡す marker の保持秒数.
 
         Returns:
-            marker を新規作成した場合は True。既存 marker がある場合は False。
+            bool: marker を新規作成した場合は True,既存 marker がある場合は False.
 
         Raises:
-            ValueError: ttl_seconds が 1 未満の場合。
+            ValueError: ttl_seconds が 1 未満の場合.
 
-        Constraints:
-            throttle identity は viewer_user_id だけで構成する。
+        Notes:
+            throttle identity は viewer_user_id だけで構成する.
         """
         ...
 
@@ -85,18 +83,15 @@ class ReplayDownloadAccountingGate(Protocol):
         self,
         viewer_user_id: int,
     ) -> None:
-        """viewer の latest activity marker を削除する.
+        """閲覧者の latest activity marker を削除する.
 
         Args:
-            viewer_user_id: 認証済み viewer user id。
+            viewer_user_id (int): 認証済み viewer user id.
 
         Returns:
-            None。
+            None: marker 削除処理の完了を表す.
 
-        Raises:
-            実装依存の一時 state 削除エラー。
-
-        Constraints:
-            durable mutation 失敗後の best-effort 補償で使う。
+        Notes:
+            durable mutation の失敗後に best-effort 補償として使う.
         """
         ...

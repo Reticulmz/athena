@@ -1,11 +1,4 @@
-"""S2C login packet builders.
-
-Each builder function returns a complete packet (7-byte header + payload)
-using :func:`write_packet`.
-
-Design ref: S2C Login Packets component in bancho-protocol design.md
-Requirements: 6.1-6.12
-"""
+"""stable clientのlogin後に送るS2C packetを構築する."""
 
 from typing import Annotated
 
@@ -28,18 +21,10 @@ from osu_server.transports.stable.bancho.protocol.writer import write_packet
 
 @cpstruct(order=LittleEndian)
 class LoginReplyPayload:
-    """LOGIN_REPLY payload.
+    """LOGIN_REPLYのsigned int32 result payloadを表す.
 
-    挙動:
-        login 成功時の user id または失敗時の負の error code を保持する.
-    引数:
-        user_id: stable client に返す signed 32-bit の login result.
-    戻り値:
-        Caterpillar pack 時に sInt 1 field の byte 列へ encode される.
-    例外:
-        user_id が int32 範囲外の場合は Caterpillar の pack error を送出する.
-    制約:
-        packet header は含めず, payload 本体だけを表す.
+    Attributes:
+        user_id (int): 成功時はstable user ID, 失敗時は負のerror code.
     """
 
     user_id: Annotated[int, int32]
@@ -47,18 +32,10 @@ class LoginReplyPayload:
 
 @cpstruct(order=LittleEndian)
 class ProtocolVersionPayload:
-    """PROTOCOL_VERSION payload.
+    """PROTOCOL_VERSIONのsigned int32 payloadを表す.
 
-    挙動:
-        stable bancho protocol version を signed 32-bit 値として保持する.
-    引数:
-        version: stable client に通知する protocol version.
-    戻り値:
-        Caterpillar pack 時に sInt 1 field の byte 列へ encode される.
-    例外:
-        version が int32 範囲外の場合は Caterpillar の pack error を送出する.
-    制約:
-        packet header は含めず, payload 本体だけを表す.
+    Attributes:
+        version (int): stable clientへ通知するprotocol version.
     """
 
     version: Annotated[int, int32]
@@ -66,18 +43,10 @@ class ProtocolVersionPayload:
 
 @cpstruct(order=LittleEndian)
 class LoginPermissionsPayload:
-    """LOGIN_PERMISSIONS payload.
+    """LOGIN_PERMISSIONSのsigned int32 payloadを表す.
 
-    挙動:
-        stable client permission bitmask を signed 32-bit 値として保持する.
-    引数:
-        permissions: stable client に返す permission bitmask.
-    戻り値:
-        Caterpillar pack 時に sInt 1 field の byte 列へ encode される.
-    例外:
-        permissions が int32 範囲外の場合は Caterpillar の pack error を送出する.
-    制約:
-        packet header は含めず, payload 本体だけを表す.
+    Attributes:
+        permissions (int): stable clientへ返すpermission bitmask.
     """
 
     permissions: Annotated[int, int32]
@@ -85,18 +54,10 @@ class LoginPermissionsPayload:
 
 @cpstruct(order=LittleEndian)
 class NotificationPayload:
-    """ANNOUNCE payload.
+    """ANNOUNCEのBanchoString message payloadを表す.
 
-    挙動:
-        stable client に表示する notification text を BanchoString として保持する.
-    引数:
-        message: 表示する notification text.
-    戻り値:
-        Caterpillar pack 時に BanchoString の byte 列へ encode される.
-    例外:
-        message が encode 不能な場合は Caterpillar の pack error を送出する.
-    制約:
-        packet header は含めず, payload 本体だけを表す.
+    Attributes:
+        message (str): stable clientに表示するnotification text.
     """
 
     message: BanchoStringT
@@ -104,18 +65,10 @@ class NotificationPayload:
 
 @cpstruct(order=LittleEndian)
 class SilenceInfoPayload:
-    """SILENCE_INFO payload.
+    """SILENCE_INFOの残り秒数payloadを表す.
 
-    挙動:
-        残り silence 秒数を signed 32-bit 値として保持する.
-    引数:
-        remaining_seconds: stable client に通知する残り silence 秒数.
-    戻り値:
-        Caterpillar pack 時に sInt 1 field の byte 列へ encode される.
-    例外:
-        remaining_seconds が int32 範囲外の場合は Caterpillar の pack error を送出する.
-    制約:
-        packet header は含めず, payload 本体だけを表す.
+    Attributes:
+        remaining_seconds (int): signed int32で送る残りsilence秒数.
     """
 
     remaining_seconds: Annotated[int, int32]
@@ -123,20 +76,11 @@ class SilenceInfoPayload:
 
 @cpstruct(order=LittleEndian)
 class FriendsListPayload:
-    """FRIENDS_LIST payload.
+    """FRIENDS_LISTのcount-prefixed user ID listを表す.
 
-    挙動:
-        friend user id の一覧を uint16 count + int32 array として保持する.
-    引数:
-        count: friend_ids の要素数.
-        friend_ids: stable user id の一覧.
-    戻り値:
-        Caterpillar pack 時に IntList と同じ byte 列へ encode される.
-    例外:
-        count と friend_ids の長さが一致しない場合や値が wire type の範囲外の場合は
-        Caterpillar の pack error を送出する.
-    制約:
-        count は builder 側で len(friend_ids) から設定する.
+    Attributes:
+        count (int): friend_idsの要素数を表すuint16 wire値.
+        friend_ids (list[int]): count件のsigned int32 stable user ID.
     """
 
     count: Annotated[int, uint16]
@@ -145,20 +89,11 @@ class FriendsListPayload:
 
 @cpstruct(order=LittleEndian)
 class UserPresenceBundlePayload:
-    """USER_PRESENCE_BUNDLE payload.
+    """USER_PRESENCE_BUNDLEのcount-prefixed online user ID listを表す.
 
-    挙動:
-        online user id の一覧を uint16 count + int32 array として保持する.
-    引数:
-        count: user_ids の要素数.
-        user_ids: online stable user id の一覧.
-    戻り値:
-        Caterpillar pack 時に IntList と同じ byte 列へ encode される.
-    例外:
-        count と user_ids の長さが一致しない場合や値が wire type の範囲外の場合は
-        Caterpillar の pack error を送出する.
-    制約:
-        count は builder 側で len(user_ids) から設定する.
+    Attributes:
+        count (int): user_idsの要素数を表すuint16 wire値.
+        user_ids (list[int]): count件のsigned int32 online stable user ID.
     """
 
     count: Annotated[int, uint16]
@@ -166,119 +101,100 @@ class UserPresenceBundlePayload:
 
 
 def login_reply(user_id: int) -> bytes:
-    """LOGIN_REPLY packet を構築する.
+    """LOGIN_REPLY packetを構築する.
 
-    引数:
-        user_id: 成功時の stable user id, または失敗時の負の error code.
-    戻り値:
-        7 byte header と payload を含む complete packet.
-    例外:
-        user_id が int32 範囲外の場合は Caterpillar の pack error を送出する.
-    制約:
-        外部シグネチャと sInt payload format は互換性維持のため変更しない.
+    Args:
+        user_id (int): 成功時のstable user IDまたは失敗時の負のerror code.
+
+    Returns:
+        bytes: 7 byte headerとsigned int32 payloadを含むpacket.
     """
     payload: bytes = pack(LoginReplyPayload(user_id=user_id))
     return write_packet(ServerPacketID.LOGIN_REPLY, payload)
 
 
 def protocol_version(version: int) -> bytes:
-    """PROTOCOL_VERSION packet を構築する.
+    """PROTOCOL_VERSION packetを構築する.
 
-    引数:
-        version: stable bancho protocol version.
-    戻り値:
-        7 byte header と payload を含む complete packet.
-    例外:
-        version が int32 範囲外の場合は Caterpillar の pack error を送出する.
-    制約:
-        外部シグネチャと sInt payload format は互換性維持のため変更しない.
+    Args:
+        version (int): stable clientへ通知するprotocol version.
+
+    Returns:
+        bytes: 7 byte headerとsigned int32 payloadを含むpacket.
     """
     payload: bytes = pack(ProtocolVersionPayload(version=version))
     return write_packet(ServerPacketID.PROTOCOL_VERSION, payload)
 
 
 def login_permissions(permissions: int) -> bytes:
-    """LOGIN_PERMISSIONS packet を構築する.
+    """LOGIN_PERMISSIONS packetを構築する.
 
-    引数:
-        permissions: stable client permission bitmask.
-    戻り値:
-        7 byte header と payload を含む complete packet.
-    例外:
-        permissions が int32 範囲外の場合は Caterpillar の pack error を送出する.
-    制約:
-        外部シグネチャと sInt payload format は互換性維持のため変更しない.
+    Args:
+        permissions (int): stable clientへ返すpermission bitmask.
+
+    Returns:
+        bytes: 7 byte headerとsigned int32 payloadを含むpacket.
     """
     payload: bytes = pack(LoginPermissionsPayload(permissions=permissions))
     return write_packet(ServerPacketID.LOGIN_PERMISSIONS, payload)
 
 
 def notification(message: str) -> bytes:
-    """ANNOUNCE packet を構築する.
+    """ANNOUNCE packetを構築する.
 
-    引数:
-        message: stable client に表示する notification text.
-    戻り値:
-        7 byte header と payload を含む complete packet.
-    例外:
-        message が encode 不能な場合は Caterpillar の pack error を送出する.
-    制約:
-        外部シグネチャと BanchoString payload format は互換性維持のため変更しない.
+    Args:
+        message (str): stable clientに表示するnotification text.
+
+    Returns:
+        bytes: 7 byte headerとBanchoString payloadを含むpacket.
     """
     payload: bytes = pack(NotificationPayload(message=message))
     return write_packet(ServerPacketID.ANNOUNCE, payload)
 
 
 def channel_info_complete() -> bytes:
-    """Req 6.9: ChannelInfoComplete — empty payload."""
+    """空payloadのCHANNEL_INFO_COMPLETE packetを構築する.
+
+    Returns:
+        bytes: 7 byte headerだけを含むcomplete packet.
+    """
     return write_packet(ServerPacketID.CHANNEL_INFO_COMPLETE)
 
 
 def silence_info(remaining_seconds: int) -> bytes:
-    """SILENCE_INFO packet を構築する.
+    """SILENCE_INFO packetを構築する.
 
-    引数:
-        remaining_seconds: stable client に通知する残り silence 秒数.
-    戻り値:
-        7 byte header と payload を含む complete packet.
-    例外:
-        remaining_seconds が int32 範囲外の場合は Caterpillar の pack error を送出する.
-    制約:
-        外部シグネチャと sInt payload format は互換性維持のため変更しない.
+    Args:
+        remaining_seconds (int): stable clientに通知する残りsilence秒数.
+
+    Returns:
+        bytes: 7 byte headerとsigned int32 payloadを含むpacket.
     """
     payload: bytes = pack(SilenceInfoPayload(remaining_seconds=remaining_seconds))
     return write_packet(ServerPacketID.SILENCE_INFO, payload)
 
 
 def friends_list(friend_ids: list[int]) -> bytes:
-    """FRIENDS_LIST packet を構築する.
+    """FRIENDS_LIST packetを構築する.
 
-    引数:
-        friend_ids: stable client に通知する friend user id 一覧.
-    戻り値:
-        7 byte header と payload を含む complete packet.
-    例外:
-        user id が int32 範囲外, または件数が uint16 範囲外の場合は Caterpillar の
-        pack error を送出する.
-    制約:
-        外部シグネチャと IntList payload format は互換性維持のため変更しない.
+    Args:
+        friend_ids (list[int]): stable clientに通知するfriend user ID一覧.
+
+    Returns:
+        bytes: 7 byte headerとcount-prefixed user ID payloadを含むpacket.
     """
     payload: bytes = pack(FriendsListPayload(count=len(friend_ids), friend_ids=friend_ids))
     return write_packet(ServerPacketID.FRIENDS_LIST, payload)
 
 
 def user_presence_bundle(user_ids: list[int]) -> bytes:
-    """USER_PRESENCE_BUNDLE packet を構築する.
+    """USER_PRESENCE_BUNDLE packetを構築する.
 
-    引数:
-        user_ids: stable client に通知する online user id 一覧.
-    戻り値:
-        7 byte header と payload を含む complete packet.
-    例外:
-        user id が int32 範囲外, または件数が uint16 範囲外の場合は Caterpillar の
-        pack error を送出する.
-    制約:
-        外部シグネチャと IntList payload format は互換性維持のため変更しない.
+    Args:
+        user_ids (list[int]): stable clientに通知するonline user ID一覧.
+
+    Returns:
+        bytes: 7 byte headerとcount-prefixed user ID payloadを含むpacket.
     """
     payload: bytes = pack(UserPresenceBundlePayload(count=len(user_ids), user_ids=user_ids))
     return write_packet(ServerPacketID.USER_PRESENCE_BUNDLE, payload)
@@ -289,7 +205,18 @@ def user_presence_bundle(user_ids: list[int]) -> bytes:
 
 @cpstruct(order=LittleEndian)
 class _UserPresenceData:
-    """Wire format for UserPresence payload (Req 6.5)."""
+    """USER_PRESENCE payloadのwire field群を表す.
+
+    Attributes:
+        user_id (int): signed int32のstable user ID.
+        username (str): BanchoStringのusername.
+        timezone (int): uint8のtimezone offset値.
+        country_id (int): uint8のcountry ID.
+        permissions_mode (int): permission bitとmodeを合成したuint8値.
+        longitude (float): float32のlongitude.
+        latitude (float): float32のlatitude.
+        rank (int): signed int32のglobal rank.
+    """
 
     user_id: Annotated[int, int32]
     username: BanchoStringT
@@ -313,7 +240,22 @@ def user_presence(
     latitude: float,
     rank: int,
 ) -> bytes:
-    """Req 6.5: UserPresence."""
+    """USER_PRESENCE packetを構築する.
+
+    Args:
+        user_id (int): stable user ID.
+        username (str): stable clientへ表示するusername.
+        timezone (int): uint8 timezone offset値.
+        country_id (int): uint8 country ID.
+        permissions (int): permissions_modeの下位5 bitに入れるpermission値.
+        mode (int): permissions_modeへ左5 bit移動して合成するmode値.
+        longitude (float): float32として送るlongitude.
+        latitude (float): float32として送るlatitude.
+        rank (int): signed int32として送るglobal rank.
+
+    Returns:
+        bytes: 7 byte headerとUSER_PRESENCE payloadを含むpacket.
+    """
     data = _UserPresenceData(
         user_id=user_id,
         username=username,
@@ -330,7 +272,18 @@ def user_presence(
 
 @cpstruct(order=LittleEndian)
 class _UserStatsData:
-    """UserStats payload の wire format。"""
+    """USER_STATS payloadのwire field群を表す.
+
+    Attributes:
+        user_id (int): signed int32のstable user ID.
+        status_update (StatusUpdate): player statusを持つwire field群.
+        ranked_score (int): signed int64のranked score.
+        accuracy (float): float32のaccuracy ratio.
+        play_count (int): signed int32のplay count.
+        total_score (int): signed int64のtotal score.
+        rank (int): signed int32のglobal rank.
+        pp (int): uint16のperformance point値.
+    """
 
     user_id: Annotated[int, int32]
     status_update: StatusUpdate
@@ -358,31 +311,28 @@ def user_stats(
     rank: int,
     pp: int,
 ) -> bytes:
-    """UserStats packet を構築する。
+    """USER_STATS packetを構築する.
 
-    引数:
-        user_id: stable client に通知する user id。
-        status: StatusUpdate.status の wire 値。
-        status_text: Stable status text。
-        beatmap_md5: 現在の beatmap md5。未設定時は空文字。
-        mods: Stable mods bitmask。
-        play_mode: Stable mode wire 値。
-        beatmap_id: 現在の beatmap id。未設定時は 0。
-        ranked_score: Ranked score。
-        accuracy: 0.0-1.0 ratio の f32 値。
-        play_count: Play count。
-        total_score: Total score。
-        rank: Global rank。未設定時は 0。
-        pp: Stable wire の uint16 pp 値。65535 を超える値は丸める。
+    Args:
+        user_id (int): stable clientに通知するuser ID.
+        status (int): StatusUpdate.statusのwire値.
+        status_text (str): stable status text.
+        beatmap_md5 (str): current beatmap MD5. 未設定時は空文字列.
+        mods (int): stable mods bitmask.
+        play_mode (int): stable mode wire値.
+        beatmap_id (int): current beatmap ID. 未設定時は0.
+        ranked_score (int): ranked score.
+        accuracy (float): 0.0から1.0のfloat32 accuracy ratio.
+        play_count (int): play count.
+        total_score (int): total score.
+        rank (int): global rank. 未設定時は0.
+        pp (int): uint16として送るperformance point. 65535を超える値は丸める.
 
-    戻り値:
-        7 byte header と payload を含む complete packet。
+    Returns:
+        bytes: 7 byte headerとpayloadを含むcomplete packet.
 
-    例外:
-        値が wire type の範囲外の場合は Caterpillar の pack error を送出する。
-
-    制約:
-        外部シグネチャは互換性維持のため変更しない。
+    Notes:
+        外部signatureとppの65535上限はstable client互換のため維持する.
     """
     data = _UserStatsData(
         user_id=user_id,
@@ -407,18 +357,10 @@ def user_stats(
 
 @cpstruct(order=LittleEndian)
 class ChannelAvailablePayload:
-    """CHANNEL_AVAILABLE payload.
+    """CHANNEL_AVAILABLEのChannel payloadを表す.
 
-    挙動:
-        stable client に公開する channel info を Channel wire type として保持する.
-    引数:
-        channel: name/topic/user_count を含む Channel.
-    戻り値:
-        Caterpillar pack 時に Channel と同じ byte 列へ encode される.
-    例外:
-        field 値が wire type の範囲外の場合は Caterpillar の pack error を送出する.
-    制約:
-        packet header は含めず, payload 本体だけを表す.
+    Attributes:
+        channel (Channel): stable clientに公開するchannel情報.
     """
 
     channel: Channel
@@ -426,36 +368,25 @@ class ChannelAvailablePayload:
 
 @cpstruct(order=LittleEndian)
 class ChannelAvailableAutojoinPayload:
-    """CHANNEL_AVAILABLE_AUTOJOIN payload.
+    """CHANNEL_AVAILABLE_AUTOJOINのChannel payloadを表す.
 
-    挙動:
-        autojoin 対象の channel info を Channel wire type として保持する.
-    引数:
-        channel: name/topic/user_count を含む Channel.
-    戻り値:
-        Caterpillar pack 時に Channel と同じ byte 列へ encode される.
-    例外:
-        field 値が wire type の範囲外の場合は Caterpillar の pack error を送出する.
-    制約:
-        CHANNEL_AVAILABLE と同じ Channel payload format を使う.
+    Attributes:
+        channel (Channel): autojoin対象として公開するchannel情報.
     """
 
     channel: Channel
 
 
 def channel_available(*, name: str, topic: str, user_count: int) -> bytes:
-    """CHANNEL_AVAILABLE packet を構築する.
+    """CHANNEL_AVAILABLE packetを構築する.
 
-    引数:
-        name: stable channel name.
-        topic: stable client に表示する channel topic.
-        user_count: channel 内の user count.
-    戻り値:
-        7 byte header と payload を含む complete packet.
-    例外:
-        field 値が wire type の範囲外の場合は Caterpillar の pack error を送出する.
-    制約:
-        外部シグネチャと Channel payload format は互換性維持のため変更しない.
+    Args:
+        name (str): stable channel名.
+        topic (str): stable clientに表示するchannel topic.
+        user_count (int): channel内user数.
+
+    Returns:
+        bytes: 7 byte headerとChannel payloadを含むpacket.
     """
     ch = Channel(name=name, topic=topic, user_count=user_count)
     payload: bytes = pack(ChannelAvailablePayload(channel=ch))
@@ -463,18 +394,15 @@ def channel_available(*, name: str, topic: str, user_count: int) -> bytes:
 
 
 def channel_available_autojoin(*, name: str, topic: str, user_count: int) -> bytes:
-    """CHANNEL_AVAILABLE_AUTOJOIN packet を構築する.
+    """CHANNEL_AVAILABLE_AUTOJOIN packetを構築する.
 
-    引数:
-        name: stable channel name.
-        topic: stable client に表示する channel topic.
-        user_count: channel 内の user count.
-    戻り値:
-        7 byte header と payload を含む complete packet.
-    例外:
-        field 値が wire type の範囲外の場合は Caterpillar の pack error を送出する.
-    制約:
-        CHANNEL_AVAILABLE と同じ Channel payload format を維持する.
+    Args:
+        name (str): stable channel名.
+        topic (str): stable clientに表示するchannel topic.
+        user_count (int): channel内user数.
+
+    Returns:
+        bytes: 7 byte headerとChannel payloadを含むpacket.
     """
     ch = Channel(name=name, topic=topic, user_count=user_count)
     payload: bytes = pack(ChannelAvailableAutojoinPayload(channel=ch))

@@ -1,1 +1,1 @@
-"""First-party public API transport package."""
+"""Athena公開APIのtransport adapterを提供するpackage."""

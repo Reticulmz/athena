@@ -1,8 +1,7 @@
-"""Beatmap resolution query use-cases.
+"""beatmapをread-onlyに解決するquery use-caseを定義する.
 
-Query-side beatmap resolution for display and compatibility workflows.
-These use-cases provide read-only access to beatmap data without triggering
-command-side mutations or refresh workflows.
+表示と互換workflow向けにbeatmap dataを読み取る. command-side mutationやrefresh workflowは
+起動しない.
 """
 
 from __future__ import annotations
@@ -23,7 +22,14 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class BeatmapResolveQueryResult:
-    """Result of a beatmap resolution query."""
+    """beatmap解決queryのread-only結果を表す.
+
+    Attributes:
+        beatmap (Beatmap | None): checksumまたはIDに一致したbeatmap. 未発見時はNone.
+        beatmapset (BeatmapSet | None): 一致beatmapに対応するbeatmapset. 未発見時はNone.
+        metadata_status (BeatmapFetchState): metadataの取得または利用可能状態.
+        file_status (BeatmapFileState): osu fileの利用可能状態.
+    """
 
     beatmap: Beatmap | None
     beatmapset: BeatmapSet | None
@@ -32,11 +38,21 @@ class BeatmapResolveQueryResult:
 
 
 class ResolveBeatmapByIdQuery:
-    """Resolve a beatmap by its ID (query-side, read-only)."""
+    """beatmap IDからread-onlyにbeatmapとbeatmapsetを解決する.
+
+    Attributes:
+        _repository (BeatmapQueryRepository): beatmapとfetch stateを読み取るrepository.
+    """
 
     _repository: BeatmapQueryRepository
 
     def __init__(self, repository: BeatmapQueryRepository) -> None:
+        """beatmap解決に使うquery repositoryを保持する.
+
+        Args:
+            repository (BeatmapQueryRepository): beatmapとbeatmapsetをread-onlyに取得する
+                repository.
+        """
         self._repository = repository
 
     async def execute(
@@ -44,7 +60,18 @@ class ResolveBeatmapByIdQuery:
         beatmap_id: int,
         options: BeatmapResolveOptions | None,
     ) -> BeatmapResolveQueryResult:
-        """Resolve a beatmap by ID without triggering mutations."""
+        """Beatmap IDからmutationを起こさずにbeatmapを解決する.
+
+        Args:
+            beatmap_id (int): 解決するbeatmapのID.
+            options (BeatmapResolveOptions | None): 将来のfilterまたはprojection用option.
+
+        Returns:
+            BeatmapResolveQueryResult: 一致したbeatmapまたは未発見時のfetch stateを持つ結果.
+
+        Notes:
+            optionsは現在のread modelに影響せず将来の拡張のため受け取る.
+        """
         del options  # Reserved for future filtering/projection
 
         beatmap = await self._repository.get_beatmap(beatmap_id)
@@ -66,11 +93,21 @@ class ResolveBeatmapByIdQuery:
 
 
 class ResolveBeatmapByChecksumQuery:
-    """Resolve a beatmap by checksum (query-side, read-only)."""
+    """beatmap checksumからread-onlyにbeatmapとbeatmapsetを解決する.
+
+    Attributes:
+        _repository (BeatmapQueryRepository): beatmapとfetch stateを読み取るrepository.
+    """
 
     _repository: BeatmapQueryRepository
 
     def __init__(self, repository: BeatmapQueryRepository) -> None:
+        """beatmap解決に使うquery repositoryを保持する.
+
+        Args:
+            repository (BeatmapQueryRepository): beatmapとbeatmapsetをread-onlyに取得する
+                repository.
+        """
         self._repository = repository
 
     async def execute(
@@ -78,7 +115,18 @@ class ResolveBeatmapByChecksumQuery:
         checksum_md5: str,
         options: BeatmapResolveOptions | None,
     ) -> BeatmapResolveQueryResult:
-        """Resolve a beatmap by checksum without triggering mutations."""
+        """Beatmap checksumからmutationを起こさずにbeatmapを解決する.
+
+        Args:
+            checksum_md5 (str): 解決するbeatmap contentのMD5 checksum.
+            options (BeatmapResolveOptions | None): 将来のfilterまたはprojection用option.
+
+        Returns:
+            BeatmapResolveQueryResult: 一致したbeatmapまたは未発見時のfetch stateを持つ結果.
+
+        Notes:
+            optionsは現在のread modelに影響せず将来の拡張のため受け取る.
+        """
         del options  # Reserved for future filtering/projection
 
         beatmap = await self._repository.get_beatmap_by_checksum(checksum_md5)
@@ -103,6 +151,15 @@ async def _unavailable_result(
     repository: BeatmapQueryRepository,
     metadata_target: BeatmapFetchTarget,
 ) -> BeatmapResolveQueryResult:
+    """未発見のbeatmapに対応するread-onlyのunavailable結果を作る.
+
+    Args:
+        repository (BeatmapQueryRepository): fetch stateを読み取るquery repository.
+        metadata_target (BeatmapFetchTarget): 未発見beatmapのmetadata取得対象.
+
+    Returns:
+        BeatmapResolveQueryResult: pendingまたは既知fetch stateとmissing file stateを持つ結果.
+    """
     fetch_record = await repository.get_fetch_state(metadata_target)
     return BeatmapResolveQueryResult(
         beatmap=None,

@@ -10,18 +10,15 @@ from osu_server.transports.stable.bancho.protocol.s2c.beatmap_info import (
 
 
 def _representative_reply() -> BeatmapInfoReply:
-    """filename row と ID row を含む representative reply を生成する.
+    """代表的なfilename rowとID rowを含むreplyを生成する.
 
     Returns:
-        BeatmapInfoReply: filename request の index 1 row と, ID request の index -1
-            row を入力順に含む reply.
-
-    Raises:
-        None: 値の構築だけを行うため, 通常は例外を送出しない.
+        BeatmapInfoReply: filename requestのindex 1 rowと, ID requestのindex -1 rowを
+            入力順に含むreply.
 
     Notes:
-        この helper は fixed golden bytes を生成せず, struct の pack / unpack
-        contract を検証するための typed value だけを提供する.
+        このhelperはfixed golden bytesを生成せず, structのpack / unpack contractを
+        検証するためのtyped valueだけを提供する.
     """
     return BeatmapInfoReply(
         count=2,
@@ -60,14 +57,9 @@ def test_beatmap_info_reply_round_trips_ordered_rows_and_typed_grades() -> None:
     Returns:
         None: assertion がすべて成立したことを示す.
 
-    Raises:
-        AssertionError: count, row順序, field値, または StableGrade member の復元が
-            contract と一致しない場合.
-
     Notes:
-        filename request row の request_index=1 と ID request row の
-        request_index=-1 は struct が保持する wire semantics であり, この test は
-        index の参照先妥当性を検証しない.
+        filename request rowのrequest_index=1とID request rowのrequest_index=-1は
+        structが保持するwire semanticsであり, このtestはindexの参照先妥当性を検証しない.
     """
     reply = _representative_reply()
 
@@ -101,17 +93,14 @@ def test_beatmap_info_reply_round_trips_ordered_rows_and_typed_grades() -> None:
 
 
 def test_beatmap_info_reply_round_trips_empty_collection() -> None:
-    """empty reply が row を含まず count 0 として復元されることを検証する.
+    """空のreplyがrowを含まずcount 0として復元されることを検証する.
 
     Returns:
-        None: assertion がすべて成立したことを示す.
-
-    Raises:
-        AssertionError: count 0 または空 collection が pack / unpack 後に保持されない場合.
+        None: assertionがすべて成立したことを示す.
 
     Notes:
-        この test は fixed golden bytes との比較を行わず, counted collection の
-        structural contract だけを検証する.
+        このtestはfixed golden bytesとの比較を行わず, counted collectionのstructural
+        contractだけを検証する.
     """
     reply = BeatmapInfoReply(count=0, beatmaps=[])
 

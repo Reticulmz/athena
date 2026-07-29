@@ -1,3 +1,5 @@
+"""PP recalculation CLIの入力validationと表示契約を検証する."""
+
 from __future__ import annotations
 
 import ast
@@ -33,6 +35,14 @@ _NOW = datetime(2026, 6, 16, 12, 0, 0, tzinfo=UTC)
 
 @dataclass(slots=True)
 class StubRecalculationRunner:
+    """recalculation結果を固定し実行requestを記録するuse-case runner stubを提供する.
+
+    Attributes:
+        result (CreatePerformanceRecalculationBatchResult): run呼び出しで返す固定結果.
+        calls (list[tuple[str, CreatePerformanceRecalculationBatchCommand]]):
+            environmentとcommandの実行履歴.
+    """
+
     result: CreatePerformanceRecalculationBatchResult
     calls: list[tuple[str, CreatePerformanceRecalculationBatchCommand]] = field(
         default_factory=list
@@ -44,6 +54,15 @@ class StubRecalculationRunner:
         environment: str,
         command: CreatePerformanceRecalculationBatchCommand,
     ) -> CreatePerformanceRecalculationBatchResult:
+        """environmentとcommandを記録して設定済みrecalculation結果を返す.
+
+        Args:
+            environment (str): CLIから渡されるtarget environment.
+            command (CreatePerformanceRecalculationBatchCommand): 検証対象のrecalculation request.
+
+        Returns:
+            CreatePerformanceRecalculationBatchResult: construction時に指定した固定結果.
+        """
         self.calls.append((environment, command))
         return self.result
 
@@ -51,6 +70,14 @@ class StubRecalculationRunner:
 def test_recalculate_defaults_to_dry_run_and_prints_candidate_breakdown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """既定のrecalculateがdry-run commandとcandidate内訳を生成することを検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): runner factoryと現在時刻を置き換えるfixture.
+
+    Returns:
+        None: CLI出力と記録commandのfilterとmodeを検証して完了する. 呼び出し側へ値を返さない.
+    """
     stub = StubRecalculationRunner(
         CreatePerformanceRecalculationBatchResult(
             outcome=CreatePerformanceRecalculationBatchOutcome.DRY_RUN,
@@ -114,6 +141,14 @@ def test_recalculate_defaults_to_dry_run_and_prints_candidate_breakdown(
 def test_recalculate_execute_prints_batch_id_and_candidate_breakdown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """execute指定のrecalculateがbatch IDとcandidate内訳を表示することを検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): runner factoryを固定結果のstubへ置き換えるfixture.
+
+    Returns:
+        None: CLI出力とexecute commandのmodeを検証して完了する. 呼び出し側へ値を返さない.
+    """
     created_at = datetime(2026, 6, 16, 12, 1, 0, tzinfo=UTC)
     stub = StubRecalculationRunner(
         CreatePerformanceRecalculationBatchResult(
@@ -180,6 +215,14 @@ def test_recalculate_execute_prints_batch_id_and_candidate_breakdown(
 def test_recalculate_without_filter_requires_all_flag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Narrow filterも--allもないrecalculateをusage errorで拒否することを検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): runner factoryを呼び出し記録stubへ置き換えるfixture.
+
+    Returns:
+        None: error messageとrunner未実行を検証して完了する. 呼び出し側へ値を返さない.
+    """
     stub = StubRecalculationRunner(
         CreatePerformanceRecalculationBatchResult(
             outcome=CreatePerformanceRecalculationBatchOutcome.DRY_RUN,
@@ -201,6 +244,14 @@ def test_recalculate_without_filter_requires_all_flag(
 
 
 def test_execute_without_filter_requires_all_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    """execute指定でもscopeなしのrecalculateをusage errorで拒否することを検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): runner factoryを呼び出し記録stubへ置き換えるfixture.
+
+    Returns:
+        None: error messageとrunner未実行を検証して完了する. 呼び出し側へ値を返さない.
+    """
     stub = StubRecalculationRunner(
         CreatePerformanceRecalculationBatchResult(
             outcome=CreatePerformanceRecalculationBatchOutcome.CREATED,
@@ -222,6 +273,14 @@ def test_execute_without_filter_requires_all_flag(monkeypatch: pytest.MonkeyPatc
 
 
 def test_limit_without_filter_requires_all_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    """limitだけのrecalculateをscopeなしとしてusage errorで拒否することを検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): runner factoryを呼び出し記録stubへ置き換えるfixture.
+
+    Returns:
+        None: error messageとrunner未実行を検証して完了する. 呼び出し側へ値を返さない.
+    """
     stub = StubRecalculationRunner(
         CreatePerformanceRecalculationBatchResult(
             outcome=CreatePerformanceRecalculationBatchOutcome.DRY_RUN,
@@ -245,6 +304,14 @@ def test_limit_without_filter_requires_all_flag(monkeypatch: pytest.MonkeyPatch)
 def test_all_flag_cannot_be_combined_with_narrow_filters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """--allとnarrow filterの同時指定をusage errorで拒否することを検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): runner factoryを呼び出し記録stubへ置き換えるfixture.
+
+    Returns:
+        None: error messageとrunner未実行を検証して完了する. 呼び出し側へ値を返さない.
+    """
     stub = StubRecalculationRunner(
         CreatePerformanceRecalculationBatchResult(
             outcome=CreatePerformanceRecalculationBatchOutcome.DRY_RUN,
@@ -269,6 +336,15 @@ def test_all_flag_cannot_be_combined_with_narrow_filters(
 
 
 def test_recalculate_rejects_invalid_ruleset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """support対象外のruleset labelをusage errorで拒否することを検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): runner factoryを呼び出し記録stubへ置き換えるfixture.
+
+    Returns:
+        None: support対象rulesetを示すerrorとrunner未実行を検証して完了する.
+            呼び出し側へ値を返さない.
+    """
     stub = StubRecalculationRunner(
         CreatePerformanceRecalculationBatchResult(
             outcome=CreatePerformanceRecalculationBatchOutcome.DRY_RUN,
@@ -305,6 +381,16 @@ def test_recalculate_rejects_non_positive_numeric_filters(
     option: str,
     message: str,
 ) -> None:
+    """各numeric filterの0以下をusage errorで拒否することを検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): runner factoryを呼び出し記録stubへ置き換えるfixture.
+        option (str): parameterizeされたCLI filter option.
+        message (str): optionに対応する期待error message.
+
+    Returns:
+        None: error messageとrunner未実行を検証して完了する. 呼び出し側へ値を返さない.
+    """
     stub = StubRecalculationRunner(
         CreatePerformanceRecalculationBatchResult(
             outcome=CreatePerformanceRecalculationBatchOutcome.DRY_RUN,
@@ -326,6 +412,11 @@ def test_recalculate_rejects_non_positive_numeric_filters(
 
 
 def test_pp_cli_command_does_not_import_calculator_or_raw_sql() -> None:
+    """PP CLI adapterがcalculator implementationとraw SQLを直接参照しないことを検証する.
+
+    Returns:
+        None: import sourceとAST上の禁止参照がないことを検証して完了する. 呼び出し側へ値を返さない.
+    """
     source = inspect.getsource(pp_command)
     tree = ast.parse(source)
 
@@ -337,6 +428,12 @@ def test_pp_cli_command_does_not_import_calculator_or_raw_sql() -> None:
 
 
 def test_pp_cli_composition_does_not_import_calculator_or_raw_sql() -> None:
+    """PP composition providerがcalculator implementationとraw SQLを直接参照しないことを検証する.
+
+    Returns:
+        None: composition sourceとAST上の禁止参照がないことを検証して完了する.
+            呼び出し側へ値を返さない.
+    """
     source = inspect.getsource(performance_cli)
     tree = ast.parse(source)
 
@@ -347,6 +444,11 @@ def test_pp_cli_composition_does_not_import_calculator_or_raw_sql() -> None:
 
 
 def test_pp_cli_command_import_does_not_load_calculator_runtime() -> None:
+    """PP CLI module importだけではcalculator runtime moduleをloadしないことを検証する.
+
+    Returns:
+        None: 子processの成功exit codeを検証して完了する. 呼び出し側へ値を返さない.
+    """
     script = (
         "import sys; "
         "import athena_cli.commands.pp; "
@@ -365,6 +467,15 @@ def test_pp_cli_command_import_does_not_load_calculator_runtime() -> None:
 
 
 def _imports_module(tree: ast.AST, module_name: str) -> bool:
+    """ASTが指定moduleまたはそのsubmoduleをimportするか判定する.
+
+    Args:
+        tree (ast.AST): 検査するPython sourceのabstract syntax tree.
+        module_name (str): 禁止参照として探索するmodule名.
+
+    Returns:
+        bool: import文がmodule名またはそのsubmoduleを参照する場合はTrue.
+    """
     for node in ast.walk(tree):
         if isinstance(node, ast.Import) and any(
             alias.name == module_name or alias.name.startswith(f"{module_name}.")
@@ -379,6 +490,15 @@ def _imports_module(tree: ast.AST, module_name: str) -> bool:
 
 
 def _calls_function(tree: ast.AST, function_name: str) -> bool:
+    """ASTが指定された名前のfunctionを直接callするか判定する.
+
+    Args:
+        tree (ast.AST): 検査するPython sourceのabstract syntax tree.
+        function_name (str): 禁止参照として探索する直接call名.
+
+    Returns:
+        bool: Name nodeをcalleeとするcallが存在する場合はTrue.
+    """
     for node in ast.walk(tree):
         if (
             isinstance(node, ast.Call)

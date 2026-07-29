@@ -1,4 +1,4 @@
-"""Request score performance calculation command use-case."""
+"""スコア performance calculation を要求する command use-case を定義する."""
 
 from __future__ import annotations
 
@@ -26,7 +26,26 @@ if TYPE_CHECKING:
 
 
 class RequestPerformanceCalculationOutcome(Enum):
-    """Observable result of a calculation request command."""
+    """performance calculation request command の観測可能な結果を表す.
+
+    Attributes:
+        CREATED (RequestPerformanceCalculationOutcome):
+            新しい calculation を作成した結果.
+        CREATED_REPLACEMENT (RequestPerformanceCalculationOutcome):
+            stale な current を置き換える calculation を作成した結果.
+        REUSED_PENDING (RequestPerformanceCalculationOutcome):
+            既存 pending calculation を再利用した結果.
+        REUSED_REPLACEMENT_PENDING (RequestPerformanceCalculationOutcome):
+            既存 pending replacement を再利用した結果.
+        ALREADY_CURRENT (RequestPerformanceCalculationOutcome):
+            同一 provenance の terminal calculation が current な結果.
+        SKIPPED_OUT_OF_SCOPE (RequestPerformanceCalculationOutcome):
+            score が performance 対象外である結果.
+        SCORE_NOT_FOUND (RequestPerformanceCalculationOutcome):
+            対象 score が存在しない結果.
+        TEMPORARY_CONFLICT (RequestPerformanceCalculationOutcome):
+            durable request 作成が一時的に競合した結果.
+    """
 
     CREATED = "created"
     CREATED_REPLACEMENT = "created_replacement"
@@ -40,7 +59,15 @@ class RequestPerformanceCalculationOutcome(Enum):
 
 @dataclass(frozen=True, slots=True)
 class RequestPerformanceCalculationCommand:
-    """Command input for requesting performance calculation for one accepted score."""
+    """1件の accepted score の performance calculation を要求する command を表す.
+
+    Attributes:
+        score_id (int): calculation を要求する accepted score の永続識別子.
+        calculator_name (str): calculation provenance に記録する calculator implementation 名.
+        calculator_version (str):
+            calculation provenance に記録する calculator implementation version.
+        requested_at (datetime): request と calculation 作成の基準時刻.
+    """
 
     score_id: int
     calculator_name: str
@@ -50,7 +77,20 @@ class RequestPerformanceCalculationCommand:
 
 @dataclass(frozen=True, slots=True)
 class RequestPerformanceCalculationResult:
-    """Typed result for performance calculation request workflow."""
+    """performance calculation request workflow の型付き結果を表す.
+
+    Attributes:
+        outcome (RequestPerformanceCalculationOutcome): 作成,再利用,対象外,競合の結果種別.
+        score_id (int): command が対象にした score 識別子.
+        calculation (PerformanceCalculation | None):
+            作成または再利用した calculation. 作成不能時はNone.
+        eligibility_reason (str | None): performance 対象外と判定した理由. 該当しない場合はNone.
+        created (bool): 新しい durable calculation row を作成したか.
+        is_replacement (bool): current calculation の replacement として扱うか.
+        worker_wake_requested (bool): pending calculation の worker 起動を要求したか.
+        worker_wake_failed (bool): worker 起動要求で例外を捕捉したか.
+        worker_wake_error (str | None): 捕捉した worker 起動例外の文字列. 未発生時はNone.
+    """
 
     outcome: RequestPerformanceCalculationOutcome
     score_id: int
@@ -64,25 +104,41 @@ class RequestPerformanceCalculationResult:
 
 
 class PerformanceCalculationWorkerWake(Protocol):
-    """Adapter-independent boundary for waking calculation workers."""
+    """calculation worker を起動する adapter 非依存境界を表す."""
 
     async def wake_score_calculation(self, *, score_id: int, calculation_id: int) -> None:
-        """Wake score performance processing for a durable calculation row."""
+        """作成済み durable calculation row の score performance 処理開始を要求する.
+
+        Args:
+            score_id (int): 処理対象 calculation が属する score の永続識別子.
+            calculation_id (int): 処理対象の durable performance calculation 識別子.
+
+        Returns:
+            None: worker 起動を要求し,呼び出し側へ値を返さずに完了する.
+        """
         ...
 
 
 @final
 class NoopPerformanceCalculationWorkerWake:
-    """Worker wake boundary used before taskiq job wiring exists."""
+    """taskiq job wiring 前に使う no-op calculation worker wake 境界を表す."""
 
     async def wake_score_calculation(self, *, score_id: int, calculation_id: int) -> None:
-        """Intentionally do nothing."""
+        """外部 worker 起動を要求せずに完了する.
+
+        Args:
+            score_id (int): 破棄する score 識別子.
+            calculation_id (int): 破棄する calculation 識別子.
+
+        Returns:
+            None: 外部 worker を起動せず,呼び出し側へ値を返さずに完了する.
+        """
         _ = score_id
         _ = calculation_id
 
 
 class RequestPerformanceCalculationUseCase:
-    """Create or reuse a durable performance calculation request for one score."""
+    """1件の score 用 durable performance calculation request を作成または再利用する."""
 
     def __init__(
         self,
@@ -92,6 +148,18 @@ class RequestPerformanceCalculationUseCase:
         eligibility_policy: PerformanceEligibilityPolicy | None = None,
         formula_profile_policy: FormulaProfilePolicy | None = None,
     ) -> None:
+        """永続 request と worker 起動に必要な dependency を受け取る.
+
+        Args:
+            unit_of_work_factory (UnitOfWorkFactory):
+                score と calculation を整合的に扱う command Unit of Work factory.
+            worker_wake (PerformanceCalculationWorkerWake | None):
+                pending calculation の worker を起動する境界. 未指定時は no-op.
+            eligibility_policy (PerformanceEligibilityPolicy | None):
+                score の performance 対象可否を判定する policy. 未指定時は既定 policy.
+            formula_profile_policy (FormulaProfilePolicy | None):
+                score playstyle の formula profile を決める policy. 未指定時は既定 policy.
+        """
         self._unit_of_work_factory: UnitOfWorkFactory = unit_of_work_factory
         self._worker_wake: PerformanceCalculationWorkerWake = (
             worker_wake or NoopPerformanceCalculationWorkerWake()
@@ -107,7 +175,19 @@ class RequestPerformanceCalculationUseCase:
         self,
         command: RequestPerformanceCalculationCommand,
     ) -> RequestPerformanceCalculationResult:
-        """Execute the request workflow inside the command persistence boundary."""
+        """永続化 boundary 内で calculation request workflow を実行する.
+
+        Args:
+            command (RequestPerformanceCalculationCommand):
+                score,calculator provenance,要求時刻を含む command.
+
+        Returns:
+            RequestPerformanceCalculationResult:
+                calculation の作成,再利用,対象外,または一時競合の結果.
+
+        Notes:
+            durable mutation を commit してから worker 起動を試み,起動例外は結果に記録する.
+        """
         async with self._unit_of_work_factory() as uow:
             score = await uow.scores.get_by_id(command.score_id)
             if score is None:
@@ -151,6 +231,23 @@ class RequestPerformanceCalculationUseCase:
         score_id: int,
         request_result: ScorePerformanceCalculationRequestResult,
     ) -> RequestPerformanceCalculationResult:
+        """永続化後の request 結果から worker 起動状態を含む応答を構成する.
+
+        Args:
+            score_id (int): calculation が属する score の永続識別子.
+            request_result (ScorePerformanceCalculationRequestResult):
+                durable request 作成または再利用の結果.
+
+        Returns:
+            RequestPerformanceCalculationResult: outcome と worker 起動成否を含む型付き結果.
+
+        Raises:
+            ValueError:
+                pending calculation を起動する前に calculation id が割り当てられていない場合.
+
+        Notes:
+            worker 起動例外は durable calculation row を rollback せず結果へ記録する.
+        """
         outcome = _outcome_from_request_result(request_result)
         should_wake = request_result.calculation.state.is_pending
         wake_failed = False
@@ -185,6 +282,16 @@ class RequestPerformanceCalculationUseCase:
 def _outcome_from_request_result(
     request_result: ScorePerformanceCalculationRequestResult,
 ) -> RequestPerformanceCalculationOutcome:
+    """永続 request 結果を公開 request outcome へ変換する.
+
+    Args:
+        request_result (ScorePerformanceCalculationRequestResult):
+            created,replacement,state を含む durable 結果.
+
+    Returns:
+        RequestPerformanceCalculationOutcome:
+            作成,再利用,または current 判定に対応する公開 outcome.
+    """
     if request_result.created:
         if request_result.is_replacement:
             return RequestPerformanceCalculationOutcome.CREATED_REPLACEMENT

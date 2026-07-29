@@ -1,4 +1,4 @@
-"""SQLAlchemy command-side channel repository."""
+"""SQLAlchemyでchat channelを永続化するcommand repositoryを提供する."""
 
 from __future__ import annotations
 
@@ -17,12 +17,39 @@ if TYPE_CHECKING:
 
 
 class SQLAlchemyChannelCommandRepository:
-    """Channel command repository backed by a UoW-owned SQLAlchemy session."""
+    """Unit of Work所有sessionでchannelとrole overrideを操作するrepository.
+
+    Attributes:
+        _session (AsyncSession): command transactionを実行しcommitを所有しないsession.
+    """
 
     def __init__(self, session: AsyncSession) -> None:
+        """Unit of Workから受け取ったSQLAlchemy sessionを保持する.
+
+        Args:
+            session (AsyncSession): channel操作に使うsession.
+
+        Notes:
+            commitとrollbackは呼び出し側のUnit of Workが所有する.
+        """
         self._session: AsyncSession = session
 
     async def create(self, channel: Channel) -> Channel:
+        """名前が重複しないchannelを新規作成する.
+
+        Args:
+            channel (Channel): 新規rowへ保存するchannel属性.
+
+        Returns:
+            Channel: flushとrefresh後の永続化済みchannel.
+
+        Raises:
+            ValueError: 同じchannel nameが既に存在する場合.
+            SQLAlchemyError: 検索または永続化処理に失敗した場合.
+
+        Notes:
+            このmethodはUnit of Workをcommitしない.
+        """
         existing = (
             await self._session.execute(
                 select(ChannelModel).where(ChannelModel.name == channel.name)
@@ -46,12 +73,38 @@ class SQLAlchemyChannelCommandRepository:
         return _channel_to_domain(model)
 
     async def get_by_name(self, name: str) -> Channel | None:
+        """名前で保存済みchannelを取得する.
+
+        Args:
+            name (str): 取得対象channelの完全一致name.
+
+        Returns:
+            Channel | None: 対応するchannel. 存在しない場合はNone.
+
+        Raises:
+            SQLAlchemyError: select実行に失敗した場合.
+        """
         model = (
             await self._session.execute(select(ChannelModel).where(ChannelModel.name == name))
         ).scalar_one_or_none()
         return _channel_to_domain(model) if isinstance(model, ChannelModel) else None
 
     async def update(self, channel: Channel) -> Channel:
+        """既存channelを指定属性で更新する.
+
+        Args:
+            channel (Channel): idと更新後の全属性を持つchannel.
+
+        Returns:
+            Channel: flushとrefresh後の更新済みchannel.
+
+        Raises:
+            ValueError: 指定idのchannelが存在しない場合.
+            SQLAlchemyError: 検索または永続化処理に失敗した場合.
+
+        Notes:
+            名前の重複検査は行わず既存のdatabase制約に従う.
+        """
         model = await self._session.get(ChannelModel, channel.id)
         if model is None:
             msg = f"channel not found: id={channel.id}"
@@ -69,6 +122,20 @@ class SQLAlchemyChannelCommandRepository:
         return _channel_to_domain(model)
 
     async def delete(self, channel_id: int) -> None:
+        """指定idのchannelが存在する場合だけ削除する.
+
+        Args:
+            channel_id (int): 削除対象channelの永続化識別子.
+
+        Returns:
+            None: 存在しないchannelも含め削除処理を完了したことを示す.
+
+        Raises:
+            SQLAlchemyError: 検索または削除のflushに失敗した場合.
+
+        Notes:
+            存在しないidは例外にせずno-opとして扱う.
+        """
         model = await self._session.get(ChannelModel, channel_id)
         if model is not None:
             assert isinstance(model, ChannelModel)
@@ -76,6 +143,17 @@ class SQLAlchemyChannelCommandRepository:
             await self._session.flush()
 
     async def get_overrides_for_channel(self, channel_id: int) -> list[ChannelRoleOverride]:
+        """1つのchannelに設定されたrole overrideを取得する.
+
+        Args:
+            channel_id (int): overrideを取得するchannelの永続化識別子.
+
+        Returns:
+            list[ChannelRoleOverride]: 取得したoverrideのlist. 未設定時は空list.
+
+        Raises:
+            SQLAlchemyError: select実行に失敗した場合.
+        """
         models = (
             (
                 await self._session.execute(
@@ -92,6 +170,20 @@ class SQLAlchemyChannelCommandRepository:
     async def get_overrides_for_channels(
         self, channel_ids: list[int]
     ) -> dict[int, list[ChannelRoleOverride]]:
+        """複数channelのrole overrideをchannel idごとに取得する.
+
+        Args:
+            channel_ids (list[int]): 取得対象channelの永続化識別子.
+
+        Returns:
+            dict[int, list[ChannelRoleOverride]]: 各入力idをkeyにするoverride list.
+
+        Raises:
+            SQLAlchemyError: select実行に失敗した場合.
+
+        Notes:
+            空list入力ではSQLを実行せず空dictを返す.
+        """
         if not channel_ids:
             return {}
 
@@ -115,6 +207,17 @@ class SQLAlchemyChannelCommandRepository:
 
 
 def _channel_to_domain(model: ChannelModel) -> Channel:
+    """SQLAlchemy channel modelをchat domain modelへ変換する.
+
+    Args:
+        model (ChannelModel): 永続化層から読み出したchannel row.
+
+    Returns:
+        Channel: channel typeをdomain enumへ復元したchannel.
+
+    Raises:
+        ValueError: channel_typeが既知のchannel typeでない場合.
+    """
     return Channel(
         id=model.id,
         name=model.name,
@@ -129,6 +232,14 @@ def _channel_to_domain(model: ChannelModel) -> Channel:
 
 
 def _override_to_domain(model: ChannelRoleOverrideModel) -> ChannelRoleOverride:
+    """SQLAlchemy channel role override modelをdomain modelへ変換する.
+
+    Args:
+        model (ChannelRoleOverrideModel): 永続化層から読み出したoverride row.
+
+    Returns:
+        ChannelRoleOverride: channelとroleの権限設定を表すdomain value.
+    """
     return ChannelRoleOverride(
         channel_id=model.channel_id,
         role_id=model.role_id,

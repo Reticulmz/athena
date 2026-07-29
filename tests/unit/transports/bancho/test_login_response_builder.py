@@ -1,4 +1,4 @@
-"""Tests for LoginResponseBuilder — S2C packet stream construction."""
+"""LoginResponseBuilderが構築するinitial S2C packet stream contractを検証する."""
 
 from __future__ import annotations
 
@@ -67,7 +67,14 @@ _HEADER_FMT = struct.Struct("<HBI")
 
 
 def _extract_packet_ids(data: bytes) -> list[int]:
-    """Extract ServerPacketID values in order from a bancho S2C byte stream."""
+    """Bancho S2C byte streamからwire順のServerPacketIDを取得する.
+
+    Args:
+        data (bytes): 7 byte headerとpayloadを連結したS2C packet stream.
+
+    Returns:
+        list[int]: stream内packetのServerPacketIDをwire順に並べた一覧.
+    """
     ids: list[int] = []
     offset = 0
     while offset < len(data):
@@ -85,11 +92,13 @@ def _extract_packet_ids(data: bytes) -> list[int]:
 
 @final
 class _FakeChannelCatalogQuery:
-    """Channel catalog query stub returning pre-configured channel lists.
+    """設定済みchannel一覧を返すprotocol準拠ChannelCatalogQuery stubを提供する.
 
-    Protocol-conformant stub per type-safety-policy: avoids untyped
-    AsyncMock while keeping LoginResponseBuilder tests focused on
-    packet stream assembly rather than channel ACL logic.
+    Attributes:
+        _channels (list[tuple[Channel, int]]): executeが返すchannelとuser countの順序.
+
+    Notes:
+        untyped AsyncMockを使わずpacket stream assemblyだけを検証できるようにする.
     """
 
     _channels: list[tuple[Channel, int]]
@@ -98,17 +107,40 @@ class _FakeChannelCatalogQuery:
         self,
         channels: list[tuple[Channel, int]] | None = None,
     ) -> None:
+        """executeが返すchannel一覧を設定する.
+
+        Args:
+            channels (list[tuple[Channel, int]] | None): channelとuser countの一覧.
+                Noneならempty一覧を使う.
+        """
         self._channels = channels or []
 
     async def execute(self, _input_data: object) -> ChannelCatalogQueryResult:
+        """Channel query inputを受け取り設定済み一覧を返す.
+
+        Args:
+            _input_data (object): protocol充足のため受け取るchannel catalog input.
+
+        Returns:
+            ChannelCatalogQueryResult: 設定済みchannel一覧を保持するresult.
+        """
         return ChannelCatalogQueryResult(channels=tuple(self._channels))
 
 
 @final
 class _FakeFriendIdsQuery:
-    """Friend ID query stub for login friends list tests."""
+    """friend ID query inputを記録して設定済みfriend一覧を返すstubを提供する.
+
+    Attributes:
+        calls (list[int]): executeへ渡されたowner user IDの順序.
+    """
 
     def __init__(self, friend_ids: tuple[int, ...] = ()) -> None:
+        """executeが返すfriend user ID一覧を設定する.
+
+        Args:
+            friend_ids (tuple[int, ...]): login userのfriendとして返すID一覧.
+        """
         self._friend_ids = friend_ids
         self.calls: list[int] = []
 
@@ -116,6 +148,14 @@ class _FakeFriendIdsQuery:
         self,
         input_data: ListFriendIdsQueryInput,
     ) -> ListFriendIdsQueryResult:
+        """Owner scopeを記録して設定済みfriend ID resultを返す.
+
+        Args:
+            input_data (ListFriendIdsQueryInput): friend ownerを指定するquery input.
+
+        Returns:
+            ListFriendIdsQueryResult: 設定済みfriend user IDを含むresult.
+        """
         owner_user_id = input_data.owner_user_id
         assert isinstance(owner_user_id, int)
         self.calls.append(owner_user_id)
@@ -124,22 +164,40 @@ class _FakeFriendIdsQuery:
 
 @final
 class _FakeActiveSessionsQuery:
-    """Active sessions query stub for login online presence tests."""
+    """設定済みonline session snapshotを返すactive session query stubを提供する."""
 
     def __init__(self, sessions: tuple[OnlineSessionSnapshot, ...] = ()) -> None:
+        """executeが返すonline session snapshotを設定する.
+
+        Args:
+            sessions (tuple[OnlineSessionSnapshot, ...]): login rosterに含めるactive session一覧.
+        """
         self._sessions = sessions
 
     async def execute(
         self,
         input_data: ListActiveSessionsQueryInput,
     ) -> ListActiveSessionsQueryResult:
+        """Active session query inputを検証して設定済みsession resultを返す.
+
+        Args:
+            input_data (ListActiveSessionsQueryInput): active session取得を表すquery input.
+
+        Returns:
+            ListActiveSessionsQueryResult: 設定済みonline sessionを含むresult.
+        """
         assert isinstance(input_data, ListActiveSessionsQueryInput)
         return ListActiveSessionsQueryResult(sessions=self._sessions)
 
 
 @final
 class _FakeCurrentUserStatsQuery:
-    """Current user stats query stub for login stream tests."""
+    """current stats query inputを記録し設定済みstatsまたはerrorを返すstubを提供する.
+
+    Attributes:
+        calls (list[tuple[int, ...]]): queryごとのuser ID tupleの順序.
+        inputs (list[CurrentUserStatsQueryInput]): executeへ渡された完全なquery inputの順序.
+    """
 
     def __init__(
         self,
@@ -147,6 +205,12 @@ class _FakeCurrentUserStatsQuery:
         stats: tuple[UserCurrentStats, ...] = (),
         error: Exception | None = None,
     ) -> None:
+        """Return statsとoptional failureを設定する.
+
+        Args:
+            stats (tuple[UserCurrentStats, ...]): 成功時に返すcurrent stats一覧.
+            error (Exception | None): 設定時にexecuteが送出するerror.
+        """
         self._stats = stats
         self._error = error
         self.calls: list[tuple[int, ...]] = []
@@ -156,6 +220,14 @@ class _FakeCurrentUserStatsQuery:
         self,
         input_data: CurrentUserStatsQueryInput,
     ) -> CurrentUserStatsQueryResult:
+        """Query inputを記録して設定済みstatsを返すか設定済みerrorを送出する.
+
+        Args:
+            input_data (CurrentUserStatsQueryInput): user, ruleset, playstyleを指定するquery input.
+
+        Returns:
+            CurrentUserStatsQueryResult: 設定済みcurrent statsを持つresult.
+        """
         self.calls.append(input_data.user_ids)
         self.inputs.append(input_data)
         if self._error is not None:
@@ -165,17 +237,46 @@ class _FakeCurrentUserStatsQuery:
 
 @final
 class _FakeStableUserStatusStore:
+    """stable statusとplay modeをin-memoryで保持するStatusStore fakeを提供する.
+
+    Attributes:
+        requests (list[tuple[int, ...]]): get_statusesへ渡されたuser ID tupleの順序.
+    """
+
     def __init__(self, statuses: dict[int, StableUserStatus] | None = None) -> None:
+        """optionalな初期stable status mappingを設定する.
+
+        Args:
+            statuses (dict[int, StableUserStatus] | None): user IDごとの初期status.
+                Noneならempty mappingを使う.
+        """
         self._statuses = statuses or {}
         self.requests: list[tuple[int, ...]] = []
 
     async def set_status(self, user_id: int, status: StableUserStatus) -> None:
+        """userのstable statusを置き換える.
+
+        Args:
+            user_id (int): statusを設定するstable userのID.
+            status (StableUserStatus): 保存するcurrent stable status.
+
+        Returns:
+            None: in-memory statusを更新して完了し, 呼び出し側へ値を返さない.
+        """
         self._statuses[user_id] = status
 
     async def get_statuses(
         self,
         user_ids: tuple[int, ...],
     ) -> dict[int, StableUserStatus]:
+        """要求されたuser IDのうち保存済みstatusだけを返す.
+
+        Args:
+            user_ids (tuple[int, ...]): statusを取得するstable user ID一覧.
+
+        Returns:
+            dict[int, StableUserStatus]: 保存済みstatusを持つuser IDだけのmapping.
+        """
         self.requests.append(user_ids)
         return {
             user_id: status
@@ -184,15 +285,40 @@ class _FakeStableUserStatusStore:
         }
 
     async def set_play_mode(self, user_id: int, play_mode: int) -> None:
+        """保存済みstatusがあるuserのplay modeを置き換える.
+
+        Args:
+            user_id (int): play modeを更新するstable userのID.
+            play_mode (int): statusへ設定するstable play mode wire値.
+
+        Returns:
+            None: statusが存在する場合にplay modeを更新して完了する.
+        """
         current = self._statuses.get(user_id)
         if current is not None:
             self._statuses[user_id] = current.with_play_mode(play_mode)
 
     async def get_play_mode(self, user_id: int) -> int | None:
+        """保存済みstatusからuserのplay modeを取得する.
+
+        Args:
+            user_id (int): play modeを取得するstable userのID.
+
+        Returns:
+            int | None: 保存済みplay mode. statusがなければNone.
+        """
         status = self._statuses.get(user_id)
         return None if status is None else status.play_mode
 
     async def get_play_modes(self, user_ids: tuple[int, ...]) -> dict[int, int]:
+        """要求されたuser IDの保存済みplay modeをmappingで返す.
+
+        Args:
+            user_ids (tuple[int, ...]): play modeを取得するstable user ID一覧.
+
+        Returns:
+            dict[int, int]: statusを持つuser IDだけのplay mode mapping.
+        """
         return {
             user_id: status.play_mode
             for user_id in user_ids
@@ -200,6 +326,15 @@ class _FakeStableUserStatusStore:
         }
 
     async def refresh_ttl(self, user_id: int, ttl: int) -> None:
+        """protocol充足のためTTL refresh requestを受け取る.
+
+        Args:
+            user_id (int): TTLをrefreshするstable userのID.
+            ttl (int): refreshを要求するTTL秒数.
+
+        Returns:
+            None: in-memory fakeではTTLを保持せずに完了し, 呼び出し側へ値を返さない.
+        """
         _ = (user_id, ttl)
 
 
@@ -213,6 +348,17 @@ def _make_channel(
     topic: str = "Test Channel",
     auto_join: bool = False,
 ) -> Channel:
+    """LoginResponseBuilder test用のpublic Channelを作る.
+
+    Args:
+        channel_id (int): channel identifier.
+        name (str): stable clientへ表示するchannel名.
+        topic (str): stable clientへ表示するchannel topic.
+        auto_join (bool): autojoin channelとして送るか.
+
+    Returns:
+        Channel: 固定timestampとpublic typeを持つchannel fixture.
+    """
     return Channel(
         id=channel_id,
         name=name,
@@ -234,6 +380,18 @@ def _login_response(
     privileges: Privileges = Privileges.NORMAL,
     role_ids: tuple[int, ...] = (1,),
 ) -> LoginResponse:
+    """LoginResponseBuilderへ渡すsuccessful LoginResponseを作る.
+
+    Args:
+        user_id (int): authenticated userのID.
+        username (str): authenticated userの表示名.
+        country (str): userとsessionへ設定するcountry code.
+        privileges (Privileges): stable authorizationへ変換するprivilege集合.
+        role_ids (tuple[int, ...]): channel catalog scopeへ渡すrole ID一覧.
+
+    Returns:
+        LoginResponse: token, user, privilege, session dataを持つsuccessful response fixture.
+    """
     user = User(
         id=user_id,
         username=username,
@@ -272,6 +430,18 @@ def _online_session(
     privileges: int = 1,
     utc_offset: int = 9,
 ) -> OnlineSessionSnapshot:
+    """Login rosterへ含めるonline session snapshotを作る.
+
+    Args:
+        user_id (int): online userのID.
+        username (str): online userの表示名.
+        country (str): presenceのcountry IDへ変換するcountry code.
+        privileges (int): presence permissionへ変換するprivilege bit値.
+        utc_offset (int): presence timezoneへ加算するUTC offset.
+
+    Returns:
+        OnlineSessionSnapshot: LoginResponseBuilderがroster packetを作るためのsnapshot.
+    """
     return OnlineSessionSnapshot(
         user_id=user_id,
         username=username,
@@ -290,6 +460,20 @@ def _make_builder(
     current_stats_query: _FakeCurrentUserStatsQuery | None = None,
     stable_user_status_store: _FakeStableUserStatusStore | None = None,
 ) -> LoginResponseBuilder:
+    """Typed query fakeを注入したLoginResponseBuilderを構築する.
+
+    Args:
+        visible (list[tuple[Channel, int]] | None): visible channelとuser countの順序.
+        autojoin (list[tuple[Channel, int]] | None): autojoin channelとuser countの順序.
+        friend_ids (tuple[int, ...]): login userのfriend user ID一覧.
+        active_sessions (tuple[OnlineSessionSnapshot, ...]): rosterへ含めるonline session一覧.
+        current_stats_query (_FakeCurrentUserStatsQuery | None): optional stats query fake.
+        stable_user_status_store (_FakeStableUserStatusStore | None): optional stable status
+            store fake.
+
+    Returns:
+        LoginResponseBuilder: initial S2C packet streamを構築するbuilder.
+    """
     stats_query = current_stats_query or _FakeCurrentUserStatsQuery()
     return LoginResponseBuilder(
         visible_channels_query=cast(
@@ -342,16 +526,16 @@ _COMPLETION_PACKETS = [
 
 
 class TestLoginResponseBuilder:
-    """Verify LoginResponseBuilder.build() produces correct S2C packet order.
-
-    Requirements: 1.1, 1.2, 1.4, 2.4, 3.1, 3.2
-    """
+    """LoginResponseBuilder.buildが作るroster, stats, channel packet順を検証する."""
 
     # -- BanchoBot presence & roster tests ---------------------------------
 
     async def test_banchobot_presence_packet_content(self) -> None:
-        """BanchoBot USER_PRESENCE uses deterministic defaults and
-        BANCHO_BOT_IDENTITY fields."""
+        """BanchoBot USER_PRESENCEがidentity fieldとdeterministic defaultを使う契約を検証する.
+
+        Returns:
+            None: expected BanchoBot presence packetがstreamにあることを確認して完了する.
+        """
         builder = _make_builder()
         result = await builder.build(_login_response())
 
@@ -369,6 +553,11 @@ class TestLoginResponseBuilder:
         assert expected in result
 
     async def test_banchobot_presence_uses_login_user_current_mode(self) -> None:
+        """BanchoBot presenceがlogin userの保存済みcurrent modeを使う契約を検証する.
+
+        Returns:
+            None: status store requestとmode付きBanchoBot presenceを確認して完了する.
+        """
         status_store = _FakeStableUserStatusStore(
             {
                 42: StableUserStatus(
@@ -399,8 +588,11 @@ class TestLoginResponseBuilder:
         assert expected in result
 
     async def test_banchobot_presence_before_bundle(self) -> None:
-        """BanchoBot USER_PRESENCE appears earlier in the stream than
-        USER_PRESENCE_BUNDLE."""
+        """BanchoBot USER_PRESENCEがUSER_PRESENCE_BUNDLEより前に置かれる契約を検証する.
+
+        Returns:
+            None: packet ID列のpresence位置とbundle位置を検証して完了し, 呼び出し側へ値を返さない.
+        """
         builder = _make_builder()
         result = await builder.build(_login_response())
 
@@ -427,8 +619,11 @@ class TestLoginResponseBuilder:
         )
 
     async def test_presence_bundle_includes_banchobot_and_user(self) -> None:
-        """USER_PRESENCE_BUNDLE contains BANCHO_BOT_IDENTITY.user_id and
-        connecting user ID, duplicate-free."""
+        """USER_PRESENCE_BUNDLEがBanchoBotと接続userを重複なく含む契約を検証する.
+
+        Returns:
+            None: expected bundle packetのstream内存在を検証して完了し, 呼び出し側へ値を返さない.
+        """
         user_id = 42
         builder = _make_builder()
         result = await builder.build(_login_response(user_id=user_id))
@@ -439,8 +634,11 @@ class TestLoginResponseBuilder:
     async def test_presence_bundle_no_duplicate_when_user_is_banchobot_id(
         self,
     ) -> None:
-        """When connecting user has the same ID as BanchoBot, the bundle
-        contains that ID only once."""
+        """接続userがBanchoBot IDの場合にbundleがそのIDを1回だけ含む契約を検証する.
+
+        Returns:
+            None: duplicate-free single ID bundleを検証して完了し, 呼び出し側へ値を返さない.
+        """
         bot_id = BANCHO_BOT_IDENTITY.user_id
         builder = _make_builder()
         result = await builder.build(_login_response(user_id=bot_id))
@@ -450,6 +648,11 @@ class TestLoginResponseBuilder:
         assert expected in result
 
     async def test_online_session_presence_packets_are_included(self) -> None:
+        """Online roster userのUSER_PRESENCEとbundle entryをstreamへ含める契約を検証する.
+
+        Returns:
+            None: country, timezone, permissionを持つpresenceとbundleを確認して完了する.
+        """
         online_user = _online_session(
             user_id=100,
             username="OnlineUser",
@@ -480,6 +683,11 @@ class TestLoginResponseBuilder:
     async def test_online_session_presence_skips_self_and_banchobot_duplicates(
         self,
     ) -> None:
+        """Online rosterがselfとBanchoBotのduplicate presenceを除外する契約を検証する.
+
+        Returns:
+            None: duplicate-free bundleとexpected presence countを確認して完了する.
+        """
         user_id = 42
         other_user = _online_session(user_id=100, username="OnlineUser")
         builder = _make_builder(
@@ -500,6 +708,11 @@ class TestLoginResponseBuilder:
         assert ids.count(ServerPacketID.USER_PRESENCE) == 3
 
     async def test_friends_list_uses_owner_scoped_friend_query(self) -> None:
+        """Friends listがlogin user owner scopeで返されたfriend IDを使う契約を検証する.
+
+        Returns:
+            None: configured friend listの存在とempty list不在を確認して完了する.
+        """
         builder = _make_builder(friend_ids=(10, 20))
 
         result = await builder.build(_login_response(user_id=42))
@@ -508,6 +721,11 @@ class TestLoginResponseBuilder:
         assert friends_list([]) not in result
 
     async def test_friends_list_does_not_synthesize_banchobot(self) -> None:
+        """Empty friend query resultへBanchoBotを自動追加しない契約を検証する.
+
+        Returns:
+            None: empty friends listとBanchoBot入りlist不在を確認して完了する.
+        """
         builder = _make_builder(friend_ids=())
 
         result = await builder.build(_login_response())
@@ -516,6 +734,11 @@ class TestLoginResponseBuilder:
         assert friends_list([BANCHO_BOT_IDENTITY.user_id]) not in result
 
     async def test_logged_in_user_stats_uses_current_stats_values(self) -> None:
+        """Login userのcurrent stats値をUSER_STATS packetへ反映する契約を検証する.
+
+        Returns:
+            None: stats query scopeとrounded ppを含むpacketを確認して完了する.
+        """
         stats_query = _FakeCurrentUserStatsQuery(
             stats=(
                 UserCurrentStats(
@@ -555,6 +778,11 @@ class TestLoginResponseBuilder:
         )
 
     async def test_login_stats_read_failure_falls_back_to_default_stats(self) -> None:
+        """Login stats query failure時にdefault USER_STATSをstreamへ残す契約を検証する.
+
+        Returns:
+            None: query callとzero default stats packetを検証して完了し, 呼び出し側へ値を返さない.
+        """
         stats_query = _FakeCurrentUserStatsQuery(error=RuntimeError("stats unavailable"))
         builder = _make_builder(current_stats_query=stats_query)
 
@@ -581,6 +809,12 @@ class TestLoginResponseBuilder:
         )
 
     async def test_online_roster_users_get_user_stats_packets(self) -> None:
+        """Online roster userにもcurrent statsを持つUSER_STATS packetを送る契約を検証する.
+
+        Returns:
+            None: login userとroster userのquery scopeおよびroster stats packetを
+            確認して完了する.
+        """
         stats_query = _FakeCurrentUserStatsQuery(
             stats=(UserCurrentStats(user_id=100, pp=Decimal("50"), global_rank=20),)
         )
@@ -612,6 +846,11 @@ class TestLoginResponseBuilder:
         )
 
     async def test_online_roster_users_use_current_status_mode_on_login(self) -> None:
+        """Online roster userが保存済みstatusとplay modeをpresenceとstatsへ反映する契約を検証する.
+
+        Returns:
+            None: mode別stats query, status request, mode付きpacket群を確認して完了する.
+        """
         stats_query = _FakeCurrentUserStatsQuery(
             stats=(
                 UserCurrentStats(user_id=42, pp=Decimal("10"), global_rank=30),
@@ -692,7 +931,11 @@ class TestLoginResponseBuilder:
     async def test_login_and_presence_permissions_use_stable_bancho_mapper(
         self,
     ) -> None:
-        """LoginPermissions and self UserPresence use stable compatibility output."""
+        """LOGIN_PERMISSIONSとself USER_PRESENCEがstable compatibility mapperを使う契約を検証する.
+
+        Returns:
+            None: authorization outputを持つstream prefixを確認して完了する.
+        """
         login_response = _login_response(
             privileges=Privileges.ADMIN | Privileges.DEVELOPER | Privileges.UNRESTRICTED
         )
@@ -737,7 +980,11 @@ class TestLoginResponseBuilder:
         assert result.startswith(expected_self_prefix)
 
     async def test_packet_order_without_channels(self) -> None:
-        """Initial and completion packets in exact order when no channels exist."""
+        """channelがない場合にinitialとcompletion packetをexact orderで並べる契約を検証する.
+
+        Returns:
+            None: packet ID列が既定initialとcompletion順序に一致することを確認して完了する.
+        """
         builder = _make_builder()
         result = await builder.build(_login_response())
 
@@ -746,7 +993,11 @@ class TestLoginResponseBuilder:
     async def test_visible_channels_inserted_between_user_stats_and_channel_info_complete(
         self,
     ) -> None:
-        """CHANNEL_AVAILABLE appears after USER_STATS, before CHANNEL_INFO_COMPLETE."""
+        """Visible CHANNEL_AVAILABLEをUSER_STATS後かつcompletion前へ挿入する契約を検証する.
+
+        Returns:
+            None: 2 channelを含むexact packet ID順序を検証して完了し, 呼び出し側へ値を返さない.
+        """
         ch_osu = _make_channel(channel_id=1, name="#osu", topic="General")
         ch_announce = _make_channel(channel_id=2, name="#announce", topic="News")
         builder = _make_builder(visible=[(ch_osu, 5), (ch_announce, 3)])
@@ -764,8 +1015,11 @@ class TestLoginResponseBuilder:
     async def test_autojoin_channels_after_visible_before_channel_info_complete(
         self,
     ) -> None:
-        """CHANNEL_AVAILABLE_AUTOJOIN sits between last CHANNEL_AVAILABLE
-        and CHANNEL_INFO_COMPLETE."""
+        """CHANNEL_AVAILABLE_AUTOJOINをvisible block後かつcompletion前へ置く契約を検証する.
+
+        Returns:
+            None: visibleとautojoin channelを含むexact packet ID順序を確認して完了する.
+        """
         ch_visible = _make_channel(channel_id=1, name="#osu", topic="General")
         ch_autojoin = _make_channel(channel_id=2, name="#lobby", topic="Lobby", auto_join=True)
         builder = _make_builder(
@@ -786,8 +1040,11 @@ class TestLoginResponseBuilder:
     async def test_multiple_visible_and_autojoin_channels_preserve_relative_order(
         self,
     ) -> None:
-        """Multiple visible then multiple autojoin channels each maintain their
-        insertion order within their respective block."""
+        """複数visible channelと複数autojoin channelの相対順序を維持する契約を検証する.
+
+        Returns:
+            None: 各channel block内のexact packet ID順序を検証して完了し, 呼び出し側へ値を返さない.
+        """
         ch_v1 = _make_channel(channel_id=1, name="#osu", topic="General")
         ch_v2 = _make_channel(channel_id=2, name="#announce", topic="News")
         ch_a1 = _make_channel(channel_id=3, name="#lobby", topic="Lobby", auto_join=True)
@@ -812,8 +1069,11 @@ class TestLoginResponseBuilder:
     async def test_stream_depends_only_on_login_response_not_on_auth_state(
         self,
     ) -> None:
-        """Same LoginResponse produces identical stream; different responses
-        produce same packet order but different content."""
+        """LoginResponseだけがstream contentを決め, user差はpacket orderを変えない契約を検証する.
+
+        Returns:
+            None: 同一packet ID順序と異なるpayload contentを確認して完了する.
+        """
         builder = _make_builder()
         lr1 = _login_response(user_id=1, username="Alice")
         lr2 = _login_response(user_id=2, username="Bob")

@@ -1,4 +1,4 @@
-"""Taskiq chat persistence job adapters."""
+"""chat persistence command use-case を呼び出す Taskiq adapter を定義する."""
 
 from __future__ import annotations
 
@@ -22,21 +22,46 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 
 class ChannelMessagePersistenceUseCase(Protocol):
-    """Channel message persistence use-case surface required by job adapters."""
+    """channel message persistence job が要求する use-case 境界を表す."""
 
-    async def execute(self, command: PersistChannelMessageCommand) -> ChatPersistenceResult: ...
+    async def execute(self, command: PersistChannelMessageCommand) -> ChatPersistenceResult:
+        """Channel message persistence command を実行する.
+
+        Args:
+            command (PersistChannelMessageCommand): durable storage へ渡す command.
+
+        Returns:
+            ChatPersistenceResult: persistence の結果.
+        """
+        ...
 
 
 class PrivateMessagePersistenceUseCase(Protocol):
-    """Private message persistence use-case surface required by job adapters."""
+    """private message persistence job が要求する use-case 境界を表す."""
 
-    async def execute(self, command: PersistPrivateMessageCommand) -> ChatPersistenceResult: ...
+    async def execute(self, command: PersistPrivateMessageCommand) -> ChatPersistenceResult:
+        """Private message persistence command を実行する.
+
+        Args:
+            command (PersistPrivateMessageCommand): durable storage へ渡す command.
+
+        Returns:
+            ChatPersistenceResult: persistence の結果.
+        """
+        ...
 
 
 def get_channel_message_persistence_use_case(
     state: TaskiqState,
 ) -> ChannelMessagePersistenceUseCase | None:
-    """Return the channel message persistence use-case from taskiq state."""
+    """Taskiq state から channel message persistence use-case を返す.
+
+    Args:
+        state (TaskiqState): worker runtime が保持する Taskiq state.
+
+    Returns:
+        ChannelMessagePersistenceUseCase | None: 登録済み use-case または未登録時の None.
+    """
     return cast(
         "ChannelMessagePersistenceUseCase | None",
         getattr(state, "persist_channel_message_use_case", None),
@@ -46,7 +71,14 @@ def get_channel_message_persistence_use_case(
 def get_private_message_persistence_use_case(
     state: TaskiqState,
 ) -> PrivateMessagePersistenceUseCase | None:
-    """Return the private message persistence use-case from taskiq state."""
+    """Taskiq state から private message persistence use-case を返す.
+
+    Args:
+        state (TaskiqState): worker runtime が保持する Taskiq state.
+
+    Returns:
+        PrivateMessagePersistenceUseCase | None: 登録済み use-case または未登録時の None.
+    """
     return cast(
         "PrivateMessagePersistenceUseCase | None",
         getattr(state, "persist_private_message_use_case", None),
@@ -61,7 +93,21 @@ async def persist_channel_message(
     content: str,
     context: Annotated[Context, TaskiqDepends()],
 ) -> None:
-    """Delegate channel message persistence to the command use-case."""
+    """Channel message の persistence を command use-case に委譲する.
+
+    Args:
+        sender_id (int): message を送信した user の ID.
+        channel_name (str): message の送信先 channel 名.
+        sender_name (str): 運用ログへ記録する送信者名.
+        content (str): persist する message 本文.
+        context (Context): use-case を取得する Taskiq runtime context.
+
+    Returns:
+        None: command use-case を実行して完了する.
+
+    Raises:
+        RuntimeError: channel message persistence use-case が未登録の場合.
+    """
     use_case = get_channel_message_persistence_use_case(context.state)
     if use_case is None:
         logger.error(
@@ -92,7 +138,22 @@ async def persist_private_message(
     content: str,
     context: Annotated[Context, TaskiqDepends()],
 ) -> None:
-    """Delegate private message persistence to the command use-case."""
+    """Private message の persistence を command use-case に委譲する.
+
+    Args:
+        sender_id (int): message を送信した user の ID.
+        target_id (int): message を受信する user の ID.
+        sender_name (str): 運用ログへ記録する送信者名.
+        target_name (str): 運用ログへ記録する受信者名.
+        content (str): persist する message 本文.
+        context (Context): use-case を取得する Taskiq runtime context.
+
+    Returns:
+        None: command use-case を実行して完了する.
+
+    Raises:
+        RuntimeError: private message persistence use-case が未登録の場合.
+    """
     use_case = get_private_message_persistence_use_case(context.state)
     if use_case is None:
         logger.error(

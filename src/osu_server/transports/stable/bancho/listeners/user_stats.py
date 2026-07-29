@@ -1,4 +1,4 @@
-"""Current UserStats event listeners for stable Bancho packet fanout."""
+"""current UserStats eventをstable Bancho USER_STATS packet fan-outへ適応する."""
 
 from __future__ import annotations
 
@@ -27,7 +27,15 @@ logger = cast("structlog.stdlib.BoundLogger", structlog.get_logger(__name__))
 
 
 class UserStatsListeners(ListenerGroup):
-    """current UserStats 更新 event を Stable USER_STATS packet に変換する。"""
+    """current UserStats更新eventをstable USER_STATS packetへ変換する.
+
+    Attributes:
+        _packet_queue (PacketQueue): USER_STATS packetをuserへenqueueするqueue.
+        _current_user_stats_query (CurrentUserStatsQuery):
+            eventにsnapshotがない場合にstatsを取得するquery.
+        _stable_user_status_store (StableUserStatusStore | None):
+            packetへ反映するcurrent statusを取得するstore.
+    """
 
     _packet_queue: PacketQueue
     _current_user_stats_query: CurrentUserStatsQuery
@@ -40,13 +48,31 @@ class UserStatsListeners(ListenerGroup):
         current_user_stats_query: CurrentUserStatsQuery,
         stable_user_status_store: StableUserStatusStore | None = None,
     ) -> None:
+        """Current UserStats eventを処理する依存を初期化する.
+
+        Args:
+            packet_queue (PacketQueue): S2C packetをenqueueするqueue.
+            current_user_stats_query (CurrentUserStatsQuery): fallback stats取得用のquery.
+            stable_user_status_store (StableUserStatusStore | None): status読取用のoptional store.
+        """
         self._packet_queue = packet_queue
         self._current_user_stats_query = current_user_stats_query
         self._stable_user_status_store = stable_user_status_store
 
     @listens(CurrentUserStatsUpdated)
     async def on_current_user_stats_updated(self, event: CurrentUserStatsUpdated) -> None:
-        """score submit 後の current stats を submit user の packet queue へ積む。"""
+        """Current UserStats更新をsubmit user向けUSER_STATS packetへ変換する.
+
+        Args:
+            event (CurrentUserStatsUpdated):
+                user,ruleset,playstyle,optional stats snapshotを持つevent.
+
+        Returns:
+            None: current statsを取得できた場合にUSER_STATSをenqueueして値を返さずに完了する.
+
+        Notes:
+            eventがsnapshotを持たない場合だけqueryから補完し,query失敗時はpacketを送らない.
+        """
         play_mode = event.ruleset.value
         should_notify, current_stats = await self._current_stats_for_event(event)
         if not should_notify:
@@ -66,6 +92,15 @@ class UserStatsListeners(ListenerGroup):
         self,
         event: CurrentUserStatsUpdated,
     ) -> tuple[bool, UserCurrentStats | None]:
+        """eventのsnapshotまたはqueryからcurrent statsを取得する.
+
+        Args:
+            event (CurrentUserStatsUpdated): current statsを解決する対象event.
+
+        Returns:
+            tuple[bool, UserCurrentStats | None]: packet送信可否と解決済みstats.
+                query失敗時はFalseとNone.
+        """
         if event.current_stats is not None:
             return True, event.current_stats
         try:
@@ -87,6 +122,14 @@ class UserStatsListeners(ListenerGroup):
         return True, result.get(event.user_id)
 
     async def _current_status(self, user_id: int) -> StableUserStatus:
+        """userの保存済みstable statusまたは既定idle statusを取得する.
+
+        Args:
+            user_id (int): statusを取得するtarget userのID.
+
+        Returns:
+            StableUserStatus: 保存済みstatus. store未設定,読取失敗,値なしでは既定status.
+        """
         if self._stable_user_status_store is None:
             return DEFAULT_STABLE_USER_STATUS
         try:

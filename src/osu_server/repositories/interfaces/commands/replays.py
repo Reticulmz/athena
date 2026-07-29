@@ -1,4 +1,4 @@
-"""Command-side replay repository contract."""
+"""Score replay persistence の command-side repository 契約."""
 
 from __future__ import annotations
 
@@ -9,12 +9,35 @@ if TYPE_CHECKING:
 
 
 class ReplayCommandRepository(Protocol):
-    """Mutation and uniqueness-check port for score replays."""
+    """Score replay の mutation と uniqueness-check port.
+
+    Notes:
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
+        実行しない.
+    """
 
     async def create(self, replay: Replay) -> Replay:
-        """Persist a replay and return it with repository-assigned identity."""
+        """Replay を永続化し repository-assigned identity 付きで返す.
+
+        Args:
+            replay (Replay): 永続化する未保存 Replay.
+
+        Returns:
+            Replay: Repository-assigned identity を含む永続化後の Replay.
+
+        Raises:
+            ValueError: checksum_sha256 が既存 Replay と重複する場合に送出する.
+        """
         ...
 
     async def exists_by_checksum(self, checksum: str) -> bool:
-        """Return whether a replay with the checksum already exists."""
+        """Checksum を持つ Replay が既に存在するか返す.
+
+        Args:
+            checksum (str): 重複確認する Replay checksum.
+
+        Returns:
+            bool: 一致する Replay が存在する場合は True.存在しない場合は False.
+        """
         ...

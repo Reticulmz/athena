@@ -1,4 +1,4 @@
-"""Tests for chat persistence command use-cases."""
+"""chat永続化command use caseのUnit testを検証する."""
 
 from __future__ import annotations
 
@@ -20,12 +20,29 @@ async def _seed_channel(
     *,
     name: str = "#osu",
 ) -> None:
+    """Channel message保存用のchannelをmemory UoWへ登録する.
+
+    Args:
+        uow_factory (InMemoryUnitOfWorkFactory): channelを永続化するmemory Unit of Work factory.
+        name (str): 登録するchannel名.
+
+    Returns:
+        None: channelをcommitして,呼び出し側へ値を返さずに完了する.
+    """
     async with uow_factory() as uow:
         _ = await uow.channels.create(make_channel(name=name))
         await uow.commit()
 
 
 async def test_persist_channel_message_use_case_writes_through_uow() -> None:
+    """Channel messageをcommitする永続化契約を検証する.
+
+    登録済みchannelへmessageを送る条件で,成功resultとsender,channel,contentを持つrecordが
+    memory stateに一件だけ観測できることを確認する.
+
+    Returns:
+        None: 永続化されたrecordを検証して,呼び出し側へ値を返さずに完了する.
+    """
     state = InMemoryCommandRepositoryState()
     uow_factory = InMemoryUnitOfWorkFactory(state)
     await _seed_channel(uow_factory)
@@ -48,6 +65,14 @@ async def test_persist_channel_message_use_case_writes_through_uow() -> None:
 
 
 async def test_persist_channel_message_use_case_rolls_back_repository_failure() -> None:
+    """存在しないchannelの保存失敗がrollbackされる契約を検証する.
+
+    未登録channelへmessageを送る条件で,CHANNEL_NOT_FOUND failure resultと空のchannel message
+    stateが観測できることを確認する.
+
+    Returns:
+        None: failure resultと未永続化stateを検証して,呼び出し側へ値を返さずに完了する.
+    """
     state = InMemoryCommandRepositoryState()
     use_case = PersistChannelMessageUseCase(uow_factory=InMemoryUnitOfWorkFactory(state))
 
@@ -65,6 +90,14 @@ async def test_persist_channel_message_use_case_rolls_back_repository_failure() 
 
 
 async def test_persist_private_message_use_case_writes_through_uow() -> None:
+    """Private messageをcommitする永続化契約を検証する.
+
+    senderとtargetを持つmessageを送る条件で,成功resultと両user IDおよびcontentを持つrecordが
+    memory stateに観測できることを確認する.
+
+    Returns:
+        None: 永続化されたprivate messageを検証して,呼び出し側へ値を返さずに完了する.
+    """
     state = InMemoryCommandRepositoryState()
     use_case = PersistPrivateMessageUseCase(
         uow_factory=InMemoryUnitOfWorkFactory(state),
@@ -87,6 +120,14 @@ async def test_persist_private_message_use_case_writes_through_uow() -> None:
 
 
 async def test_persist_channel_message_use_case_reports_missing_runtime() -> None:
+    """Channel messageのruntime未構成をfailure resultへ変換する契約を検証する.
+
+    Unit of Work factoryなしでuse caseを実行する条件で,RUNTIME_UNAVAILABLE failure resultが
+    観測できることを確認する.
+
+    Returns:
+        None: runtime未構成のfailure resultを検証して,呼び出し側へ値を返さずに完了する.
+    """
     use_case = PersistChannelMessageUseCase()
 
     result = await use_case.execute(
@@ -102,6 +143,14 @@ async def test_persist_channel_message_use_case_reports_missing_runtime() -> Non
 
 
 async def test_persist_private_message_use_case_reports_missing_runtime() -> None:
+    """Private messageのruntime未構成をfailure resultへ変換する契約を検証する.
+
+    Unit of Work factoryなしでuse caseを実行する条件で,RUNTIME_UNAVAILABLE failure resultが
+    観測できることを確認する.
+
+    Returns:
+        None: runtime未構成のfailure resultを検証して,呼び出し側へ値を返さずに完了する.
+    """
     use_case = PersistPrivateMessageUseCase()
 
     result = await use_case.execute(

@@ -1,4 +1,4 @@
-"""Add current user stats projection.
+"""current user stats projectionを追加するmigration.
 
 Revision ID: 20260630_0200
 Revises: 20260630_0100
@@ -24,6 +24,16 @@ _EXCLUDED_INITIAL_STATS_MODS = 8320
 
 
 def upgrade() -> None:
+    """user別ruleset stats projectionと初期aggregate rowを作成する.
+
+    Returns:
+        None: current_user_statsのschema, rank index, backfillを完了し,
+            呼び出し側へ値を返さずに終了する.
+
+    Notes:
+        `sa.text("pp DESC")`はdescending keyを含むPostgreSQL index expressionをAlembicへ
+        渡す局所的なtextual DDL fragmentとして使用する.
+    """
     _ = op.create_table(
         "current_user_stats",
         sa.Column("user_id", sa.Integer(), nullable=False),
@@ -114,11 +124,27 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Current user stats projectionを削除する.
+
+    Returns:
+        None: rank indexとcurrent_user_stats tableの削除を完了し,
+            呼び出し側へ値を返さずに終了する.
+    """
     op.drop_index("idx_current_user_stats_rank_support", table_name="current_user_stats")
     op.drop_table("current_user_stats")
 
 
 def _backfill_current_user_stats() -> None:
+    """scoreとperformance projectionから初期user statsを集計する.
+
+    Returns:
+        None: user, ruleset, playstyleごとのcurrent_user_stats row保存を完了し,
+            呼び出し側へ値を返さずに終了する.
+
+    Notes:
+        text SQLはscore aggregate, mode別accuracy, weighted PPを複数CTEとwindow functionで
+        一貫して計算するために使用する.
+    """
     op.execute(
         sa.text(
             """

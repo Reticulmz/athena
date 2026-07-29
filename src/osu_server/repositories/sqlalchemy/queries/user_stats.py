@@ -1,4 +1,4 @@
-"""SQLAlchemy query-side current UserStats repository。"""
+"""SQLAlchemyからcurrent UserStatsのsource dataをread-onlyで取得するquery repositoryを提供する."""
 
 from __future__ import annotations
 
@@ -40,10 +40,21 @@ _EXCLUDED_INITIAL_STATS_MODS = int(Mod.RELAX | Mod.AUTOPILOT)
 
 
 class SQLAlchemyUserStatsQueryRepository:
-    """SQLAlchemy から current UserStats source data を read-only で読む。"""
+    """SQLAlchemyからcurrent UserStats source dataをread-onlyで読む.
+
+    Attributes:
+        _session_factory (SQLAlchemyQuerySessionFactory): queryごとに閉じるread sessionのfactory.
+    """
 
     def __init__(self, session_factory: SQLAlchemyQuerySessionFactory) -> None:
-        """短命な read session factory を受け取る。"""
+        """短命なread session factoryを保持してrepositoryを初期化する.
+
+        Args:
+            session_factory (SQLAlchemyQuerySessionFactory): query用の非同期read session factory.
+
+        Notes:
+            初期化時にはsessionを生成せず,current stats projectionとScoreを変更しない.
+        """
         self._session_factory: SQLAlchemyQuerySessionFactory = session_factory
 
     async def read_current_stats_sources(
@@ -53,7 +64,26 @@ class SQLAlchemyUserStatsQueryRepository:
         ruleset: Ruleset = Ruleset.OSU,
         playstyle: Playstyle = Playstyle.VANILLA,
     ) -> UserStatsSourceRead:
-        """dedupe 済み requested users と mode-scoped rank inputs を batch で返す。"""
+        """重複を除いたrequested Userのcurrent stats source dataをbatchで返す.
+
+        Args:
+            user_ids (tuple[int, ...]): 取得対象Userの永続ID. 同じIDは最初の出現だけを使用する.
+            ruleset (Ruleset): current statsとfallback Scoreを絞り込むruleset.
+            playstyle (Playstyle): current statsとfallback Scoreを絞り込むplaystyle.
+
+        Returns:
+            UserStatsSourceRead: 既知Userのsource rowと空のrank_inputsを含むread result.
+            空入力または未知Userだけの場合は両fieldが空のresult.
+
+        Raises:
+            KeyError: SQL result rowに必須fieldがない場合.
+            SQLAlchemyError: sessionのreadまたはrow取得に失敗した場合.
+            TypeError: SQL result rowの必須field型が期待値と異なる場合.
+
+        Notes:
+            current projectionがない既知UserだけをScore aggregateとperformance bestからfallbackし,
+            空入力ではsessionを開かない.
+        """
         ordered_user_ids = tuple(dict.fromkeys(user_ids))
         if len(ordered_user_ids) == 0:
             return UserStatsSourceRead(users=(), rank_inputs=())
@@ -152,6 +182,17 @@ class SQLAlchemyUserStatsQueryRepository:
 
 
 def _known_user_ids_statement(user_ids: tuple[int, ...]) -> Executable:
+    """入力IDのうちUser tableに存在するIDを取得するstatementを構築する.
+
+    Args:
+        user_ids (tuple[int, ...]): 存在確認するUserの永続ID.
+
+    Returns:
+        Executable: user_id columnを返すSELECT statement.
+
+    Notes:
+        入力順の保持や重複除去は呼び出し側が所有する.
+    """
     return select(UserModel.id.label("user_id")).where(UserModel.id.in_(user_ids))
 
 
@@ -161,6 +202,20 @@ def _score_aggregates_statement(
     ruleset: Ruleset,
     playstyle: Playstyle,
 ) -> Executable:
+    """Current projectionがないUser向けのScore aggregateを取得するstatementを構築する.
+
+    Args:
+        user_ids (tuple[int, ...]): aggregateを計算するUserの永続ID.
+        ruleset (Ruleset): Scoreを絞り込むruleset.
+        playstyle (Playstyle): Scoreを絞り込むplaystyle.
+
+    Returns:
+        Executable: play count,score,combo,play time,hit totalをUser別に返すSELECT statement.
+
+    Notes:
+        ranked scoreはpassedかつleaderboard eligibleなScoreのBeatmap別最高値だけを合計し,
+        initial statsからRELAXとAUTOPILOT modを除外する.
+    """
     ranked_score_model = aliased(ScoreModel)
     ranked_score_candidates = (
         select(
@@ -219,6 +274,19 @@ def _requested_projection_statement(
     ruleset: Ruleset,
     playstyle: Playstyle,
 ) -> Executable:
+    """指定Userのcurrent stats projectionを取得するstatementを構築する.
+
+    Args:
+        user_ids (tuple[int, ...]): projectionを検索するUserの永続ID.
+        ruleset (Ruleset): projectionを絞り込むruleset.
+        playstyle (Playstyle): projectionを絞り込むplaystyle.
+
+    Returns:
+        Executable: current stats projectionの全source fieldを返すSELECT statement.
+
+    Notes:
+        projectionが存在しないUserのfallback計算はこのstatementでは行わない.
+    """
     return _projection_rows_select().where(
         CurrentUserStatsModel.user_id.in_(user_ids),
         CurrentUserStatsModel.ruleset == ruleset.value,
@@ -232,6 +300,19 @@ def _requested_bests_statement(
     ruleset: Ruleset,
     playstyle: Playstyle,
 ) -> Executable:
+    """指定Userのperformance bestを順位決定順で取得するstatementを構築する.
+
+    Args:
+        user_ids (tuple[int, ...]): performance bestを検索するUserの永続ID.
+        ruleset (Ruleset): performance bestを絞り込むruleset.
+        playstyle (Playstyle): performance bestを絞り込むplaystyle.
+
+    Returns:
+        Executable: User別performance bestのPPとaccuracyを返すSELECT statement.
+
+    Notes:
+        同一User内ではPP降順,submitted_at昇順,Score ID昇順で並べる.
+    """
     return (
         _best_rows_select()
         .where(
@@ -254,6 +335,19 @@ def _requested_projection_ranks_statement(
     ruleset: Ruleset,
     playstyle: Playstyle,
 ) -> Executable:
+    """指定Userのvisible global rankを取得するstatementを構築する.
+
+    Args:
+        user_ids (tuple[int, ...]): rankを計算するUserの永続ID.
+        ruleset (Ruleset): current stats projectionを絞り込むruleset.
+        playstyle (Playstyle): current stats projectionを絞り込むplaystyle.
+
+    Returns:
+        Executable: visibleなnonzero PPのUser別global rankを返すSELECT statement.
+
+    Notes:
+        同PP時はUser IDが小さい方を上位とし,targetと比較対象の両方へRole visibilityを適用する.
+    """
     target = aliased(CurrentUserStatsModel)
     better = aliased(CurrentUserStatsModel)
     target_role_permissions = _role_permissions_subquery("target_role_permissions")
@@ -307,6 +401,14 @@ def _requested_projection_ranks_statement(
 
 
 def _projection_rows_select():
+    """Current stats projectionをdomain source rowへ変換する全columnのSELECTを構築する.
+
+    Returns:
+        Select: User ID,PP,accuracy,Score aggregate,hit totalを返すSELECT statement.
+
+    Notes:
+        filteringは呼び出し側が追加し,このhelperはcolumn projectionだけを所有する.
+    """
     return select(
         CurrentUserStatsModel.user_id.label("user_id"),
         CurrentUserStatsModel.pp.label("pp"),
@@ -326,6 +428,14 @@ def _projection_rows_select():
 
 
 def _best_rows_select():
+    """Performance bestをdomain valueへ変換する最小columnのSELECTを構築する.
+
+    Returns:
+        Select: User ID,PP,accuracyを返すSELECT statement.
+
+    Notes:
+        filteringとorderingは呼び出し側が追加する.
+    """
     return select(
         BeatmapPerformanceBestModel.user_id.label("user_id"),
         BeatmapPerformanceBestModel.pp.label("pp"),
@@ -334,6 +444,17 @@ def _best_rows_select():
 
 
 def _role_permissions_subquery(name: str = "role_permissions") -> Subquery:
+    """Userごとの集約Role permissionを返す名前付きsubqueryを構築する.
+
+    Args:
+        name (str): generated subqueryに付与するSQL alias名.
+
+    Returns:
+        Subquery: user_idと割り当てRole permissionのbitwise ORを返すsubquery.
+
+    Notes:
+        RoleがないUserのpermission補完は呼び出し側のcoalesceで行う.
+    """
     return (
         select(
             UserRoleModel.user_id.label("user_id"),
@@ -347,6 +468,17 @@ def _role_permissions_subquery(name: str = "role_permissions") -> Subquery:
 
 
 def _leaderboard_visible_condition(role_permissions: Subquery) -> ColumnElement[bool]:
+    """集約Role permissionがleaderboard表示要件を満たす条件を構築する.
+
+    Args:
+        role_permissions (Subquery): user_idごとの集約permissionを返すsubquery.
+
+    Returns:
+        ColumnElement[bool]: LEADERBOARD_VISIBLE_PERMISSION_MASKの全bitを持つかを判定するSQL条件.
+
+    Notes:
+        permissionがNULLの場合は0として扱う.
+    """
     permissions = cast(
         "ColumnElement[int]",
         func.coalesce(role_permissions.c.permissions, 0),
@@ -357,32 +489,106 @@ def _leaderboard_visible_condition(role_permissions: Subquery) -> ColumnElement[
 
 
 def _initial_stats_mod_condition() -> ColumnElement[bool]:
+    """初期stats aggregateからRELAXとAUTOPILOTを除外するSQL条件を構築する.
+
+    Returns:
+        ColumnElement[bool]: excluded mod bitが1つも立っていないScoreだけを許可するSQL条件.
+
+    Notes:
+        除外bitmaskはMod.RELAXとMod.AUTOPILOTのORとしてmodule定数に固定する.
+    """
     return ScoreModel.mods.bitwise_and(_EXCLUDED_INITIAL_STATS_MODS) == literal(0)
 
 
 def _known_user_ids_from_rows(rows: tuple[Mapping[str, object], ...]) -> set[int]:
+    """既知User queryのmapping rowからUser ID集合を作る.
+
+    Args:
+        rows (tuple[Mapping[str, object], ...]): user_id fieldを持つSQLAlchemy mapping row.
+
+    Returns:
+        set[int]: rowに含まれるUser IDの重複なし集合.
+
+    Raises:
+        KeyError: mappingにuser_idがない場合.
+        TypeError: user_idがintではない場合.
+    """
     return {_int_value(row, "user_id") for row in rows}
 
 
 def _score_aggregates_by_user(
     rows: tuple[Mapping[str, object], ...],
 ) -> dict[int, Mapping[str, object]]:
+    """Score aggregate rowをUser IDで索引付けする.
+
+    Args:
+        rows (tuple[Mapping[str, object], ...]): user_idを含むScore aggregateのmapping row.
+
+    Returns:
+        dict[int, Mapping[str, object]]: User IDをkeyとする最後のaggregate row.
+
+    Raises:
+        KeyError: mappingにuser_idがない場合.
+        TypeError: user_idがintではない場合.
+
+    Notes:
+        同じUser IDが複数ある場合は後ろのrowで上書きする.
+    """
     return {_int_value(row, "user_id"): row for row in rows}
 
 
 def _projection_rows_by_user(
     rows: tuple[Mapping[str, object], ...],
 ) -> dict[int, Mapping[str, object]]:
+    """Current stats projection rowをUser IDで索引付けする.
+
+    Args:
+        rows (tuple[Mapping[str, object], ...]): user_idを含むprojectionのmapping row.
+
+    Returns:
+        dict[int, Mapping[str, object]]: User IDをkeyとする最後のprojection row.
+
+    Raises:
+        KeyError: mappingにuser_idがない場合.
+        TypeError: user_idがintではない場合.
+
+    Notes:
+        同じUser IDが複数ある場合は後ろのrowで上書きする.
+    """
     return {_int_value(row, "user_id"): row for row in rows}
 
 
 def _global_ranks_by_user(rows: tuple[Mapping[str, object], ...]) -> dict[int, int]:
+    """Global rank rowをUser IDからrankへのmappingへ変換する.
+
+    Args:
+        rows (tuple[Mapping[str, object], ...]): user_idとglobal_rankを含むmapping row.
+
+    Returns:
+        dict[int, int]: User IDをkey,global rankをvalueとするmapping.
+
+    Raises:
+        KeyError: mappingにuser_idまたはglobal_rankがない場合.
+        TypeError: user_idまたはglobal_rankがintではない場合.
+    """
     return {_int_value(row, "user_id"): _int_value(row, "global_rank") for row in rows}
 
 
 def _best_performances_by_user(
     rows: tuple[Mapping[str, object], ...],
 ) -> dict[int, tuple[UserPerformanceBest, ...]]:
+    """Performance best rowをUser ID別のdomain tupleへ変換する.
+
+    Args:
+        rows (tuple[Mapping[str, object], ...]): user_id,PP,accuracyを含むmapping row.
+
+    Returns:
+        dict[int, tuple[UserPerformanceBest, ...]]: User IDごとの入力順performance best tuple.
+
+    Raises:
+        KeyError: mappingにuser_id,pp,accuracyがない場合.
+        TypeError: user_id,PP,accuracyの型が期待値と異なる場合.
+    """
     grouped: dict[int, list[UserPerformanceBest]] = defaultdict(list)
     for row in rows:
         grouped[_int_value(row, "user_id")].append(
@@ -404,6 +610,29 @@ def _source_row_for_user(
     ruleset: Ruleset,
     playstyle: Playstyle,
 ) -> UserStatsSourceRow:
+    """1人分のprojectionまたはfallback aggregateをUserStats source rowへ変換する.
+
+    Args:
+        user_id (int): 変換対象Userの永続ID.
+        projection (Mapping[str, object] | None): current stats projection row. 未作成時はNone.
+        aggregate (Mapping[str, object] | None): projection未作成時のScore aggregate row.
+            未作成時はNone.
+        best_performances (tuple[UserPerformanceBest, ...]): projection未作成時に使う
+            performance best.
+        global_rank (int | None): visible global rank. rank対象外または未取得時はNone.
+        ruleset (Ruleset): rowに記録するruleset scope.
+        playstyle (Playstyle): rowに記録するplaystyle scope.
+
+    Returns:
+        UserStatsSourceRow: projection優先,aggregate fallback,またはzero値で構成したsource row.
+
+    Raises:
+        KeyError: 使用したmappingに必須fieldがない場合.
+        TypeError: 使用したmappingの必須field型が期待値と異なる場合.
+
+    Notes:
+        projectionがある場合はbest_performancesを空tupleにし,aggregateもない既知Userはzero値を返す.
+    """
     if projection is not None:
         return UserStatsSourceRow(
             user_id=user_id,
@@ -448,6 +677,19 @@ def _source_row_for_user(
 
 
 def _hit_totals_from_row(row: Mapping[str, object]) -> UserStatsHitTotals:
+    """SQL mapping rowのhit count fieldをdomain UserStatsHitTotalsへ変換する.
+
+    Args:
+        row (Mapping[str, object]): count_300,count_100,count_50,count_geki,count_katu,
+            count_missを持つrow.
+
+    Returns:
+        UserStatsHitTotals: 各hit countを転記したdomain value.
+
+    Raises:
+        KeyError: mappingに必須hit count fieldがない場合.
+        TypeError: 必須hit count fieldがintではない場合.
+    """
     return UserStatsHitTotals(
         count_300=_int_value(row, "count_300"),
         count_100=_int_value(row, "count_100"),
@@ -459,10 +701,34 @@ def _hit_totals_from_row(row: Mapping[str, object]) -> UserStatsHitTotals:
 
 
 def _mapping_rows(rows: object) -> tuple[Mapping[str, object], ...]:
+    """SQLAlchemy result row listをmapping row tupleとして扱う.
+
+    Args:
+        rows (object): mappings().all()から取得したrow list.
+
+    Returns:
+        tuple[Mapping[str, object], ...]: 入力順を保持したmapping row tuple.
+
+    Notes:
+        runtime validationは行わず,呼び出し側がmapping形式のresultを渡す契約に依存する.
+    """
     return tuple(cast("Mapping[str, object]", row) for row in cast("list[object]", rows))
 
 
 def _int_value(mapping: Mapping[str, object], key: str) -> int:
+    """mappingからint型の必須fieldを取得する.
+
+    Args:
+        mapping (Mapping[str, object]): SQLAlchemy mapping row.
+        key (str): 取得する必須field名.
+
+    Returns:
+        int: keyに対応するint値.
+
+    Raises:
+        KeyError: keyがmappingに存在しない場合.
+        TypeError: keyに対応する値がintではない場合.
+    """
     value = mapping[key]
     if not isinstance(value, int):
         msg = f"{key} must be an int"
@@ -471,6 +737,19 @@ def _int_value(mapping: Mapping[str, object], key: str) -> int:
 
 
 def _optional_int_value(mapping: Mapping[str, object], key: str) -> int | None:
+    """mappingからintまたはNoneの必須fieldを取得する.
+
+    Args:
+        mapping (Mapping[str, object]): SQLAlchemy mapping row.
+        key (str): 取得する必須field名.
+
+    Returns:
+        int | None: keyに対応するint値. SQL NULLの場合はNone.
+
+    Raises:
+        KeyError: keyがmappingに存在しない場合.
+        TypeError: keyに対応する値がintでもNoneでもない場合.
+    """
     value = mapping[key]
     if value is None:
         return None
@@ -481,6 +760,19 @@ def _optional_int_value(mapping: Mapping[str, object], key: str) -> int | None:
 
 
 def _decimal_value(mapping: Mapping[str, object], key: str) -> Decimal:
+    """mappingからDecimal型の必須fieldを取得する.
+
+    Args:
+        mapping (Mapping[str, object]): SQLAlchemy mapping row.
+        key (str): 取得する必須field名.
+
+    Returns:
+        Decimal: keyに対応するDecimal値.
+
+    Raises:
+        KeyError: keyがmappingに存在しない場合.
+        TypeError: keyに対応する値がDecimalではない場合.
+    """
     value = mapping[key]
     if isinstance(value, Decimal):
         return value
@@ -489,6 +781,19 @@ def _decimal_value(mapping: Mapping[str, object], key: str) -> Decimal:
 
 
 def _float_value(mapping: Mapping[str, object], key: str) -> float:
+    """mappingからfloat型の必須fieldを取得する.
+
+    Args:
+        mapping (Mapping[str, object]): SQLAlchemy mapping row.
+        key (str): 取得する必須field名.
+
+    Returns:
+        float: keyに対応するfloat値.
+
+    Raises:
+        KeyError: keyがmappingに存在しない場合.
+        TypeError: keyに対応する値がfloatではない場合.
+    """
     value = mapping[key]
     if isinstance(value, float):
         return value

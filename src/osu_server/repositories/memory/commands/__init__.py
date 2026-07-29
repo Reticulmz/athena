@@ -1,4 +1,4 @@
-"""In-memory command repository package."""
+"""In-memory command repository の公開実装を集約する module."""
 
 from osu_server.repositories.memory.commands.beatmap_leaderboards import (
     InMemoryBeatmapLeaderboardCommandRepository,

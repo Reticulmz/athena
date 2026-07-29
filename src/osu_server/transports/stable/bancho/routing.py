@@ -1,12 +1,4 @@
-"""RouteGroup — declarative routing infrastructure for handlers and listeners.
-
-Provides a ``@route(key)`` decorator and ``RouteGroup`` base class that
-auto-collects decorated methods at class-definition time via
-``__init_subclass__``.
-
-Design ref: RouteGroup component in c2s-handlers design.md
-Requirements: 1.1, 1.2, 1.3, 1.4
-"""
+"""Handler と listener の route を宣言して class 定義時に収集する."""
 
 from __future__ import annotations
 
@@ -24,23 +16,39 @@ Populated by ``@route(key)`` at decoration time, consumed by
 
 
 def get_route_registry() -> dict[Callable[..., object], object]:
-    """Return a read-only snapshot of the route registry.
+    """登録済み route registry の snapshot を返す.
 
-    Intended for **testing only** — production code should rely on
-    :meth:`RouteGroup.get_routes` instead.
+    Returns:
+        dict[Callable[..., object], object]: 関数から route key への独立した辞書.
+
+    Notes:
+        test 用の inspection API である. production code は RouteGroup.get_routes を使う.
     """
     return dict(_ROUTE_KEYS)
 
 
 def route(key: object) -> Callable[[_F], _F]:
-    """Declare a route key for a method.
+    """対象 method の route key を module registry へ登録する decorator を作る.
 
-    Registers the function in :data:`_ROUTE_KEYS`.  Does **not** add any
-    attributes to the function itself — the module-level dict is the sole
-    source of truth.
+    Args:
+        key (object): 対象 method に対応付ける route key.
+
+    Returns:
+        Callable[[_F], _F]: 元の関数を変更せず registry へ登録する decorator.
+
+    Notes:
+        route key は関数 attribute ではなく module level registry にだけ保存する.
     """
 
     def decorator(func: _F) -> _F:
+        """関数と route key の対応を registry に保存する.
+
+        Args:
+            func (_F): route key に対応付ける元の関数.
+
+        Returns:
+            _F: attribute を追加せずそのまま返す元の関数.
+        """
         _ROUTE_KEYS[func] = key
         return func
 
@@ -48,19 +56,26 @@ def route(key: object) -> Callable[[_F], _F]:
 
 
 class RouteGroup:
-    """Base class that auto-collects ``@route``-decorated methods.
+    """route decorator 付き method を class ごとに収集する基底 class.
 
-    On subclass creation, ``__init_subclass__`` scans ``vars(cls)`` (own
-    class only — no inheritance) against :data:`_ROUTE_KEYS` and builds
-    ``__routes__``, a ``ClassVar`` mapping route keys to method names.
+    Attributes:
+        __routes__ (ClassVar[dict[object, str]]): route key から class 自身の method 名への対応.
 
-    At runtime, :meth:`get_routes` yields ``(key, bound_method)`` tuples
-    for the instance.
+    Notes:
+        継承元の route は再収集しない. instance では get_routes が bound method を返す.
     """
 
     __routes__: ClassVar[dict[object, str]]
 
     def __init_subclass__(cls, **kwargs: object) -> None:
+        """派生 class 自身が宣言した route decorator 付き method を収集する.
+
+        Args:
+            kwargs (object): 基底 class へ渡す class 作成時の keyword argument.
+
+        Returns:
+            None: __routes__ を設定して class 作成を完了し値を返さない.
+        """
         super().__init_subclass__(**kwargs)
         routes: dict[object, str] = {}
         cls_dict: dict[str, object] = dict(vars(cls))
@@ -70,6 +85,10 @@ class RouteGroup:
         cls.__routes__ = routes
 
     def get_routes(self) -> Iterator[tuple[object, Callable[..., Awaitable[None]]]]:
-        """Yield ``(key, bound_method)`` for all declared routes."""
+        """宣言済み route の key と bound method を順に生成する.
+
+        Yields:
+            tuple[object, Callable[..., Awaitable[None]]]: route key と bound 済み handler.
+        """
         for key, method_name in self.__routes__.items():
             yield key, getattr(self, method_name)

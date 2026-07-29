@@ -1,4 +1,4 @@
-"""Global test fixtures for structlog state management and DI container cleanup."""
+"""test実行時の共有fixtureとruntime resource cleanupを提供する."""
 
 from __future__ import annotations
 
@@ -34,28 +34,31 @@ type _BrokerInitializer = Callable[..., None]
 
 
 class _AsyncCloseable(Protocol):
-    async def close(self) -> None: ...
+    """非同期close操作を公開するtest doubleの構造を表す."""
+
+    async def close(self) -> None:
+        """追跡済みresourceを非同期にcloseする.
+
+        Returns:
+            None: resourceをcloseし, 呼び出し側へ値を返さずに完了する.
+        """
+        ...
 
 
 class _AsyncShutdownBroker(Protocol):
-    async def shutdown(self) -> None: ...
+    """非同期shutdown操作を公開するbroker test doubleの構造を表す."""
+
+    async def shutdown(self) -> None:
+        """追跡済みbrokerを非同期にshutdownする.
+
+        Returns:
+            None: brokerをshutdownし, 呼び出し側へ値を返さずに完了する.
+        """
+        ...
 
 
 class QueryBudget(Protocol):
-    """SQL query budget fixture の callable contract.
-
-    __call__ Args:
-        max_queries: Scope 内で許可する最大 SQL query 数.
-        name: Failure message に出す redacted scope 名.
-        duplicate_threshold: Duplicate として扱う同一 SQL template の最小回数.
-
-    __call__ Returns:
-        SQL query count を検査する context manager.
-
-    __call__ Raises:
-        ValueError: max_queries が 0 未満の場合.
-        AssertionError: Scope 内の SQL query count が max_queries を超えた場合.
-    """
+    """SQL query数の上限を検証するfixture callableのcontractを表す."""
 
     def __call__(
         self,
@@ -63,12 +66,35 @@ class QueryBudget(Protocol):
         max_queries: int,
         name: str,
         duplicate_threshold: int = 2,
-    ) -> AbstractContextManager[None]: ...
+    ) -> AbstractContextManager[None]:
+        """指定scopeのSQL query数を検証するcontext managerを作る.
+
+        Args:
+            max_queries (int): scope内で許可する最大SQL query数.
+            name (str): failure messageに表示するredacted scope名.
+            duplicate_threshold (int): duplicateと扱う同一SQL templateの最小回数.
+
+        Returns:
+            AbstractContextManager[None]: query数を計測して終了時に検証するcontext manager.
+
+        Raises:
+            ValueError: max_queriesが0未満の場合.
+            AssertionError: scope内のquery数がmax_queriesを超える場合.
+        """
+        ...
 
 
 @final
 class RuntimeResourceTracker:
-    """Owns test-suite runtime patches and resource cleanup."""
+    """test suiteで生成されるruntime resourceとpatchを追跡する.
+
+    Attributes:
+        _glide_clients (list[weakref.ReferenceType[object]]): close対象のGlide client参照.
+        _brokers (list[weakref.ReferenceType[object]]): shutdown対象のbroker参照.
+        _original_create_valkey_client (_ValkeyClientFactory | None):
+            patch前のValkey client factory.
+        _original_list_queue_broker_init (_BrokerInitializer | None): patch前のbroker initializer.
+    """
 
     _glide_clients: list[weakref.ReferenceType[object]]
     _brokers: list[weakref.ReferenceType[object]]
@@ -76,17 +102,33 @@ class RuntimeResourceTracker:
     _original_list_queue_broker_init: _BrokerInitializer | None
 
     def __init__(self) -> None:
+        """空のresource追跡状態を初期化する."""
         self._glide_clients = []
         self._brokers = []
         self._original_create_valkey_client = None
         self._original_list_queue_broker_init = None
 
     def install_patches(self) -> None:
-        """Patch runtime constructors early so leaked resources are tracked."""
+        """resourceを追跡するためruntime constructorをpatchする.
+
+        Returns:
+            None: constructorをpatchし, 呼び出し側へ値を返さずに完了する.
+        """
         self._original_create_valkey_client = valkey_module.create_valkey_client
         self._original_list_queue_broker_init = ListQueueBroker.__init__
 
         async def tracked_create_valkey_client(valkey_url: str) -> GlideClient:
+            """生成したGlide clientを追跡して返す.
+
+            Args:
+                valkey_url (str): 接続するValkey endpoint.
+
+            Returns:
+                GlideClient: 追跡登録済みのValkey client.
+
+            Raises:
+                RuntimeError: factory patchが未設定の場合.
+            """
             original = self._original_create_valkey_client
             if original is None:
                 msg = "Valkey client factory patch is not installed"
@@ -102,6 +144,17 @@ class RuntimeResourceTracker:
             *args: object,
             **kwargs: object,
         ) -> None:
+            """生成したbrokerを追跡して元のinitializerを実行する.
+
+            Patch対象brokerとforwardされたposition / keyword引数で元initializerを呼び,
+            初期化済みbrokerのweak referenceをtrackerへ保持する.
+
+            Returns:
+                None: brokerを初期化して追跡し, 呼び出し側へ値を返さずに完了する.
+
+            Raises:
+                RuntimeError: initializer patchが未設定の場合.
+            """
             original = tracker._original_list_queue_broker_init
             if original is None:
                 msg = "ListQueueBroker initializer patch is not installed"
@@ -113,7 +166,11 @@ class RuntimeResourceTracker:
         ListQueueBroker.__init__ = tracked_broker_init
 
     def restore_patches(self) -> None:
-        """Restore runtime constructors patched for test cleanup."""
+        """Test cleanup用にpatchしたruntime constructorを復元する.
+
+        Returns:
+            None: 元のconstructorを復元し, 呼び出し側へ値を返さずに完了する.
+        """
         if self._original_create_valkey_client is not None:
             valkey_module.create_valkey_client = self._original_create_valkey_client
             self._original_create_valkey_client = None
@@ -122,7 +179,11 @@ class RuntimeResourceTracker:
             self._original_list_queue_broker_init = None
 
     async def close_after_test(self) -> None:
-        """Close tracked clients and brokers created by a test."""
+        """test中に生成した追跡resourceをcloseまたはshutdownする.
+
+        Returns:
+            None: cleanupを完了し, 呼び出し側へ値を返さずに完了する.
+        """
         for ref in self._glide_clients:
             client = ref()
             if client is not None:
@@ -148,16 +209,40 @@ class RuntimeResourceTracker:
         # can reconnect between tests and need closing after later tests too.
 
     def _track_glide_client(self, client: object) -> None:
+        """後続のtest cleanup対象としてGlide clientを登録する.
+
+        Args:
+            client (object): weak referenceで保持できる生成済みclient.
+
+        Returns:
+            None: clientを登録し, 呼び出し側へ値を返さずに完了する.
+        """
         self._glide_clients.append(weakref.ref(client))
 
 
 def _as_async_closeable(value: object) -> _AsyncCloseable | None:
+    """Close methodを持つ値を非同期close protocolとして返す.
+
+    Args:
+        value (object): close可能性を確認する値.
+
+    Returns:
+        _AsyncCloseable | None: close methodを持つ値. 持たない場合はNone.
+    """
     if callable(getattr(value, "close", None)):
         return cast("_AsyncCloseable", value)
     return None
 
 
 def _as_async_shutdown_broker(value: object) -> _AsyncShutdownBroker | None:
+    """Shutdown methodを持つ値をbroker protocolとして返す.
+
+    Args:
+        value (object): shutdown可能性を確認する値.
+
+    Returns:
+        _AsyncShutdownBroker | None: shutdown methodを持つ値. 持たない場合はNone.
+    """
     if callable(getattr(value, "shutdown", None)):
         return cast("_AsyncShutdownBroker", value)
     return None
@@ -167,7 +252,11 @@ _runtime_resources = RuntimeResourceTracker()
 
 
 def _load_test_service_env_defaults() -> None:
-    """Expose .env.test service URLs to tests that read os.environ directly."""
+    """os.environを直接読むtestへ.env.testのservice URLを公開する.
+
+    Returns:
+        None: 未設定のservice URLを環境へ設定し, 呼び出し側へ値を返さずに完了する.
+    """
     if not _TEST_ENV_FILE.exists():
         return
 
@@ -185,13 +274,24 @@ def _load_test_service_env_defaults() -> None:
 
 @pytest.fixture(autouse=True)
 async def close_runtime_resources() -> AsyncIterator[None]:
-    """Close all GlideClient and broker instances created during a test."""
+    """各test後に生成済みGlide clientとbrokerをcleanupする.
+
+    Yields:
+        None: test本体の実行権.
+    """
     yield
     await _runtime_resources.close_after_test()
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Patch create_valkey_client and ListQueueBroker early, before test imports."""
+    """Test import前にenvironmentとresource追跡patchを設定する.
+
+    Args:
+        config (pytest.Config): pytestの実行設定.
+
+    Returns:
+        None: test用runtime設定を完了し, 呼び出し側へ値を返さずに完了する.
+    """
     _ = config
     _ = os.environ.setdefault("ENVIRONMENT", "test")
     _load_test_service_env_defaults()
@@ -199,7 +299,14 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:
-    """Restore original runtime constructors."""
+    """Test session終了時に元のruntime constructorを復元する.
+
+    Args:
+        config (pytest.Config): pytestの実行設定.
+
+    Returns:
+        None: constructorを復元し, 呼び出し側へ値を返さずに完了する.
+    """
     _ = config
     _runtime_resources.restore_patches()
 
@@ -211,10 +318,10 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 
 @pytest.fixture(autouse=True)
 def reset_structlog() -> Iterator[None]:
-    """Reset structlog configuration before each test.
+    """test前後にstructlogとroot loggerの状態を初期化する.
 
-    Ensures capture_logs() works correctly regardless of test ordering,
-    by preventing logger caching across tests.
+    Yields:
+        None: logger cacheの影響を受けないtest実行権.
     """
     structlog.configure(cache_logger_on_first_use=False)
 
@@ -236,21 +343,13 @@ def reset_structlog() -> Iterator[None]:
 
 @pytest.fixture
 def query_budget() -> QueryBudget:
-    """SQL query count を opt-in で hard fail する fixture.
-
-    Args:
-        なし. fixture 自体は factory を返す.
+    """SQL query数の上限を検証するcontext manager factoryを提供する.
 
     Returns:
-        max_queries, name, duplicate_threshold を受け取り context manager を返す
-        callable.
+        QueryBudget: query数と重複templateを検証するcallable.
 
-    Raises:
-        ValueError: max_queries が 0 未満の場合.
-        AssertionError: Scope 内の SQL query count が max_queries を超えた場合.
-
-    Constraints:
-        Scope 内で発生した例外は budget check より優先して伝播する.
+    Notes:
+        context内の例外はbudget検証より優先して伝播する.
     """
 
     @contextmanager
@@ -260,6 +359,20 @@ def query_budget() -> QueryBudget:
         name: str,
         duplicate_threshold: int = 2,
     ) -> Generator[None]:
+        """scope内のSQL query数を記録し, 終了後に上限を検証する.
+
+        Args:
+            max_queries (int): scope内で許可する最大query数.
+            name (str): failure messageに表示するredacted scope名.
+            duplicate_threshold (int): duplicateと扱う同一SQL templateの最小回数.
+
+        Yields:
+            None: SQL queryを実行する検証対象scope.
+
+        Raises:
+            ValueError: max_queriesが0未満の場合.
+            AssertionError: scope内のquery数がmax_queriesを超える場合.
+        """
         if max_queries < 0:
             msg = "max_queries must be greater than or equal to 0"
             raise ValueError(msg)
@@ -280,6 +393,15 @@ def _format_query_budget_failure(
     summary: QueryDiagnosticSummary,
     max_queries: int,
 ) -> str:
+    """Query budget超過を説明するfailure messageを組み立てる.
+
+    Args:
+        summary (QueryDiagnosticSummary): 計測済みquery診断の集計値.
+        max_queries (int): 許可する最大query数.
+
+    Returns:
+        str: actual数とduplicate query情報を含むfailure message.
+    """
     duplicate_lines = [
         " ".join(
             (

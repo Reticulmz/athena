@@ -1,1 +1,1 @@
-"""Lazer SignalR transport package."""
+"""Lazer SignalRのtransport adapterを提供するpackage."""

@@ -1,18 +1,7 @@
-"""GET /web/bancho_connect.php — osu! stable login handshake.
+"""Stable login前のbancho_connect到達確認endpointを提供する.
 
-osu! stable sends ``GET /web/bancho_connect.php?v=...&u=...&h=...&fail=...``
-before the bancho login POST. The ``u`` (username) and ``h`` (password md5)
-parameters are validated by the subsequent bancho login flow; this endpoint
-only confirms the server is reachable.
-
-Reference implementations:
-- `lets`_ validates credentials here and returns the country code or
-  ``"error: pass\\n"``.
-- `bancho.py`_ declares parameters but returns an empty response (auth
-  dependency is commented out).
-
-.. _lets: https://github.com/osuripple/lets/blob/master/handlers/banchoConnectHandler.py
-.. _bancho.py: https://github.com/osuAkatsuki/bancho.py/blob/master/app/api/domains/osu.py
+usernameとpassword md5は後続のbancho login POSTで検証するため, このendpointは
+接続可能であることだけを空responseで返す.
 """
 
 from __future__ import annotations
@@ -26,6 +15,18 @@ if TYPE_CHECKING:
 
 
 async def bancho_connect_endpoint(request: Request) -> Response:
+    """Stable clientのbancho_connect requestへ空responseを返す.
+
+    Args:
+        request (Request): username, password md5, versionを含むGET request.
+
+    Returns:
+        Response: 認証を行わず空bodyで返すHTTP 200 response.
+
+    Notes:
+        query parameterは互換性のため読み取るだけで, credential検証はbancho login
+        POST flowへ委譲する.
+    """
     _username = request.query_params.get("u")
     _password_md5 = request.query_params.get("h")
     _osu_version = request.query_params.get("v")

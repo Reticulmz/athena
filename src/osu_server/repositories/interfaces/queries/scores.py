@@ -1,4 +1,4 @@
-"""Query-side score repository contract."""
+"""Display と compatibility workflow 用 score read-only repository contract を定義する."""
 
 from __future__ import annotations
 
@@ -9,12 +9,31 @@ if TYPE_CHECKING:
 
 
 class ScoreQueryRepository(Protocol):
-    """Read-only score access for display and compatibility workflows."""
+    """Display と compatibility workflow 用 score read-only access を定義する.
+
+    Notes:
+        この Protocol は Score read model を返すだけである. Score を作成または更新せず Command
+        Unit of Work を開始または commit/rollback しない.
+    """
 
     async def get_by_id(self, score_id: int) -> Score | None:
-        """Return the score with the identifier."""
+        """Identifier に対応する Score を返す.
+
+        Args:
+            score_id (int): 検索する Score ID.
+
+        Returns:
+            Score | None: 対応する Score. 見つからない場合は `None`.
+        """
         ...
 
     async def get_by_online_checksum(self, checksum: str) -> Score | None:
-        """Return the score with the online checksum."""
+        """Online checksum に対応する Score を返す.
+
+        Args:
+            checksum (str): 検索する online checksum.
+
+        Returns:
+            Score | None: 対応する Score. 見つからない場合は `None`.
+        """
         ...

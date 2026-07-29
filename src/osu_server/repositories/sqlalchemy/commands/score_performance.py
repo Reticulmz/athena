@@ -1,4 +1,4 @@
-"""SQLAlchemy command-side score performance repository."""
+"""SQLAlchemy を用いて score performance calculation と再計算 work を永続化する repository."""
 
 from __future__ import annotations
 
@@ -52,15 +52,42 @@ _PENDING_STATE_VALUES = tuple(
 
 
 class SQLAlchemyScorePerformanceCommandRepository:
-    """Score performance command repository backed by a UoW-owned SQLAlchemy session."""
+    """UoW 所有の SQLAlchemy session で score performance command state を永続化する repository.
+
+    Attributes:
+        _session (AsyncSession): 呼び出し元の Unit of Work が所有する非同期 session.
+    """
 
     def __init__(self, session: AsyncSession) -> None:
+        """Unit of Work 所有の SQLAlchemy session を保存する.
+
+        Args:
+            session (AsyncSession): command transaction を共有する非同期 session.
+        """
         self._session: AsyncSession = session
 
     async def create_or_reuse_calculation(
         self,
         command: CreateScorePerformanceCalculation,
     ) -> ScorePerformanceCalculationRequestResult:
+        """Score の current または pending replacement calculation を作成または再利用する.
+
+        Args:
+            command (CreateScorePerformanceCalculation): score ID と calculator request を持つ
+                作成要求.
+
+        Returns:
+            ScorePerformanceCalculationRequestResult: 作成,再利用,replacement,commit 必要性を
+                表す結果.
+
+        Raises:
+            ScorePerformanceCommandConflictError: calculation の flush が一意制約などで競合した
+                場合.
+
+        Notes:
+            異なる pending replacement は superseded にし同じ request の pending replacement は
+            再利用する.
+        """
         current = await self._get_current_model_for_score(command.score_id)
         if current is None:
             created = ScorePerformanceCalculationModel(
@@ -152,6 +179,19 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         command: ClaimScorePerformanceCalculation,
     ) -> ScorePerformanceCalculationClaimResult | None:
+        """期限切れまたは未所有の pending calculation を owner に claim する.
+
+        Args:
+            command (ClaimScorePerformanceCalculation): calculation ID,owner,claim 時刻と期限を
+                持つ要求.
+
+        Returns:
+            ScorePerformanceCalculationClaimResult | None: 成功時の claim 結果. 競合または対象外
+                なら None.
+
+        Raises:
+            ScorePerformanceCommandConflictError: claim の flush が一意制約などで競合した場合.
+        """
         model = await self._get_pending_model_for_claim(command.calculation_id)
         if model is None:
             return None
@@ -178,6 +218,23 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         command: CompleteScorePerformanceCalculation,
     ) -> PerformanceCalculation | None:
+        """Pending calculation を completed にし replacement は current calculation へ昇格する.
+
+        Args:
+            command (CompleteScorePerformanceCalculation): performance 値,calculator metadata,
+                完了時刻を持つ要求.
+
+        Returns:
+            PerformanceCalculation | None: 完了した calculation. 未登録または別 terminal state
+                なら None.
+
+        Raises:
+            ScorePerformanceCommandConflictError: completion または current replacement の flush が
+                競合した場合.
+
+        Notes:
+            既に completed の calculation は値を書き換えずそのまま返す.
+        """
         model = await self._session.get(ScorePerformanceCalculationModel, command.calculation_id)
         if not isinstance(model, ScorePerformanceCalculationModel):
             return None
@@ -203,6 +260,20 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         command: UpdateScorePerformanceCalculationState,
     ) -> PerformanceCalculation | None:
+        """Expected state と一致する calculation だけを指定 state へ遷移する.
+
+        Args:
+            command (UpdateScorePerformanceCalculationState): calculation ID,expected state,
+                遷移先 state を持つ要求.
+
+        Returns:
+            PerformanceCalculation | None: 更新後の calculation. expected state が一致しない場合は
+                None.
+
+        Raises:
+            ScorePerformanceCommandConflictError: state update の flush が一意制約などで競合した
+                場合.
+        """
         model = (
             await self._session.execute(
                 select(ScorePerformanceCalculationModel)
@@ -227,6 +298,23 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         command: MarkScorePerformanceCalculationUnavailable,
     ) -> PerformanceCalculation | None:
+        """Pending calculation を unavailable にして理由と calculator metadata を保存する.
+
+        Args:
+            command (MarkScorePerformanceCalculationUnavailable): unavailable 理由,calculator
+                metadata,完了時刻を持つ要求.
+
+        Returns:
+            PerformanceCalculation | None: unavailable にした calculation. 未登録または別 terminal
+                state なら None.
+
+        Raises:
+            ScorePerformanceCommandConflictError: unavailable 更新または replacement 昇格の
+                flush が競合した場合.
+
+        Notes:
+            既に unavailable の calculation は値を書き換えずそのまま返す.
+        """
         model = await self._session.get(ScorePerformanceCalculationModel, command.calculation_id)
         if not isinstance(model, ScorePerformanceCalculationModel):
             return None
@@ -251,6 +339,14 @@ class SQLAlchemyScorePerformanceCommandRepository:
         return await self._finalize(model)
 
     async def get_by_id(self, calculation_id: int) -> PerformanceCalculation | None:
+        """Calculation ID に一致する score performance calculation を返す.
+
+        Args:
+            calculation_id (int): 検索する calculation の永続化 ID.
+
+        Returns:
+            PerformanceCalculation | None: domain へ変換した calculation. 未登録時は None.
+        """
         model = await self._session.get(ScorePerformanceCalculationModel, calculation_id)
         return (
             _model_to_domain(model)
@@ -259,6 +355,14 @@ class SQLAlchemyScorePerformanceCommandRepository:
         )
 
     async def get_current_for_score(self, score_id: int) -> PerformanceCalculation | None:
+        """Score が現在所有する performance calculation を返す.
+
+        Args:
+            score_id (int): current calculation を検索する source score ID.
+
+        Returns:
+            PerformanceCalculation | None: is_current が True の calculation. 未登録時は None.
+        """
         model = await self._get_current_model_for_score(score_id)
         return _model_to_domain(model) if model is not None else None
 
@@ -266,19 +370,22 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         command: CreateScorePerformanceRecalculationBatch,
     ) -> PerformanceRecalculationBatch:
-        """再計算batchとwork itemをUnit of Work sessionへ追加する.
+        """再計算 batch と work item を Unit of Work session へ追加する.
 
         Args:
-            command (CreateScorePerformanceRecalculationBatch): Batch metadataと型付き候補.
+            command (CreateScorePerformanceRecalculationBatch): batch metadata と型付きの再計算
+                候補.
 
         Returns:
-            PerformanceRecalculationBatch: IDが割り当てられた再計算batch.
+            PerformanceRecalculationBatch: ID が割り当てられた再計算 batch.
 
         Raises:
-            ScorePerformanceCommandConflictError: 一意制約へ競合した場合.
+            ScorePerformanceCommandConflictError: batch または work item の flush が一意制約などで
+                競合した場合.
 
         Notes:
-            commit/rollbackは呼び出し元のUnit of Workが所有する.
+            work item が空の場合は completed batch を作成する. commit と rollback は呼び出し元が
+            所有する.
         """
         status = (
             PerformanceRecalculationBatchStatus.COMPLETED
@@ -325,6 +432,24 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         command: ClaimScorePerformanceRecalculationWork,
     ) -> tuple[PerformanceRecalculationWorkItem, ...]:
+        """Claim 可能な再計算 work item を limit 件まで owner に割り当てる.
+
+        Args:
+            command (ClaimScorePerformanceRecalculationWork):
+                batch ID,owner,claim 期限,最大件数を持つ要求.
+
+        Returns:
+            tuple[PerformanceRecalculationWorkItem, ...]: lock を取得して claim した work item.
+                対象なしなら空 tuple.
+
+        Raises:
+            ValueError: command.limit が 0 以下の場合.
+            ScorePerformanceCommandConflictError: claim または batch state の flush が
+                一意制約などで競合した場合.
+
+        Notes:
+            pending の未所有または期限切れ row と期限切れ claimed row を skip locked で取得する.
+        """
         if command.limit <= 0:
             msg = "recalculation work claim limit must be positive"
             raise ValueError(msg)
@@ -387,6 +512,22 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         command: CompleteScorePerformanceRecalculationWork,
     ) -> PerformanceRecalculationWorkItem | None:
+        """Owner が有効に claim した再計算 work item を completed にする.
+
+        Args:
+            command (CompleteScorePerformanceRecalculationWork): work item ID,owner,calculation
+                ID,完了時刻を持つ要求.
+
+        Returns:
+            PerformanceRecalculationWorkItem | None: completed work item. claim が無効なら None.
+
+        Raises:
+            ScorePerformanceCommandConflictError: batch progress 更新または work item の flush が
+                競合した場合.
+
+        Notes:
+            既に completed の row は idempotent に返す. 異なる terminal state は None を返す.
+        """
         model = await self._get_claimed_recalculation_work_item_for_update(
             work_item_id=command.work_item_id,
             owner=command.owner,
@@ -423,6 +564,22 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         command: MarkScorePerformanceRecalculationWorkUnavailable,
     ) -> PerformanceRecalculationWorkItem | None:
+        """Owner が有効に claim した再計算 work item を unavailable にする.
+
+        Args:
+            command (MarkScorePerformanceRecalculationWorkUnavailable): work item ID,owner,理由,
+                calculation ID,完了時刻を持つ要求.
+
+        Returns:
+            PerformanceRecalculationWorkItem | None: unavailable work item. claim が無効なら None.
+
+        Raises:
+            ScorePerformanceCommandConflictError: batch progress 更新または work item の flush が
+                競合した場合.
+
+        Notes:
+            既に unavailable の row は idempotent に返す. 異なる terminal state は None を返す.
+        """
         model = await self._get_claimed_recalculation_work_item_for_update(
             work_item_id=command.work_item_id,
             owner=command.owner,
@@ -460,6 +617,23 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         command: MarkScorePerformanceRecalculationWorkFailed,
     ) -> PerformanceRecalculationWorkItem | None:
+        """Owner が有効に claim した work item の最新 error を記録したまま claim を保持する.
+
+        Args:
+            command (MarkScorePerformanceRecalculationWorkFailed): work item ID,owner,error,
+                失敗時刻を持つ要求.
+
+        Returns:
+            PerformanceRecalculationWorkItem | None: error を更新した claimed work item. claim が
+                無効なら None.
+
+        Raises:
+            ScorePerformanceCommandConflictError: work item または batch state の flush が競合した
+                場合.
+
+        Notes:
+            state,claim owner,claim expiry は変更しないため同じ owner が後続の処理を継続できる.
+        """
         model = await self._get_claimed_recalculation_work_item_for_update(
             work_item_id=command.work_item_id,
             owner=command.owner,
@@ -483,6 +657,15 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         batch_id: int,
     ) -> PerformanceRecalculationBatch | None:
+        """再計算 batch と最後に記録された work item error を返す.
+
+        Args:
+            batch_id (int): 検索する再計算 batch の永続化 ID.
+
+        Returns:
+            PerformanceRecalculationBatch | None: reason count と最新 error を復元した batch.
+                未登録時は None.
+        """
         model = await self._session.get(PerformanceRecalculationBatchModel, batch_id)
         if not isinstance(model, PerformanceRecalculationBatchModel):
             return None
@@ -495,6 +678,14 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         work_item_id: int,
     ) -> PerformanceRecalculationWorkItem | None:
+        """再計算 work item ID に一致する domain work item を返す.
+
+        Args:
+            work_item_id (int): 検索する再計算 work item の永続化 ID.
+
+        Returns:
+            PerformanceRecalculationWorkItem | None: domain へ変換した work item. 未登録時は None.
+        """
         model = await self._session.get(PerformanceRecalculationWorkItemModel, work_item_id)
         return (
             _work_item_model_to_domain(model)
@@ -506,6 +697,14 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         score_id: int,
     ) -> ScorePerformanceCalculationModel | None:
+        """Score が current として所有する calculation model を返す.
+
+        Args:
+            score_id (int): current calculation を検索する source score ID.
+
+        Returns:
+            ScorePerformanceCalculationModel | None: is_current が True の model. 未登録時は None.
+        """
         model = (
             await self._session.execute(
                 select(ScorePerformanceCalculationModel)
@@ -522,6 +721,15 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         score_id: int,
     ) -> tuple[ScorePerformanceCalculationModel, ...]:
+        """Score の current ではない pending replacement calculation model を返す.
+
+        Args:
+            score_id (int): replacement を検索する source score ID.
+
+        Returns:
+            tuple[ScorePerformanceCalculationModel, ...]: pending state の replacement model.
+                未登録時は空 tuple.
+        """
         models = (
             (
                 await self._session.execute(
@@ -541,6 +749,15 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         calculation_id: int,
     ) -> ScorePerformanceCalculationModel | None:
+        """Claim 用に lock を取得できた pending calculation model を返す.
+
+        Args:
+            calculation_id (int): claim する calculation の永続化 ID.
+
+        Returns:
+            ScorePerformanceCalculationModel | None: skip locked を通過した pending model.
+                競合または対象外なら None.
+        """
         model = (
             await self._session.execute(
                 select(ScorePerformanceCalculationModel)
@@ -561,6 +778,17 @@ class SQLAlchemyScorePerformanceCommandRepository:
         owner: str,
         at: datetime,
     ) -> PerformanceRecalculationWorkItemModel | None:
+        """Owner と未期限切れ claim が一致する work item を update 用に lock する.
+
+        Args:
+            work_item_id (int): lock して更新する work item ID.
+            owner (str): claim を現在所有している worker の識別子.
+            at (datetime): claim_expires_at より前でなければならない更新時刻.
+
+        Returns:
+            PerformanceRecalculationWorkItemModel | None: update lock を取得した claimed model.
+                条件不一致なら None.
+        """
         model = (
             await self._session.execute(
                 select(PerformanceRecalculationWorkItemModel)
@@ -581,6 +809,19 @@ class SQLAlchemyScorePerformanceCommandRepository:
         self,
         model: ScorePerformanceCalculationModel,
     ) -> PerformanceCalculation:
+        """Terminal calculation の claim を解除し replacement なら current calculation へ昇格する.
+
+        Args:
+            model (ScorePerformanceCalculationModel): completed または unavailable として保存する
+                calculation model.
+
+        Returns:
+            PerformanceCalculation: flush と refresh 後の current status を持つ domain calculation.
+
+        Raises:
+            ScorePerformanceCommandConflictError: current calculation の置換または finalize の
+                flush が競合した場合.
+        """
         model.claim_owner = None
         model.claim_expires_at = None
         if not model.is_current:
@@ -603,6 +844,22 @@ class SQLAlchemyScorePerformanceCommandRepository:
         *,
         updated_at: datetime,
     ) -> None:
+        """再計算 work item の terminal count から batch progress と status を更新する.
+
+        Args:
+            batch_id (int): progress を再集計する再計算 batch ID.
+            updated_at (datetime): batch.updated_at に保存する集計時刻.
+
+        Returns:
+            None: batch が存在する場合は count と status を session 上で更新したことを示す.
+
+        Raises:
+            ScorePerformanceCommandConflictError: 集計前の flush が一意制約などで競合した場合.
+
+        Notes:
+            completed と unavailable の合計が candidate_count に一致すると batch は completed
+            になる.
+        """
         await self._flush_or_raise_conflict()
         batch = (
             await self._session.execute(
@@ -648,12 +905,29 @@ class SQLAlchemyScorePerformanceCommandRepository:
         batch: PerformanceRecalculationBatchModel,
         updated_at: datetime,
     ) -> None:
+        """Completed でない再計算 batch を running に遷移する.
+
+        Args:
+            batch (PerformanceRecalculationBatchModel): claim または失敗を記録した batch model.
+            updated_at (datetime): batch.updated_at に保存する遷移時刻.
+
+        Returns:
+            None: completed batch は保持しそれ以外の batch を running に更新したことを示す.
+        """
         if batch.status == PerformanceRecalculationBatchStatus.COMPLETED.value:
             return
         batch.status = PerformanceRecalculationBatchStatus.RUNNING.value
         batch.updated_at = updated_at
 
     async def _latest_recalculation_batch_error(self, batch_id: int) -> str | None:
+        """再計算 batch の work item から最後に更新された error message を返す.
+
+        Args:
+            batch_id (int): error を検索する再計算 batch ID.
+
+        Returns:
+            str | None: updated_at と ID が最大の non-null error. error がなければ None.
+        """
         model = (
             await self._session.execute(
                 select(PerformanceRecalculationWorkItemModel)
@@ -673,6 +947,15 @@ class SQLAlchemyScorePerformanceCommandRepository:
         )
 
     async def _flush_or_raise_conflict(self) -> None:
+        """所有 session を flush し IntegrityError を command conflict へ正規化する.
+
+        Returns:
+            None: pending SQLAlchemy mutation を database へ送信したことを示す. transaction の
+                確定は行わない.
+
+        Raises:
+            ScorePerformanceCommandConflictError: database が IntegrityError を送出した場合.
+        """
         try:
             await self._session.flush()
         except IntegrityError as exc:
@@ -684,6 +967,16 @@ def _matches_request(
     model: ScorePerformanceCalculationModel,
     command: CreateScorePerformanceCalculation,
 ) -> bool:
+    """Calculation model が calculator request と同一の計算条件を持つか判定する.
+
+    Args:
+        model (ScorePerformanceCalculationModel): 比較する保存済み calculation model.
+        command (CreateScorePerformanceCalculation): calculator name,version,formula profile を
+            持つ request.
+
+    Returns:
+        bool: 3 つの計算条件がすべて一致する場合は True. それ以外は False.
+    """
     return (
         model.calculator_name == command.calculator_name
         and model.calculator_version == command.calculator_version
@@ -692,6 +985,17 @@ def _matches_request(
 
 
 def _model_to_domain(model: ScorePerformanceCalculationModel) -> PerformanceCalculation:
+    """SQLAlchemy calculation model を domain performance calculation へ変換する.
+
+    Args:
+        model (ScorePerformanceCalculationModel): 永続化済みの score performance calculation model.
+
+    Returns:
+        PerformanceCalculation: lifecycle state と formula profile を復元した domain calculation.
+
+    Raises:
+        ValueError: 保存済みの calculation state または formula profile が不正な場合.
+    """
     return PerformanceCalculation(
         id=model.id,
         score_id=model.score_id,
@@ -714,6 +1018,20 @@ def _batch_model_to_domain(
     *,
     last_error: str | None,
 ) -> PerformanceRecalculationBatch:
+    """SQLAlchemy 再計算 batch model を最新 error を含む domain value へ変換する.
+
+    Args:
+        model (PerformanceRecalculationBatchModel): 永続化済みの再計算 batch model.
+        last_error (str | None): work item から取得した最新 error. error がなければ None.
+
+    Returns:
+        PerformanceRecalculationBatch: status,reason count,target formula profile を復元した
+            batch.
+
+    Raises:
+        TypeError: reason_counts の値が bool を含む int 以外の場合.
+        ValueError: 保存済みの batch status,reason,formula profile が不正な場合.
+    """
     return PerformanceRecalculationBatch(
         id=model.id,
         status=PerformanceRecalculationBatchStatus(model.status),
@@ -733,6 +1051,19 @@ def _batch_model_to_domain(
 def _reason_counts_to_domain(
     model: PerformanceRecalculationBatchModel,
 ) -> dict[RecalculationCandidateReason, int]:
+    """保存済み reason count mapping を domain enum key の mapping へ変換する.
+
+    Args:
+        model (PerformanceRecalculationBatchModel): reason_counts JSON mapping を持つ再計算 batch
+            model.
+
+    Returns:
+        dict[RecalculationCandidateReason, int]: domain enum を key にした検証済みの reason count.
+
+    Raises:
+        TypeError: reason_counts の値が bool を含む int 以外の場合.
+        ValueError: reason_counts の key が定義済みの candidate reason ではない場合.
+    """
     reason_counts: dict[RecalculationCandidateReason, int] = {}
     for reason, count in model.reason_counts.items():
         if isinstance(count, bool) or not isinstance(count, int):
@@ -745,6 +1076,18 @@ def _reason_counts_to_domain(
 def _work_item_model_to_domain(
     model: PerformanceRecalculationWorkItemModel,
 ) -> PerformanceRecalculationWorkItem:
+    """SQLAlchemy 再計算 work item model を domain value へ変換する.
+
+    Args:
+        model (PerformanceRecalculationWorkItemModel): 永続化済みの再計算 work item model.
+
+    Returns:
+        PerformanceRecalculationWorkItem: reason,state,claim metadata を復元した domain work
+            item.
+
+    Raises:
+        ValueError: 保存済みの candidate reason または work item state が不正な場合.
+    """
     return PerformanceRecalculationWorkItem(
         id=model.id,
         batch_id=model.batch_id,

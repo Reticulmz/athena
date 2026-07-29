@@ -1,3 +1,8 @@
+"""userごとのlegacy personal best projectionを保存するORM modelを定義する.
+
+projectionのidentityはuserとbeatmapおよびruleset/playstyle/categoryの非NULL scopeで決まる.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime  # noqa: TC003 - SQLAlchemy Mapped requires runtime import
@@ -10,6 +15,23 @@ from osu_server.repositories.sqlalchemy.models.enum_types import LEADERBOARD_CAT
 
 
 class PersonalBestModel(Base):
+    """leaderboard categoryごとのuser personal best scoreを表す.
+
+    Attributes:
+        __tablename__ (str): 保存先のpersonal_bests table名.
+        __table_args__ (tuple[Index, ...]): scope一意性と検索を支えるindex群.
+        id (Mapped[int]): 自動採番するprojectionのprimary key.
+        user_id (Mapped[int]): best scoreを保持するuserの識別子.
+        beatmap_id (Mapped[int]): 対象beatmapの識別子.
+        ruleset (Mapped[int]): 対象rulesetのcanonical integer値.
+        playstyle (Mapped[int]): 対象playstyleのcanonical integer値.
+        category (Mapped[str]): personal bestを分けるleaderboard category.
+        score_id (Mapped[int]): projectionの根拠となるscoreのforeign key.
+        ranking_value (Mapped[int]): category内の比較に使う順位値.
+        created_at (Mapped[datetime]): projectionを作成したUTC timestamp.
+        updated_at (Mapped[datetime]): projectionを最後に更新したUTC timestamp.
+    """
+
     __tablename__: str = "personal_bests"
     __table_args__: tuple[Index, ...] = (
         Index(

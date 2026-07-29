@@ -1,4 +1,4 @@
-"""Add score replay view count.
+"""score replay view countを追加するmigration.
 
 Revision ID: 20260710_0200
 Revises: 20260710_0100
@@ -22,6 +22,16 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """Replay view countをzero初期値で追加してnon-nullへ移行する.
+
+    Returns:
+        None: scoresのview count backfillと非負CHECK constraintを完了したことを示す.
+
+    Notes:
+        `server_default=sa.text("0")`は新規rowのview count初期値をdatabase側へ委譲する.
+        text UPDATEは
+        既存NULL rowをzeroへbackfillしてからnon-null constraintを適用するために使用する.
+    """
     op.add_column(
         "scores",
         sa.Column(
@@ -55,6 +65,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Score replay view countと非負constraintを削除する.
+
+    Returns:
+        None: replay_view_count CHECK constraintとscores columnを削除したことを示す.
+    """
     op.drop_constraint(
         "ck_scores_replay_view_count_non_negative",
         "scores",

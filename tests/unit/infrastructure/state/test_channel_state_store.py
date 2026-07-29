@@ -1,4 +1,4 @@
-"""Tests for ChannelStateStore Protocol + InMemoryChannelStateStore."""
+"""ChannelStateStoreのmemory実装に対する契約を検証する."""
 
 from __future__ import annotations
 
@@ -14,6 +14,11 @@ from osu_server.infrastructure.state.memory.channel_state_store import (
 
 @pytest.fixture
 def store() -> InMemoryChannelStateStore:
+    """各testへ空の双方向membership storeを提供する.
+
+    Returns:
+        InMemoryChannelStateStore: 各testで独立して使用するchannel membership store.
+    """
     return InMemoryChannelStateStore()
 
 
@@ -21,7 +26,11 @@ def store() -> InMemoryChannelStateStore:
 
 
 def test_implements_protocol() -> None:
-    """InMemoryChannelStateStore satisfies the ChannelStateStore Protocol."""
+    """memory実装を生成したときChannelStateStore Protocolとして認識されることを確認する.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     assert isinstance(InMemoryChannelStateStore(), ChannelStateStore)
 
 
@@ -29,7 +38,14 @@ def test_implements_protocol() -> None:
 
 
 async def test_add_member_and_is_member(store: InMemoryChannelStateStore) -> None:
-    """add_member registers the user; is_member returns True."""
+    """空のstoreへmemberを追加したときmembership照会がTrueを返すことを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.add_member("#osu", 1)
 
     assert await store.is_member("#osu", 1) is True
@@ -38,12 +54,26 @@ async def test_add_member_and_is_member(store: InMemoryChannelStateStore) -> Non
 async def test_is_member_returns_false_for_non_member(
     store: InMemoryChannelStateStore,
 ) -> None:
-    """is_member returns False for a user not in the channel."""
+    """未登録channelを照会したときmembership照会がFalseを返すことを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     assert await store.is_member("#osu", 1) is False
 
 
 async def test_add_member_idempotent(store: InMemoryChannelStateStore) -> None:
-    """Adding the same user twice does not duplicate entries."""
+    """同じmemberを二度追加したとき取得集合が重複なく1件に保たれることを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.add_member("#osu", 1)
     await store.add_member("#osu", 1)
 
@@ -55,7 +85,14 @@ async def test_add_member_idempotent(store: InMemoryChannelStateStore) -> None:
 
 
 async def test_remove_member(store: InMemoryChannelStateStore) -> None:
-    """remove_member unregisters the user from the channel."""
+    """登録済みmemberを削除したときmembership照会がFalseへ変わることを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.add_member("#osu", 1)
     await store.remove_member("#osu", 1)
 
@@ -63,7 +100,14 @@ async def test_remove_member(store: InMemoryChannelStateStore) -> None:
 
 
 async def test_remove_member_idempotent(store: InMemoryChannelStateStore) -> None:
-    """Removing a non-member is a no-op (no error)."""
+    """未登録memberを削除したとき例外を出さずmembershipがFalseのままであることを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.remove_member("#osu", 999)
 
     assert await store.is_member("#osu", 999) is False
@@ -73,7 +117,14 @@ async def test_remove_member_idempotent(store: InMemoryChannelStateStore) -> Non
 
 
 async def test_get_members_returns_all(store: InMemoryChannelStateStore) -> None:
-    """get_members returns the full set of member user IDs."""
+    """3人を同じchannelへ追加したとき全user IDの集合を返すことを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.add_member("#osu", 1)
     await store.add_member("#osu", 2)
     await store.add_member("#osu", 3)
@@ -84,14 +135,28 @@ async def test_get_members_returns_all(store: InMemoryChannelStateStore) -> None
 
 
 async def test_get_members_empty_channel(store: InMemoryChannelStateStore) -> None:
-    """get_members returns an empty set for an unknown channel."""
+    """未知channelを取得したとき空集合を返すことを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     members = await store.get_members("#unknown")
 
     assert members == set()
 
 
 async def test_get_member_count(store: InMemoryChannelStateStore) -> None:
-    """get_member_count returns the number of members."""
+    """2人を追加したchannelのmember数を取得したとき2を返すことを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.add_member("#osu", 1)
     await store.add_member("#osu", 2)
 
@@ -104,7 +169,14 @@ async def test_get_member_count(store: InMemoryChannelStateStore) -> None:
 async def test_get_member_count_empty_channel(
     store: InMemoryChannelStateStore,
 ) -> None:
-    """get_member_count returns 0 for an unknown channel."""
+    """未知channelのmember数を取得したとき0を返すことを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     count = await store.get_member_count("#unknown")
 
     assert count == 0
@@ -114,7 +186,14 @@ async def test_get_member_count_empty_channel(
 
 
 async def test_get_user_channels(store: InMemoryChannelStateStore) -> None:
-    """get_user_channels returns all channels the user has joined."""
+    """同じuserを3つのchannelへ追加したとき所属channel集合を返すことを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.add_member("#osu", 1)
     await store.add_member("#announce", 1)
     await store.add_member("#japanese", 1)
@@ -125,7 +204,14 @@ async def test_get_user_channels(store: InMemoryChannelStateStore) -> None:
 
 
 async def test_get_user_channels_empty(store: InMemoryChannelStateStore) -> None:
-    """get_user_channels returns an empty set for an unknown user."""
+    """未知userの所属channelを取得したとき空集合を返すことを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     channels = await store.get_user_channels(9999)
 
     assert channels == set()
@@ -137,7 +223,14 @@ async def test_get_user_channels_empty(store: InMemoryChannelStateStore) -> None
 async def test_remove_user_from_all_returns_channels(
     store: InMemoryChannelStateStore,
 ) -> None:
-    """remove_user_from_all returns the set of channels the user was in."""
+    """複数channelのmemberを全削除したとき削除対象channel集合を返すことを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.add_member("#osu", 1)
     await store.add_member("#announce", 1)
 
@@ -149,7 +242,14 @@ async def test_remove_user_from_all_returns_channels(
 async def test_remove_user_from_all_clears_membership(
     store: InMemoryChannelStateStore,
 ) -> None:
-    """After remove_user_from_all, the user is no longer in any channel."""
+    """全channelからuserを削除したとき全membershipと逆引きが空になることを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.add_member("#osu", 1)
     await store.add_member("#announce", 1)
 
@@ -163,7 +263,14 @@ async def test_remove_user_from_all_clears_membership(
 async def test_remove_user_from_all_updates_channel_members(
     store: InMemoryChannelStateStore,
 ) -> None:
-    """remove_user_from_all removes the user from each channel's member set."""
+    """全channelから一人を削除したとき各channelの残存member集合を更新することを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.add_member("#osu", 1)
     await store.add_member("#osu", 2)
     await store.add_member("#announce", 1)
@@ -175,7 +282,14 @@ async def test_remove_user_from_all_updates_channel_members(
 
 
 async def test_remove_user_from_all_empty(store: InMemoryChannelStateStore) -> None:
-    """remove_user_from_all for an unknown user returns an empty set."""
+    """未知userを全削除したとき空集合を返すことを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     removed = await store.remove_user_from_all(9999)
 
     assert removed == set()
@@ -187,7 +301,14 @@ async def test_remove_user_from_all_empty(store: InMemoryChannelStateStore) -> N
 async def test_bidirectional_consistency_after_add(
     store: InMemoryChannelStateStore,
 ) -> None:
-    """After add_member, both indices reflect the membership."""
+    """複数membershipを追加したときchannel側とuser側の両indexが一致することを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.add_member("#osu", 1)
     await store.add_member("#osu", 2)
     await store.add_member("#announce", 1)
@@ -204,7 +325,14 @@ async def test_bidirectional_consistency_after_add(
 async def test_bidirectional_consistency_after_remove(
     store: InMemoryChannelStateStore,
 ) -> None:
-    """After remove_member, both indices are updated consistently."""
+    """一つのmembershipを削除したときchannel側とuser側の両indexが同期することを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.add_member("#osu", 1)
     await store.add_member("#osu", 2)
     await store.add_member("#announce", 1)
@@ -223,7 +351,14 @@ async def test_bidirectional_consistency_after_remove(
 async def test_bidirectional_consistency_after_remove_user_from_all(
     store: InMemoryChannelStateStore,
 ) -> None:
-    """After remove_user_from_all, both indices are consistent."""
+    """userの全membershipを削除したとき両indexで他userの状態を保つことを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.add_member("#osu", 1)
     await store.add_member("#osu", 2)
     await store.add_member("#announce", 1)
@@ -246,7 +381,14 @@ async def test_bidirectional_consistency_after_remove_user_from_all(
 
 
 async def test_get_members_returns_copy(store: InMemoryChannelStateStore) -> None:
-    """get_members returns a copy; mutating it does not affect the store."""
+    """取得したmember集合を変更してもstore内のmembershipが変わらないことを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.add_member("#osu", 1)
 
     members = await store.get_members("#osu")
@@ -258,7 +400,14 @@ async def test_get_members_returns_copy(store: InMemoryChannelStateStore) -> Non
 async def test_get_user_channels_returns_copy(
     store: InMemoryChannelStateStore,
 ) -> None:
-    """get_user_channels returns a copy; mutating it does not affect the store."""
+    """取得したchannel集合を変更してもstore内の逆indexが変わらないことを確認する.
+
+    Args:
+        store (InMemoryChannelStateStore): 検証対象の空のchannel membership store.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     await store.add_member("#osu", 1)
 
     channels = await store.get_user_channels(1)

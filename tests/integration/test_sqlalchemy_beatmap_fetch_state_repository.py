@@ -1,4 +1,4 @@
-"""PostgreSQL beatmap fetch state persistence integration tests."""
+"""PostgreSQL beatmap fetch state repositoryのenum persistence contractを検証する."""
 
 from __future__ import annotations
 
@@ -33,6 +33,14 @@ _TEST_BEATMAP_IDS = (2_147_400_001, 2_147_400_002)
 
 
 def _get_database_url() -> str:
+    """Integration testで使用するPostgreSQL connection URLを取得する.
+
+    Returns:
+        str: DATABASE_URL environment variableのPostgreSQL URL.
+
+    Raises:
+        pytest.skip: DATABASE_URLが未設定の場合.
+    """
     url = os.environ.get("DATABASE_URL")
     if not url:
         pytest.skip("DATABASE_URL not set")
@@ -67,7 +75,7 @@ async def engine() -> AsyncGenerator[AsyncEngine]:
 async def session_factory(
     engine: AsyncEngine,
 ) -> AsyncGenerator[async_sessionmaker[AsyncSession]]:
-    """fetch state test用session factoryを提供する.
+    """Fetch state test用session factoryを提供する.
 
     Args:
         engine (AsyncEngine): 実PostgreSQLへ接続するtest engine.
@@ -105,6 +113,14 @@ def uow_factory(
 async def _delete_test_fetch_state(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    """Test専用beatmap IDに紐づくfetch state rowを削除する.
+
+    Args:
+        session_factory (async_sessionmaker[AsyncSession]): cleanup用のPostgreSQL session factory.
+
+    Returns:
+        None: test target keyのfetch state deletionをcommitして完了する.
+    """
     async with session_factory() as session:
         _ = await session.execute(
             delete(BeatmapFetchStateModel).where(
@@ -120,20 +136,20 @@ async def test_postgresql_fetch_state_persists_enum_values(
     uow_factory: SQLAlchemyUnitOfWorkFactory,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """fetch target Enum が command/query 境界で文字列値として永続化されることを確認する.
+    """Fetch target enumがcommand/query境界でchecked stringとして永続化されるcontractを検証する.
 
     Args:
         uow_factory (SQLAlchemyUnitOfWorkFactory): 実PostgreSQL用のUoW factory.
         session_factory (async_sessionmaker[AsyncSession]): query用session factory.
 
     Returns:
-        None: pending 取得と完了状態の再読込が成功したことを示す.
+        None: pending取得とcompleted stateの再読込を確認して完了する.
 
     Raises:
-        AssertionError: fetch state または保存された Enum 値が期待と異なる場合.
+        AssertionError: fetch stateまたは保存されたenum valueがexpected valueと異なる場合.
 
     Notes:
-        command/query両repository、SQLAlchemy Enum validation、DB CHECKを通過させる.
+        Command/query repository, SQLAlchemy enum validation, DB CHECKを通過させる.
     """
     target = BeatmapFetchTarget.metadata_by_beatmap_id(_TEST_BEATMAP_IDS[0])
 

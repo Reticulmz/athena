@@ -1,10 +1,17 @@
-"""Unit tests for Replay domain model."""
+"""Replay domain modelの値保持契約を検証する."""
 
 from osu_server.domain.scores.replay import Replay
 
 
 def test_replay_creation_with_all_fields() -> None:
-    """Replay dataclassが全フィールドを受け入れる。"""
+    """Replayが全識別子と整合性metadataを値を変えずに保持することを検証する.
+
+    Returns:
+        None: 全fieldの構築後値を検証して完了する.
+
+    Raises:
+        AssertionError: Replayが渡した識別子またはmetadataを保持しない場合.
+    """
     replay = Replay(
         id=1,
         score_id=100,
@@ -21,7 +28,14 @@ def test_replay_creation_with_all_fields() -> None:
 
 
 def test_replay_without_id() -> None:
-    """ID未割り当て(None)のReplayを作成できる。"""
+    """未永続化ReplayがID未割当のNoneを保持できることを検証する.
+
+    Returns:
+        None: None IDと他の識別子の保持を検証して完了する.
+
+    Raises:
+        AssertionError: 未永続化ReplayをIDなしで表現できない場合.
+    """
     replay = Replay(
         id=None,
         score_id=200,
@@ -35,8 +49,14 @@ def test_replay_without_id() -> None:
 
 
 def test_replay_checksum_validation() -> None:
-    """Checksum SHA-256が64文字の16進数であることを確認。"""
-    # Valid checksum (64 hex chars)
+    """Replayが64文字のlowercase SHA-256 checksum値を値を変えずに保持することを検証する.
+
+    Returns:
+        None: checksumの文字数と許可文字集合を検証して完了する.
+
+    Raises:
+        AssertionError: 渡したSHA-256 checksum値がReplay上で変化した場合.
+    """
     replay = Replay(
         id=1,
         score_id=100,
@@ -50,7 +70,14 @@ def test_replay_checksum_validation() -> None:
 
 
 def test_replay_byte_size_positive() -> None:
-    """Replay byte_sizeが正の整数であることを確認。"""
+    """Replayが正のbyte_size値を保持することを検証する.
+
+    Returns:
+        None: byte_sizeが正数のまま取得できることを検証して完了する.
+
+    Raises:
+        AssertionError: 正のreplay byte_sizeを保持できない場合.
+    """
     replay = Replay(
         id=1,
         score_id=100,

@@ -1,10 +1,6 @@
-"""ListenerGroup - declarative local event listener registration.
+"""stable Bancho local event listenerを宣言的に登録する基盤を提供する.
 
-Extends :class:`RouteGroup` to subscribe ``@listens``-decorated methods
-to a local event bus in one call. Symmetric with :class:`HandlerGroup`.
-
-Design ref: ListenerGroup component in c2s-handlers design.md
-Requirements: 3.1, 3.2, 3.3, 1.5
+``@listens``でevent型へ関連付けたmethodをlocal event busへ一括subscribeする.
 """
 
 from __future__ import annotations
@@ -25,17 +21,20 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 
 class ListenerGroup(RouteGroup):
-    """Base class for local event listener groups.
+    """local event listener群の共通登録機能を提供する.
 
-    Subclass this, decorate async methods with ``@listens(EventType)``,
-    then call :meth:`register_all` to subscribe them to a local event bus.
+    subclassのasync methodを``@listens(EventType)``で宣言し,``register_all``で
+    local event busへsubscribeする.
     """
 
     def register_all(self, event_bus: LocalEventBus) -> None:
-        """Subscribe all ``@listens``-decorated methods to the local bus.
+        """宣言済みのlocal event listenerをevent busへsubscribeする.
 
-        Logs ``listeners_registered`` on success with group name and count.
-        Warns if the group has no listeners (Req 1.5).
+        Args:
+            event_bus (LocalEventBus): listenerを登録するlocal event bus.
+
+        Returns:
+            None: 登録数をlogへ記録し,呼び出し側へ値を返さずに完了する.
         """
         count = 0
         for event_type, handler in self.get_routes():

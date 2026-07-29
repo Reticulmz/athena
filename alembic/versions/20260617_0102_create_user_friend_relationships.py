@@ -1,4 +1,4 @@
-"""Create user friend relationships table.
+"""directed user friend relationship tableを作成するmigration.
 
 Revision ID: 20260617_0102
 Revises: 20260617_0101
@@ -22,6 +22,12 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """ownerからtargetへ向かうfriend relationship schemaを作成する.
+
+    Returns:
+        None: self relationship禁止とCASCADE foreign keyを持つtableの作成を完了し,
+            呼び出し側へ値を返さずに終了する.
+    """
     op.create_table(
         "user_friend_relationships",
         sa.Column("owner_user_id", sa.Integer(), nullable=False),
@@ -53,4 +59,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Directed user friend relationship tableを削除する.
+
+    Returns:
+        None: user_friend_relationshipsの削除を完了し, 呼び出し側へ値を返さずに終了する.
+    """
     op.drop_table("user_friend_relationships")

@@ -1,13 +1,7 @@
-"""GetscoresHandler — GET /web/osu-osz2-getscores.php handler for stable client.
+"""Stable getscores requestを認証, 解決, response整形するendpoint adapterを提供する.
 
-Pipeline: authenticate (us/ha + active session) -> parse query -> resolve
-metadata -> format response body.  Returns 401 with empty body for auth
-failures, and stable 200 text/plain bodies for unavailable / update-available
-/ known-header outcomes.  Never exposes provenance fields in the response.
-
-Operator-observable diagnostics are emitted via structlog at each branch
-without leaking ``ha`` (password md5), raw ``us`` values, or any internal
-provenance into stable response bodies.
+認証失敗には空のHTTP 401を返し, 利用不可, 更新可能, leaderboard headerの各結果には
+stable互換のtext responseを返す. credentialや内部provenanceはresponseへ公開しない.
 """
 
 from __future__ import annotations
@@ -51,11 +45,29 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 
 def _sanitize(text: str) -> str:
+    """Getscoresのpipe-delimited fieldから区切り文字と改行を除去する.
+
+    Args:
+        text (str): stable response fieldへ入れる未加工文字列.
+
+    Returns:
+        str: `|`, CR, LFを空白へ置換した文字列.
+    """
     return text.replace("|", " ").replace("\r", " ").replace("\n", " ")
 
 
 class StableGetscoresExchange:
-    """Stable getscores exchange: auth, parse, warmup, and response selection."""
+    """Stable getscoresの認証, metadata warmup, response選択を調整する.
+
+    Attributes:
+        _auth_query (SessionCredentialsQuery): legacy credentialを検証するquery.
+        _getscores_parser (GetscoresQueryParser): query parameterをdomain requestへ変換するparser.
+        _getscores_query (BeatmapScoreListingQuery): leaderboard outcomeを解決するquery.
+        _status_mapper (GetscoresStatusMapper): beatmap statusをstable wire valueへ変換するmapper.
+        _beatmap_resolver (BeatmapMirrorService): metadata fetchを要求するmirror service.
+        _beatmap_file_warmup (RequestBeatmapFileWarmupUseCase): .osu file warmupを要求するuse case.
+        _beatmap_metadata_wait_seconds (float): metadata解決を待つ最大秒数.
+    """
 
     def __init__(
         self,
@@ -67,6 +79,18 @@ class StableGetscoresExchange:
         beatmap_file_warmup: RequestBeatmapFileWarmupUseCase,
         beatmap_metadata_wait_seconds: float,
     ) -> None:
+        """Getscores exchangeのquery, mapper, warmup依存を設定する.
+
+        Args:
+            auth_query (SessionCredentialsQuery): legacy session credentialを検証するquery.
+            getscores_parser (GetscoresQueryParser): stable queryをgetscores requestへ
+                変換するparser.
+            getscores_query (BeatmapScoreListingQuery): beatmap leaderboardを取得するquery.
+            status_mapper (GetscoresStatusMapper): header用statusをwire valueへ変換するmapper.
+            beatmap_resolver (BeatmapMirrorService): response前にmetadataを解決するservice.
+            beatmap_file_warmup (RequestBeatmapFileWarmupUseCase): .osu file取得を要求するuse case.
+            beatmap_metadata_wait_seconds (float): metadata解決を待機する秒数.
+        """
         self._auth_query: SessionCredentialsQuery = auth_query
         self._getscores_parser: GetscoresQueryParser = getscores_parser
         self._getscores_query: BeatmapScoreListingQuery = getscores_query
@@ -76,7 +100,17 @@ class StableGetscoresExchange:
         self._beatmap_metadata_wait_seconds: float = beatmap_metadata_wait_seconds
 
     async def respond(self, query: Mapping[str, str]) -> Response:
-        """Resolve one stable getscores query into its wire response."""
+        """Stable getscores queryを認証してwire responseへ変換する.
+
+        Args:
+            query (Mapping[str, str]): stable clientが送るquery parameter mapping.
+
+        Returns:
+            Response: 認証失敗には空のHTTP 401, それ以外にはstable互換のHTTP 200 response.
+
+        Notes:
+            metadata解決とfile warmupの失敗は記録するが, response outcomeの選択を変更しない.
+        """
         auth_query_result = await self._auth_query.execute(
             SessionCredentialsQueryInput(
                 username=query.get("us"),
@@ -174,7 +208,19 @@ class StableGetscoresExchange:
         *,
         user_id: int | None,
     ) -> None:
-        """Request metadata fetch before resolving the stable response."""
+        """Stable responseを解決する前に必要なbeatmap metadataを要求する.
+
+        Args:
+            request (GetscoresRequest): metadata検索に使うchecksumまたはbeatmapset hintを持つ
+                request.
+            user_id (int | None): diagnosticsに記録する認証済みuser ID.
+
+        Returns:
+            None: metadata requestを試行し, responseを返さずに完了する.
+
+        Notes:
+            resolverの例外は記録して抑制し, stable response選択を妨げない.
+        """
         try:
             if request.checksum_md5 is not None:
                 result = await self._beatmap_resolver.resolve_by_checksum(
@@ -222,7 +268,20 @@ class StableGetscoresExchange:
         beatmap_id: int | None = None,
         checksum_md5: str | None = None,
     ) -> None:
-        """Request .osu warmup without affecting getscores response selection."""
+        """Response選択を変えずに対象.osu fileのwarmupを要求する.
+
+        Args:
+            user_id (int): warmup要求を行う認証済みuser ID.
+            beatmap_id (int | None): warmup対象beatmap ID. checksum_md5と両方がない場合は
+                何もしない.
+            checksum_md5 (str | None): warmup対象beatmapのMD5 checksum.
+
+        Returns:
+            None: warmupを要求するか, 対象がなければ何もせず完了する.
+
+        Notes:
+            warmup失敗は記録して抑制し, 既に選択したstable responseを変えない.
+        """
         if beatmap_id is None and checksum_md5 is None:
             return
 
@@ -245,7 +304,11 @@ class StableGetscoresExchange:
 
 
 class GetscoresHandler:
-    """Starlette adapter for ``GET /web/osu-osz2-getscores.php``."""
+    """`GET /web/osu-osz2-getscores.php`をexchangeへ委譲するStarlette adapter.
+
+    Attributes:
+        _exchange (StableGetscoresExchange): request queryをstable responseへ変換するexchange.
+    """
 
     def __init__(
         self,
@@ -257,6 +320,18 @@ class GetscoresHandler:
         beatmap_file_warmup: RequestBeatmapFileWarmupUseCase,
         beatmap_metadata_wait_seconds: float,
     ) -> None:
+        """Getscores requestを処理するexchangeを構成する.
+
+        Args:
+            auth_query (SessionCredentialsQuery): legacy session credentialを検証するquery.
+            getscores_parser (GetscoresQueryParser): stable queryをgetscores requestへ
+                変換するparser.
+            getscores_query (BeatmapScoreListingQuery): beatmap leaderboardを取得するquery.
+            status_mapper (GetscoresStatusMapper): header用statusをwire valueへ変換するmapper.
+            beatmap_resolver (BeatmapMirrorService): response前にmetadataを解決するservice.
+            beatmap_file_warmup (RequestBeatmapFileWarmupUseCase): .osu file取得を要求するuse case.
+            beatmap_metadata_wait_seconds (float): metadata解決を待機する秒数.
+        """
         self._exchange: StableGetscoresExchange = StableGetscoresExchange(
             auth_query=auth_query,
             getscores_parser=getscores_parser,
@@ -268,11 +343,23 @@ class GetscoresHandler:
         )
 
     async def __call__(self, request: Request) -> Response:
-        """Delegate stable getscores semantics to the exchange module."""
+        """Starlette requestのquery parameterをstable getscores responseへ変換する.
+
+        Args:
+            request (Request): stable clientから届いたGET request.
+
+        Returns:
+            Response: 認証とleaderboard解決結果を反映したstable response.
+        """
         return await self._exchange.respond(request.query_params)
 
 
 def format_getscores_unavailable_response() -> Response:
+    """Stable getscoresの利用不可wire responseを構築する.
+
+    Returns:
+        Response: `-1|false`をbodyに持つtext/plainのHTTP 200 response.
+    """
     return Response(
         content=b"-1|false",
         status_code=HTTPStatus.OK,
@@ -281,6 +368,11 @@ def format_getscores_unavailable_response() -> Response:
 
 
 def format_getscores_update_available_response() -> Response:
+    """Stable getscoresの更新可能wire responseを構築する.
+
+    Returns:
+        Response: `1|false`をbodyに持つtext/plainのHTTP 200 response.
+    """
     return Response(
         content=b"1|false",
         status_code=HTTPStatus.OK,
@@ -296,6 +388,18 @@ def format_getscores_header_response(
     personal_best: GetscoresPersonalBest | None = None,
     score_rows: tuple[GetscoresPersonalBest, ...] = (),
 ) -> Response:
+    """Stable getscoresのleaderboard headerとscore rowのresponseを構築する.
+
+    Args:
+        status (int): stable wire protocolのbeatmap status値.
+        beatmap (Beatmap): response headerへ入れるbeatmap.
+        beatmapset (BeatmapSet): artistとtitleを提供するbeatmapset.
+        personal_best (GetscoresPersonalBest | None): viewerのpersonal best. 不在時は空rowにする.
+        score_rows (tuple[GetscoresPersonalBest, ...]): leaderboard順のscore row群.
+
+    Returns:
+        Response: pipe-delimited headerとscore rowを持つtext/plainのHTTP 200 response.
+    """
     artist = _sanitize(beatmapset.artist)
     title = _sanitize(beatmapset.title)
     personal_best_row = _format_score_row(personal_best) if personal_best is not None else ""
@@ -318,6 +422,14 @@ def format_getscores_header_response(
 
 
 def _format_score_row(row: GetscoresPersonalBest) -> str:
+    """Getscoresのpersonal best値を固定field順のwire rowへ整形する.
+
+    Args:
+        row (GetscoresPersonalBest): stable responseへ出力するscore row.
+
+    Returns:
+        str: pipe-delimitedの16 field score row.
+    """
     submitted_at_seconds = int(row.submitted_at.timestamp())
     return "|".join(
         (

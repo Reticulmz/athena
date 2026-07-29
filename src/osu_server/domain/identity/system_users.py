@@ -1,4 +1,4 @@
-"""System user identity values for the identity bounded context."""
+"""Identity context の system user identity 値を定義する module."""
 
 from __future__ import annotations
 
@@ -8,7 +8,12 @@ from dataclasses import dataclass
 
 @dataclass(slots=True, frozen=True)
 class SystemUserIdentity:
-    """Immutable identity for a system user without an active session."""
+    """Active session を持たない system user の immutable identity を表す value object.
+
+    Attributes:
+        user_id (int): system user に予約された user ID.
+        username (str): system user の表示 user name.
+    """
 
     user_id: int
     username: str
@@ -27,5 +32,15 @@ BANCHO_BOT_IDENTITY = SystemUserIdentity(
 
 
 def create_bancho_bot_identity(username: str) -> SystemUserIdentity:
-    """Create the runtime BanchoBot identity from a validated display name."""
+    """検証済み display name から runtime BanchoBot identity を作成する.
+
+    Args:
+        username (str): caller が policy に従って検証済みにした表示 user name.
+
+    Returns:
+        SystemUserIdentity: 固定の BanchoBot user ID と username を持つ identity.
+
+    Notes:
+        この関数は username を検証せず, BANCHO_BOT_USER_ID への結び付けだけを行う.
+    """
     return SystemUserIdentity(user_id=BANCHO_BOT_USER_ID, username=username)

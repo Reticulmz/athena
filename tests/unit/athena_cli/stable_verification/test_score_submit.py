@@ -1,3 +1,5 @@
+"""Stable score submission fixtureとmapper responseの互換性を検証する."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,6 +26,14 @@ FIXTURE_DIR = (
 
 
 def test_verify_golden_response_validates_report_safe_request_metadata() -> None:
+    """Request metadata fixtureがreport-safeなscore submission evidenceになることを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: surface, evidence分類, failure flag, またはredaction済み診断が変化した場合.
+    """
     result = _result_by_reference(
         ScoreSubmitVerifier(fixture_dir=FIXTURE_DIR).verify_golden_response(),
         "request_metadata.json",
@@ -41,6 +51,14 @@ def test_verify_golden_response_validates_report_safe_request_metadata() -> None
 
 
 def test_verify_golden_response_validates_completed_fixture_required_chart_fields() -> None:
+    """Completed fixtureがrequired chart fieldとpass結果を持つことを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: metadata, chart field, achievement通知, またはpass診断が変化した場合.
+    """
     fixture_body = (FIXTURE_DIR / "completed_response.txt").read_bytes()
 
     parsed = parse_score_submit_response(fixture_body)
@@ -72,6 +90,14 @@ def test_verify_golden_response_validates_completed_fixture_required_chart_field
 
 
 def test_verify_golden_response_parses_mapper_generated_completed_response() -> None:
+    """Athena mapper生成responseがcompleted score submissionとしてparseされることを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: mapper responseのstatus, evidence type, scope, または診断が変化した場合.
+    """
     result = ScoreSubmitVerifier(fixture_dir=FIXTURE_DIR).verify_response_body_as(
         _mapper_generated_completed_response(),
         reference="mapper-generated completed response",
@@ -87,6 +113,14 @@ def test_verify_golden_response_parses_mapper_generated_completed_response() -> 
 
 
 def test_verify_golden_response_includes_fixture_and_known_gap_results() -> None:
+    """Golden verificationがcompleted fixtureとnon-failing known gapを併せて返すことを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: completed fixture statusまたはknown gapのfailure扱いが変化した場合.
+    """
     results = ScoreSubmitVerifier(fixture_dir=FIXTURE_DIR).verify_golden_response()
 
     fixture_result = _result_by_reference(
@@ -103,6 +137,11 @@ def test_verify_golden_response_includes_fixture_and_known_gap_results() -> None
 
 
 def _mapper_generated_completed_response() -> bytes:
+    """Completed SubmissionResultからstable mapper response bodyを生成する.
+
+    Returns:
+        bytes: score ID, chart field, PPを含むAthena生成のcompleted response body.
+    """
     response = StableScoreSubmitMapper().to_response(
         SubmissionResult(
             outcome=SubmissionOutcome.COMPLETED,
@@ -120,6 +159,14 @@ def _mapper_generated_completed_response() -> bytes:
 
 
 def test_verify_response_body_maps_failed_response_to_secret_free_fail_result() -> None:
+    """Failed response内のsecret hintがFAIL診断へ流出しないことを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: failed status, run failure, またはsecret-free診断が変化した場合.
+    """
     failed_body = (FIXTURE_DIR / "failed_response.txt").read_bytes()
     password_hash_key = "password_" + "hash"
     session_token_key = "session_" + "token"
@@ -142,6 +189,14 @@ def test_verify_response_body_maps_failed_response_to_secret_free_fail_result() 
 
 
 def test_verify_golden_response_reports_user_stats_and_leaderboard_known_gap() -> None:
+    """user-statsとleaderboard依存がnon-failing known gapとして残ることを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: known gapのfailure扱いまたはdependency diagnosticが変化した場合.
+    """
     result = _result_by_status(
         ScoreSubmitVerifier(fixture_dir=FIXTURE_DIR).verify_golden_response(),
         VerificationStatus.KNOWN_GAP,
@@ -158,6 +213,18 @@ def _result_by_reference(
     results: tuple[SurfaceResult, ...],
     reference_suffix: str,
 ) -> SurfaceResult:
+    """Reference suffixに一致する唯一のsurface結果を取得する.
+
+    Args:
+        results (tuple[SurfaceResult, ...]): 検索対象のverification結果群.
+        reference_suffix (str): result reference末尾に期待するfixtureまたは説明文字列.
+
+    Returns:
+        SurfaceResult: suffixに一致した唯一のsurface結果.
+
+    Raises:
+        AssertionError: suffixに一致する結果が0件または複数件の場合.
+    """
     matches = [
         result
         for result in results
@@ -172,6 +239,18 @@ def _result_by_status(
     results: tuple[SurfaceResult, ...],
     status: VerificationStatus,
 ) -> SurfaceResult:
+    """statusに一致する唯一のsurface結果を取得する.
+
+    Args:
+        results (tuple[SurfaceResult, ...]): 検索対象のverification結果群.
+        status (VerificationStatus): 取得するverification status.
+
+    Returns:
+        SurfaceResult: statusに一致した唯一のsurface結果.
+
+    Raises:
+        AssertionError: statusに一致する結果が0件または複数件の場合.
+    """
     matches = [result for result in results if result.status is status]
     assert len(matches) == 1
 
@@ -179,6 +258,18 @@ def _result_by_status(
 
 
 def _assert_secret_free(message: str) -> None:
+    """report-safeな診断messageにsecret fragmentが含まれないことを確認する.
+
+    Args:
+        message (str): 検査するdiagnostic message.
+
+    Returns:
+        None: forbidden fragmentがなければ値を返さずに完了する.
+
+    Raises:
+        AssertionError: fixture value, credential-like key, またはraw replay fragmentが
+            含まれる場合.
+    """
     forbidden_fragments = (
         "fixture-value",
         "password_" + "hash",

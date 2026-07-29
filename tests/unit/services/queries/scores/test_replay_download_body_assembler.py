@@ -1,4 +1,4 @@
-"""Replay download body assembler の tests."""
+"""replay download body assemblerのunit testを定義する."""
 
 from __future__ import annotations
 
@@ -15,7 +15,14 @@ from osu_server.services.queries.scores import (
 
 
 def test_blocked_strategy_returns_blocked_branch_without_response_body() -> None:
-    """Blocked strategy は success body を生成しない."""
+    """Blocked strategyがresponse bodyを生成しない契約を検証する.
+
+    stored blobを与えてblocked strategyを実行し,body strategy blocked branchとNoneの
+    response bodyを返すことを確認する.
+
+    Returns:
+        None: blocked branch,非成功状態,payload非露出を検証して完了する.
+    """
     stored_payload = b"bk"
 
     result = ReplayDownloadBodyAssembler().build(
@@ -32,7 +39,14 @@ def test_blocked_strategy_returns_blocked_branch_without_response_body() -> None
 
 
 def test_direct_blob_bytes_strategy_returns_stored_bytes_exactly() -> None:
-    """Direct strategy は validation 済み stored bytes だけを返す."""
+    """Direct blob bytes strategyが保存済みbytesをそのまま返す契約を検証する.
+
+    validation済みstored blobを与えてdirect strategyを実行し,成功bodyのpayloadとbyte sizeが
+    入力と一致することを確認する.
+
+    Returns:
+        None: 成功branch,response body,payload非露出を検証して完了する.
+    """
     stored_blob = _stored_blob(b"db")
 
     result = ReplayDownloadBodyAssembler().build(
@@ -52,7 +66,14 @@ def test_direct_blob_bytes_strategy_returns_stored_bytes_exactly() -> None:
 
 
 def test_assemble_download_body_strategy_stays_blocked_without_local_decision() -> None:
-    """Assemble strategy は未確定 transform では success body を生成しない."""
+    """未確定transformのassemble strategyがblockedのままになる契約を検証する.
+
+    stored blobを与えてassemble strategyを実行し,local decisionでsuccess bodyを作らず
+    blocked branchを返すことを確認する.
+
+    Returns:
+        None: blocked branch,Noneのresponse body,payload非露出を検証して完了する.
+    """
     stored_payload = b"as"
 
     result = ReplayDownloadBodyAssembler().build(
@@ -69,4 +90,12 @@ def test_assemble_download_body_strategy_stays_blocked_without_local_decision() 
 
 
 def _stored_blob(payload: bytes) -> ReplayDownloadStoredBlobObject:
+    """指定payloadを持つstored blob objectを構築する.
+
+    Args:
+        payload (bytes): replay responseに使うsynthetic stored bytes.
+
+    Returns:
+        ReplayDownloadStoredBlobObject: payloadとpayload由来のbyte sizeを持つstored blob.
+    """
     return ReplayDownloadStoredBlobObject(payload=payload)

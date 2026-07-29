@@ -1,4 +1,4 @@
-"""App-facing chat workflow providers."""
+"""app processから利用するchat workflow providerを構成する."""
 
 from __future__ import annotations
 
@@ -42,7 +42,11 @@ _DISHKA_RUNTIME_HINTS = (
 
 @final
 class ChatAppProviderSet(Provider):
-    """Providers for app-facing chat send workflows."""
+    """app向けchat送信workflowをAPP scopeで登録する.
+
+    Attributes:
+        scope (Scope): app container内で共有するDishkaのAPP scope.
+    """
 
     scope = Scope.APP
 
@@ -52,6 +56,15 @@ class ChatAppProviderSet(Provider):
         user_repository: UserQueryRepository,
         session_store: SessionStore,
     ) -> ResolvePrivateMessageTargetQuery:
+        """Private messageの宛先userとonline状態を解決するqueryを構成する.
+
+        Args:
+            user_repository (UserQueryRepository): 送信先userを検索するread repository.
+            session_store (SessionStore): online sessionを検索するvolatile store.
+
+        Returns:
+            ResolvePrivateMessageTargetQuery: usernameから宛先userとonline状態を解決するquery.
+        """
         return ResolvePrivateMessageTargetQuery(
             user_repository=user_repository,
             session_store=session_store,
@@ -63,10 +76,24 @@ class ChatAppProviderSet(Provider):
         user_repo: UserQueryRepository,
         session_store: SessionStore,
     ) -> PrivateMessageService:
+        """Private messageの宛先とonline状態を解決するserviceを構成する.
+
+        Args:
+            user_repo (UserQueryRepository): user情報を検索するread repository.
+            session_store (SessionStore): session情報を検索するvolatile store.
+
+        Returns:
+            PrivateMessageService: private messageの宛先userとonline状態を解決するservice.
+        """
         return PrivateMessageService(user_repo=user_repo, session_store=session_store)
 
     @provide
     def command_service(self) -> CommandService:
+        """組み込みBanchoBot command registryを持つcommand serviceを構成する.
+
+        Returns:
+            CommandService: Athenaが標準で提供するchat commandを解決するservice.
+        """
         return CommandService(create_builtin_registry())
 
     @provide
@@ -74,6 +101,14 @@ class ChatAppProviderSet(Provider):
         self,
         broker: AsyncBroker,
     ) -> ChatPersistenceWorkPublisher:
+        """Chat history保存jobをTaskiqへpublishするportを構成する.
+
+        Args:
+            broker (AsyncBroker): chat persistence taskをenqueueするTaskiq broker.
+
+        Returns:
+            ChatPersistenceWorkPublisher: message保存workをworkerへ配送するpublisher.
+        """
         return TaskiqChatPersistenceWorkPublisher(broker)
 
     @provide
@@ -86,6 +121,21 @@ class ChatAppProviderSet(Provider):
         rate_limiter: RateLimiter,
         config: AppConfig,
     ) -> SendChannelMessageUseCase:
+        """Channel message送信commandを配送,rate limit,persistence依存で構成する.
+
+        Args:
+            channel_delivery_query (ResolveChannelMessageDeliveryQuery):
+                channel配送先を解決するquery.
+            command_service (CommandService): BanchoBot commandを解決するservice.
+            session_store (SessionStore): senderとrecipient sessionを読むvolatile store.
+            persistence_publisher (ChatPersistenceWorkPublisher):
+                history保存workをworkerへ配送するport.
+            rate_limiter (RateLimiter): sender単位の送信頻度を制限するstore.
+            config (AppConfig): chat送信に必要な実行時設定.
+
+        Returns:
+            SendChannelMessageUseCase: channel messageを検証,配送,非同期永続化するcommand.
+        """
         return SendChannelMessageUseCase(
             channel_delivery_query=channel_delivery_query,
             command_service=command_service,
@@ -106,6 +156,22 @@ class ChatAppProviderSet(Provider):
         rate_limiter: RateLimiter,
         config: AppConfig,
     ) -> SendPrivateMessageUseCase:
+        """Private message送信commandを送信先,friend関係,rate limit依存で構成する.
+
+        Args:
+            target_query (ResolvePrivateMessageTargetQuery): recipient sessionを解決するquery.
+            friend_relationship_query (CheckFriendRelationshipQuery):
+                senderとrecipientのfriend関係を調べるquery.
+            command_service (CommandService): BanchoBot commandを解決するservice.
+            session_store (SessionStore): senderとrecipient sessionを読むvolatile store.
+            persistence_publisher (ChatPersistenceWorkPublisher):
+                history保存workをworkerへ配送するport.
+            rate_limiter (RateLimiter): sender単位の送信頻度を制限するstore.
+            config (AppConfig): private message送信に必要な実行時設定.
+
+        Returns:
+            SendPrivateMessageUseCase: private messageを検証,配送,非同期永続化するcommand.
+        """
         return SendPrivateMessageUseCase(
             target_query=target_query,
             friend_relationship_query=friend_relationship_query,

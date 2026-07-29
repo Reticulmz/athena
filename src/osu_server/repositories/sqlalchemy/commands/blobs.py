@@ -1,4 +1,4 @@
-"""SQLAlchemy command-side blob metadata repository."""
+"""SQLAlchemyでblob metadataを永続化するcommand repositoryを提供する."""
 
 from __future__ import annotations
 
@@ -16,22 +16,77 @@ if TYPE_CHECKING:
 
 
 class SQLAlchemyBlobCommandRepository:
-    """Blob command repository backed by a UoW-owned SQLAlchemy session."""
+    """Unit of Work所有sessionでblob metadataを読み書きするrepository.
+
+    Attributes:
+        _session (AsyncSession): command transactionを実行しcommitを所有しないsession.
+    """
 
     def __init__(self, session: AsyncSession) -> None:
+        """Unit of Workから受け取ったSQLAlchemy sessionを保持する.
+
+        Args:
+            session (AsyncSession): blob metadata操作に使うsession.
+
+        Notes:
+            commitとrollbackは呼び出し側のUnit of Workが所有する.
+        """
         self._session: AsyncSession = session
 
     async def get_by_id(self, blob_id: int) -> Blob | None:
+        """識別子で保存済みblob metadataを取得する.
+
+        Args:
+            blob_id (int): 取得対象blobの永続化識別子.
+
+        Returns:
+            Blob | None: 対応するblob metadata. 存在しない場合はNone.
+
+        Raises:
+            SQLAlchemyError: select実行に失敗した場合.
+
+        Notes:
+            このmethodはUnit of Workをcommitしない.
+        """
         model = await self._session.get(BlobModel, blob_id)
         return _blob_to_domain(model) if isinstance(model, BlobModel) else None
 
     async def get_by_sha256(self, sha256: str) -> Blob | None:
+        """SHA-256 checksumで保存済みblob metadataを取得する.
+
+        Args:
+            sha256 (str): 取得対象blobのSHA-256 checksum.
+
+        Returns:
+            Blob | None: 対応するblob metadata. 存在しない場合はNone.
+
+        Raises:
+            SQLAlchemyError: select実行に失敗した場合.
+
+        Notes:
+            checksumは保存時の文字列と完全一致で照合する.
+        """
         model = (
             await self._session.execute(select(BlobModel).where(BlobModel.sha256 == sha256))
         ).scalar_one_or_none()
         return _blob_to_domain(model) if isinstance(model, BlobModel) else None
 
     async def create(self, blob: NewBlob) -> Blob:
+        """新しいblob metadataを永続化してdomain modelへ変換する.
+
+        Args:
+            blob (NewBlob): SHA-256 checksumとstorage locatorを持つ新規metadata.
+
+        Returns:
+            Blob: flushとrefresh後の永続化済みblob metadata.
+
+        Raises:
+            DuplicateBlobError: 同じSHA-256 checksumのblobが既に存在する場合.
+            SQLAlchemyError: checksum重複以外の永続化処理に失敗した場合.
+
+        Notes:
+            このmethodはUnit of Workをcommitしない.
+        """
         model = BlobModel(
             sha256=blob.sha256,
             byte_size=blob.byte_size,
@@ -49,6 +104,17 @@ class SQLAlchemyBlobCommandRepository:
 
 
 def _blob_to_domain(model: BlobModel) -> Blob:
+    """SQLAlchemy blob modelをstorage domain modelへ変換する.
+
+    Args:
+        model (BlobModel): 永続化層から読み出したblob row.
+
+    Returns:
+        Blob: storage backendをdomain enumへ復元したblob metadata.
+
+    Raises:
+        ValueError: storage_backendが既知のbackend kindでない場合.
+    """
     return Blob(
         id=model.id,
         sha256=model.sha256,

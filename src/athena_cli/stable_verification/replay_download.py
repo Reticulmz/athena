@@ -1,3 +1,5 @@
+"""Stable replay downloadのevidence fixtureとblob診断を検証する機能を提供する."""
+
 from __future__ import annotations
 
 import hashlib
@@ -193,25 +195,28 @@ _FORBIDDEN_KEY_ERRORS = (
 
 @dataclass(frozen=True, slots=True)
 class ReplayDownloadEvidenceBundle:
-    """Replay download sanitized fixture set を保持する.
+    """Replay downloadのsanitized fixtureと解析済みevidenceをまとめる.
 
-    Args:
-        request_metadata: Target client request metadata fixture の JSON object.
-        response_metadata: Target client response metadata fixture の JSON object.
-        reference_responses: Reference implementation audit fixture の parsed evidence.
-        reference_responses_metadata: Reference implementation audit fixture の JSON object.
-        body_assembly_decision: Body assembly decision fixture の JSON object.
-        fixtures: Capture name で参照できる sanitized fixture.
+    Attributes:
+        request_metadata (Mapping[str, object]): Target client request metadataのJSON object.
+        response_metadata (Mapping[str, object]): Target client response metadataのJSON object.
+        reference_responses (tuple[ReplayDownloadReferenceResponseEvidence, ...]):
+            Reference implementation auditの解析済みevidence.
+        reference_responses_metadata (Mapping[str, object]): Reference response fixtureのJSON
+            object.
+        response_contract_branches (tuple[ReplayDownloadResponseContractBranch, ...]):
+            Response contract branchの解析済み一覧.
+        response_contract_metadata (Mapping[str, object]): Response contract fixtureのJSON object.
+        body_assembly_decision (Mapping[str, object]): Body assembly decision fixtureのJSON object.
+        body_decision (ReplayDownloadBodyDecision): 現在のdownload body方針を表す解析済みdecision.
+        target_route_contract (ReplayDownloadTargetRouteContract): Target client route evidenceの
+            解析済みcontract.
+        fixtures (Mapping[str, ReplayDownloadSanitizedFixture]): Capture名で参照するsanitized
+            fixture.
 
-    Returns:
-        Dataclass のため戻り値はない.
-
-    Raises:
-        なし.
-
-    Constraints:
-        fixtures は sanitized view として raw query values, credential-like values,
-        raw replay bytes を保持しない. Raw document の検証失敗診断にも raw 値を出さない.
+    Notes:
+        Raw query value,credential-like value,raw replay bytes,complete `.osr` bytesを
+        保持しない.
     """
 
     request_metadata: Mapping[str, object]
@@ -227,28 +232,91 @@ class ReplayDownloadEvidenceBundle:
 
 
 class _ScoreLookup(Protocol):
-    async def get_by_id(self, score_id: int) -> object | None: ...
+    """Score IDでscoreの存在を調べるread-only portを表す."""
+
+    async def get_by_id(self, score_id: int) -> object | None:
+        """Score IDに対応するscoreを取得する.
+
+        Args:
+            score_id (int): 取得するscore ID.
+
+        Returns:
+            object | None: Scoreが存在する場合はopaqueなscore object.存在しない場合はNone.
+        """
+        ...
 
 
 class _ReplayAttachmentLookup(Protocol):
+    """Score IDでreplay attachmentを調べるread-only portを表す."""
+
     async def get_by_score_id(
         self,
         score_id: int,
-    ) -> ReplayBlobAttachmentRecord | None: ...
+    ) -> ReplayBlobAttachmentRecord | None:
+        """Scoreに紐づくreplay attachmentを取得する.
+
+        Args:
+            score_id (int): Replay attachmentを調べるscore ID.
+
+        Returns:
+            ReplayBlobAttachmentRecord | None: Attachment record.存在しない場合はNone.
+        """
+        ...
 
 
 class _BlobMetadataLookup(Protocol):
-    async def get_by_id(self, blob_id: int) -> ReplayBlobMetadataRecord | None: ...
+    """Blob IDでreplay blob metadataを調べるread-only portを表す."""
+
+    async def get_by_id(self, blob_id: int) -> ReplayBlobMetadataRecord | None:
+        """Blob IDに対応するmetadataを取得する.
+
+        Args:
+            blob_id (int): 取得するblob metadata ID.
+
+        Returns:
+            ReplayBlobMetadataRecord | None: Blob metadata.存在しない場合はNone.
+        """
+        ...
 
 
 class _BlobObjectReader(Protocol):
-    async def exists(self, storage_key: str) -> bool: ...
+    """Storage backend上のblob objectを読むportを表す."""
 
-    async def open_read(self, storage_key: str) -> AsyncIterator[bytes]: ...
+    async def exists(self, storage_key: str) -> bool:
+        """Storage objectが存在するか判定する.
+
+        Args:
+            storage_key (str): 判定するbackend object key.
+
+        Returns:
+            bool: Backendがobjectの存在を報告する場合はTrue.
+        """
+        ...
+
+    async def open_read(self, storage_key: str) -> AsyncIterator[bytes]:
+        """Storage objectのbyte streamを開く.
+
+        Args:
+            storage_key (str): 読み込むbackend object key.
+
+        Returns:
+            AsyncIterator[bytes]: Object内容を順に返す非同期byte stream.
+
+        Raises:
+            OSError: Backend objectを読み込めない場合.
+        """
+        ...
 
 
 @dataclass(frozen=True, slots=True)
 class _StorageObservation:
+    """Storage objectから計測したintegrity情報を表す.
+
+    Attributes:
+        sha256 (str): ReadしたbytesのSHA-256 digest.
+        byte_size (int): Readしたbytesの総byte数.
+    """
+
     sha256: str
     byte_size: int
 
@@ -261,26 +329,25 @@ async def diagnose_replay_blob(
     blob_metadata_lookup: _BlobMetadataLookup,
     blob_object_reader: _BlobObjectReader,
 ) -> ReplayBlobDiagnosticResult:
-    """Score id から replay blob integrity を report-safe に診断する.
+    """Score IDからreplay blob integrityをreport-safeに診断する.
 
     Args:
-        diagnostic_input: 診断対象の score id.
-        score_lookup: Score existence を確認する read-only lookup.
-        replay_attachment_lookup: Score id から replay attachment を取得する lookup.
-        blob_metadata_lookup: Blob metadata id から metadata を取得する lookup.
-        blob_object_reader: Storage object existence と byte stream を読む backend.
+        diagnostic_input (ReplayBlobDiagnosticInput): 診断対象のscore IDを持つ入力値.
+        score_lookup (_ScoreLookup): Score存在を確認するread-only lookup.
+        replay_attachment_lookup (_ReplayAttachmentLookup): Score IDからreplay attachmentを
+            取得するlookup.
+        blob_metadata_lookup (_BlobMetadataLookup): Blob metadata IDからmetadataを取得するlookup.
+        blob_object_reader (_BlobObjectReader): Storage objectの存在確認とbyte stream読込を行う
+            backend.
 
     Returns:
-        Replay attachment, blob metadata, storage object, size, SHA-256 の照合結果.
+        ReplayBlobDiagnosticResult: Score,attachment,metadata,storage object,SHA-256,
+            byte sizeの照合結果.
 
-    Raises:
-        なし.
-
-    Constraints:
-        Raw replay bytes, credential-like value, complete .osr bytes は出力しない.
-        Diagnostic summary には storage key や digest を含めない.
+    Notes:
+        Raw replay bytes,credential-like value,complete `.osr` bytes,storage key,digestを
+        診断summaryへ含めない.
     """
-
     score = await score_lookup.get_by_id(diagnostic_input.score_id)
     if score is None:
         return _replay_blob_diagnostic_result(
@@ -356,6 +423,15 @@ async def _observe_storage_object(
     blob_object_reader: _BlobObjectReader,
     storage_key: str,
 ) -> _StorageObservation | None:
+    """Storage objectを読みSHA-256とbyte sizeを計測する.
+
+    Args:
+        blob_object_reader (_BlobObjectReader): Storage objectを読むbackend.
+        storage_key (str): 読み込むbackend object key.
+
+    Returns:
+        _StorageObservation | None: 読み込み成功時のdigestとbyte size.`OSError`時はNone.
+    """
     digest_builder = hashlib.sha256()
     byte_size = 0
     try:
@@ -384,6 +460,22 @@ def _replay_blob_diagnostic_result(
     metadata_byte_size: int | None = None,
     observed_byte_size: int | None = None,
 ) -> ReplayBlobDiagnosticResult:
+    """Diagnostic classificationと観測値からresultを組み立てる.
+
+    Args:
+        classification (ReplayBlobDiagnosticClassification): 診断結果の分類.
+        score_found (bool): Scoreが存在したか.
+        replay_attachment_found (bool): Replay attachmentが存在したか.
+        blob_found (bool): Blob metadataが存在したか.
+        storage_object_found (bool): Storage objectを確認できたか.
+        metadata_sha256 (str | None): Blob metadataが保持するSHA-256 digest.
+        observed_sha256 (str | None): Storage objectから計測したSHA-256 digest.
+        metadata_byte_size (int | None): Blob metadataが保持するbyte size.
+        observed_byte_size (int | None): Storage objectから計測したbyte size.
+
+    Returns:
+        ReplayBlobDiagnosticResult: Classificationとreport-safeな存在確認情報を持つ結果.
+    """
     return ReplayBlobDiagnosticResult(
         score_found=score_found,
         replay_attachment_found=replay_attachment_found,
@@ -412,6 +504,14 @@ def _replay_blob_diagnostic_result(
 def _replay_blob_diagnostic_status(
     classification: ReplayBlobDiagnosticClassification,
 ) -> VerificationStatus:
+    """Replay blob classificationをverification statusへ写像する.
+
+    Args:
+        classification (ReplayBlobDiagnosticClassification): Replay blobの診断分類.
+
+    Returns:
+        VerificationStatus: Integrity passはPASS,integrity failureはFAIL,それ以外はUNAVAILABLE.
+    """
     if classification is ReplayBlobDiagnosticClassification.INTEGRITY_PASS:
         return VerificationStatus.PASS
     if classification is ReplayBlobDiagnosticClassification.STORAGE_INTEGRITY_FAILURE:
@@ -426,25 +526,21 @@ def build_replay_download_body_decision(
     target_body_compatible: ReplayDownloadBodyCompatibility,
     evidence_references: tuple[str, ...] = (),
 ) -> ReplayDownloadBodyDecision:
-    """Blob integrity と target body compatibility から download body 方針を決める.
+    """Blob integrityとtarget body compatibilityからdownload body方針を決める.
 
     Args:
-        blob_integrity: Replay blob storage integrity の診断結果.
-        target_body_compatible: Stored blob bytes の target-client-compatible body 判定.
-        evidence_references: 判定に使った sanitized evidence の参照.
+        blob_integrity (ReplayDownloadBlobIntegrity): Replay blob storage integrityの診断結果.
+        target_body_compatible (ReplayDownloadBodyCompatibility): Stored blob bytesのtarget
+            client互換性判定.
+        evidence_references (tuple[str, ...]): 判定に使ったsanitized evidenceの参照.
 
     Returns:
-        #36 が direct blob bytes, body assembly, blocked のどれを採るべきかの
-        report-safe decision.
+        ReplayDownloadBodyDecision: Direct blob bytes,body assembly,blockedのいずれかを表す
+            report-safeなdecision.
 
-    Raises:
-        なし.
-
-    Constraints:
-        Raw replay bytes, complete .osr bytes, credential-like value は保持しない.
-        Format mismatch は storage corruption ではなく assembly required として扱う.
+    Notes:
+        Format mismatchはstorage corruptionではなくbody assemblyが必要な状態として扱う.
     """
-
     if blob_integrity is ReplayDownloadBlobIntegrity.PASS:
         if target_body_compatible is ReplayDownloadBodyCompatibility.PASS:
             return _body_decision_result(
@@ -494,6 +590,19 @@ def _body_decision_result(
     message: str,
     evidence_references: tuple[str, ...],
 ) -> ReplayDownloadBodyDecision:
+    """Download body方針の共通resultを組み立てる.
+
+    Args:
+        blob_integrity (ReplayDownloadBlobIntegrity): Blob storage integrityの状態.
+        target_body_compatible (ReplayDownloadBodyCompatibility): Target client body互換性の状態.
+        download_body_strategy (ReplayDownloadBodyStrategy): Download response bodyの方針.
+        status (VerificationStatus): Decisionのverification status.
+        message (str): Report-safeな診断message.
+        evidence_references (tuple[str, ...]): Decisionを裏付けるsanitized evidenceの参照.
+
+    Returns:
+        ReplayDownloadBodyDecision: Mandatory golden fixture evidenceとして扱うbody decision.
+    """
     return ReplayDownloadBodyDecision(
         blob_integrity=blob_integrity,
         target_body_compatible=target_body_compatible,
@@ -507,23 +616,23 @@ def _body_decision_result(
 
 
 def load_replay_download_fixtures(root: Path) -> ReplayDownloadEvidenceBundle:
-    """Replay download sanitized fixtures を読み込む.
+    """Replay downloadのsanitized fixtureを読み込み解析する.
 
     Args:
-        root: replay_download fixture directory.
+        root (Path): Replay download fixture directory.
 
     Returns:
-        Request/response/body decision JSON と capture name で結合した fixture bundle.
+        ReplayDownloadEvidenceBundle: Request/response/body decision JSONとcapture名で結合した
+            fixture bundle.
 
     Raises:
-        FileNotFoundError: 必須 fixture file が存在しない場合.
-        json.JSONDecodeError: fixture file が JSON として読めない場合.
-        TypeError: fixture root の内容が JSON object ではない場合.
+        OSError: 必須fixture fileを開けない場合.
+        json.JSONDecodeError: Fixture fileがJSONとして不正な場合.
+        TypeError: Fixture fileのtop-level valueがJSON objectでない場合.
 
-    Constraints:
-        Local-only raw capture artifact は読まず、repository-managed JSON だけを扱う.
+    Notes:
+        Local-only raw capture artifactは読まずrepository管理下のJSONだけを扱う.
     """
-
     request_metadata = _read_json_object(root / _REQUEST_METADATA_FIXTURE)
     response_metadata = _read_json_object(root / _RESPONSE_METADATA_FIXTURE)
     reference_responses_metadata = _read_json_object(root / _REFERENCE_RESPONSES_FIXTURE)
@@ -549,21 +658,17 @@ def load_replay_download_fixtures(root: Path) -> ReplayDownloadEvidenceBundle:
 def validate_replay_download_fixtures(
     bundle: ReplayDownloadEvidenceBundle,
 ) -> tuple[SurfaceResult, ...]:
-    """Replay download fixtures の schema と redaction policy を検証する.
+    """Replay download fixtureのschemaとredaction policyを検証する.
 
     Args:
-        bundle: load_replay_download_fixtures が返す fixture bundle.
+        bundle (ReplayDownloadEvidenceBundle): 読み込み済みfixture bundle.
 
     Returns:
-        Fixture file ごとの SurfaceResult tuple.
+        tuple[SurfaceResult, ...]: Fixture fileごとのmandatory検証結果.
 
-    Raises:
-        なし.
-
-    Constraints:
-        DiagnosticSummary には raw query values, credential values, raw replay bytes を含めない.
+    Notes:
+        DiagnosticSummaryにはraw query value,credential value,raw replay bytesを含めない.
     """
-
     request_errors = _validate_request_metadata(bundle.request_metadata)
     response_errors = _validate_response_metadata(bundle.response_metadata)
     reference_errors = _validate_reference_responses_metadata(bundle.reference_responses_metadata)
@@ -602,6 +707,17 @@ def validate_replay_download_fixtures(
 
 
 def _validate_request_metadata(document: Mapping[str, object]) -> tuple[str, ...]:
+    """Target client request metadataのschemaとredaction policyを検証する.
+
+    Args:
+        document (Mapping[str, object]): Request metadata fixtureのJSON object.
+
+    Returns:
+        tuple[str, ...]: 重複を除いたreport-safeなvalidation error code.正常時は空tuple.
+
+    Notes:
+        Raw query valueやcredential valueをerror messageへ含めない.
+    """
     errors = list(_validate_metadata_document(document))
     errors.extend(_validate_target_route_contract(document))
     captures = _capture_mappings(document)
@@ -671,6 +787,14 @@ def _validate_request_metadata(document: Mapping[str, object]) -> tuple[str, ...
 
 
 def _validate_target_route_contract(document: Mapping[str, object]) -> tuple[str, ...]:
+    """Target client route contractの必須fieldと安全な値を検証する.
+
+    Args:
+        document (Mapping[str, object]): Request metadata fixtureのJSON object.
+
+    Returns:
+        tuple[str, ...]: Route contractのreport-safeなvalidation error code.正常時は空tuple.
+    """
     errors: list[str] = []
     route_contract = document.get("target_route_contract")
     if not isinstance(route_contract, Mapping):
@@ -708,6 +832,14 @@ def _validate_target_route_contract(document: Mapping[str, object]) -> tuple[str
 
 
 def _validate_response_metadata(document: Mapping[str, object]) -> tuple[str, ...]:
+    """Target client response metadataのschemaとredaction policyを検証する.
+
+    Args:
+        document (Mapping[str, object]): Response metadata fixtureのJSON object.
+
+    Returns:
+        tuple[str, ...]: Response captureのreport-safeなvalidation error code.正常時は空tuple.
+    """
     errors = list(_validate_metadata_document(document))
     captures = _capture_mappings(document)
     if not captures:
@@ -726,6 +858,14 @@ def _validate_response_metadata(document: Mapping[str, object]) -> tuple[str, ..
 
 
 def _validate_reference_responses_metadata(document: Mapping[str, object]) -> tuple[str, ...]:
+    """Reference implementation response metadataのschemaを検証する.
+
+    Args:
+        document (Mapping[str, object]): Reference response fixtureのJSON object.
+
+    Returns:
+        tuple[str, ...]: Reference entryのreport-safeなvalidation error code.正常時は空tuple.
+    """
     errors = list(_validate_metadata_document(document))
     references = _reference_response_mappings(document)
     if not references:
@@ -755,6 +895,14 @@ def _validate_reference_responses_metadata(document: Mapping[str, object]) -> tu
 
 
 def _validate_reference_auth_fields(entry: Mapping[str, object]) -> tuple[str, ...]:
+    """Reference response entryのauth field metadataを検証する.
+
+    Args:
+        entry (Mapping[str, object]): Reference response entryのJSON object.
+
+    Returns:
+        tuple[str, ...]: Auth fieldのreport-safeなvalidation error code.正常時は空tuple.
+    """
     errors: list[str] = []
     auth_fields = _auth_field_mappings(entry.get("auth_fields"))
     if not auth_fields:
@@ -779,6 +927,14 @@ def _validate_reference_auth_fields(entry: Mapping[str, object]) -> tuple[str, .
 
 
 def _validate_response_contract_metadata(document: Mapping[str, object]) -> tuple[str, ...]:
+    """Response contract branch metadataのschemaと安全な値を検証する.
+
+    Args:
+        document (Mapping[str, object]): Response contract fixtureのJSON object.
+
+    Returns:
+        tuple[str, ...]: Branch metadataのreport-safeなvalidation error code.正常時は空tuple.
+    """
     errors = list(_validate_metadata_document(document))
     branches = _response_contract_branch_mappings(document)
     if not branches:
@@ -803,6 +959,14 @@ def _validate_response_contract_metadata(document: Mapping[str, object]) -> tupl
 
 
 def _validate_body_assembly_decision(document: Mapping[str, object]) -> tuple[str, ...]:
+    """Body assembly decision metadataのschemaと安全な値を検証する.
+
+    Args:
+        document (Mapping[str, object]): Body assembly decision fixtureのJSON object.
+
+    Returns:
+        tuple[str, ...]: Decision metadataのreport-safeなvalidation error code.正常時は空tuple.
+    """
     errors = list(_validate_metadata_document(document))
     decision = document.get("decision")
     if not isinstance(decision, Mapping):
@@ -855,6 +1019,15 @@ def _validate_body_assembly_decision(document: Mapping[str, object]) -> tuple[st
 
 
 def _validate_metadata_document(document: Mapping[str, object]) -> tuple[str, ...]:
+    """Replay download metadata document共通のschemaと秘匿方針を検証する.
+
+    Args:
+        document (Mapping[str, object]): 検証するfixtureのtop-level JSON object.
+
+    Returns:
+        tuple[str, ...]: 共通fieldと禁止contentのreport-safeなvalidation error code.正常時は
+            空tuple.
+    """
     errors: list[str] = []
     if not isinstance(document.get("schema"), str):
         errors.append("missing_schema")
@@ -868,12 +1041,29 @@ def _validate_metadata_document(document: Mapping[str, object]) -> tuple[str, ..
 
 
 def _forbidden_content_errors(value: object) -> tuple[str, ...]:
+    """入れ子のmetadataから禁止contentのerror codeを収集する.
+
+    Args:
+        value (object): Mappingまたはsequenceを含み得る検証対象.
+
+    Returns:
+        tuple[str, ...]: 重複を除いた禁止contentのerror code.禁止contentがなければ空tuple.
+    """
     errors: list[str] = []
     _collect_forbidden_content_errors(value, errors)
     return _sorted_unique(errors)
 
 
 def _collect_forbidden_content_errors(value: object, errors: list[str]) -> None:
+    """入れ子のmetadataを巡回して禁止contentのerror codeを追加する.
+
+    Args:
+        value (object): 巡回するMapping,sequence,またはleaf値.
+        errors (list[str]): 見つけたerror codeを追加する可変list.
+
+    Returns:
+        None: `errors`へerror codeを追加して値を返さず完了する.
+    """
     if isinstance(value, Mapping):
         mapping = cast("Mapping[object, object]", value)
         if _is_har_archive_mapping(mapping):
@@ -893,11 +1083,27 @@ def _collect_forbidden_content_errors(value: object, errors: list[str]) -> None:
 
 
 def _forbidden_key_error(key: str) -> str | None:
+    """Metadata keyに対応する禁止content error codeを返す.
+
+    Args:
+        key (str): 検査するmetadata key.
+
+    Returns:
+        str | None: Keyが禁止集合に属する場合のerror code.それ以外はNone.
+    """
     normalized_key = key.lower().replace("-", "_")
     return _FORBIDDEN_KEY_ERRORS.get(normalized_key)
 
 
 def _is_har_archive_mapping(value: Mapping[object, object]) -> bool:
+    """MappingがHAR archiveらしい`log.entries`構造を持つか判定する.
+
+    Args:
+        value (Mapping[object, object]): 検査する任意key/value mapping.
+
+    Returns:
+        bool: `log` mappingの中に`entries` keyがある場合はTrue.
+    """
     log_value = value.get("log")
     if not isinstance(log_value, Mapping):
         return False
@@ -909,6 +1115,16 @@ def _load_sanitized_fixtures(
     request_metadata: Mapping[str, object],
     response_metadata: Mapping[str, object],
 ) -> Mapping[str, ReplayDownloadSanitizedFixture]:
+    """Request/response captureをcapture名ごとのsanitized fixtureへ結合する.
+
+    Args:
+        request_metadata (Mapping[str, object]): Target client request metadataのJSON object.
+        response_metadata (Mapping[str, object]): Target client response metadataのJSON object.
+
+    Returns:
+        Mapping[str, ReplayDownloadSanitizedFixture]: Request capture名をkeyにしたsanitized
+            fixture.
+    """
     response_captures = _captures_by_name(response_metadata)
     fixtures: dict[str, ReplayDownloadSanitizedFixture] = {}
     for name, request_capture in _captures_by_name(request_metadata).items():
@@ -924,6 +1140,15 @@ def _load_sanitized_fixtures(
 def _reference_responses_from_document(
     document: Mapping[str, object],
 ) -> tuple[ReplayDownloadReferenceResponseEvidence, ...]:
+    """Reference response documentを解析済みevidence tupleへ変換する.
+
+    Args:
+        document (Mapping[str, object]): Reference response fixtureのJSON object.
+
+    Returns:
+        tuple[ReplayDownloadReferenceResponseEvidence, ...]: Mappingとして読めるreference
+            entryの解析結果.
+    """
     return tuple(
         _reference_response_from_entry(reference)
         for reference in _reference_response_mappings(document)
@@ -933,6 +1158,15 @@ def _reference_responses_from_document(
 def _reference_response_from_entry(
     reference: Mapping[str, object],
 ) -> ReplayDownloadReferenceResponseEvidence:
+    """Reference response entryをreport-safeなevidence objectへ変換する.
+
+    Args:
+        reference (Mapping[str, object]): Reference response entryのJSON object.
+
+    Returns:
+        ReplayDownloadReferenceResponseEvidence: 欠損または型不正fieldを安全な既定値へ変換した
+            evidence.
+    """
     return ReplayDownloadReferenceResponseEvidence(
         name=_string_value(reference, "name"),
         source=_string_value(reference, "source"),
@@ -961,6 +1195,15 @@ def _reference_response_from_entry(
 def _response_contract_branches_from_document(
     document: Mapping[str, object],
 ) -> tuple[ReplayDownloadResponseContractBranch, ...]:
+    """Response contract documentを解析済みbranch tupleへ変換する.
+
+    Args:
+        document (Mapping[str, object]): Response contract fixtureのJSON object.
+
+    Returns:
+        tuple[ReplayDownloadResponseContractBranch, ...]: Mappingとして読めるbranch entryの
+            解析結果.
+    """
     return tuple(
         _response_contract_branch_from_entry(branch)
         for branch in _response_contract_branch_mappings(document)
@@ -970,6 +1213,14 @@ def _response_contract_branches_from_document(
 def _response_contract_branch_from_entry(
     branch: Mapping[str, object],
 ) -> ReplayDownloadResponseContractBranch:
+    """Response contract branch entryをreport-safeなobjectへ変換する.
+
+    Args:
+        branch (Mapping[str, object]): Response contract branchのJSON object.
+
+    Returns:
+        ReplayDownloadResponseContractBranch: 欠損または型不正fieldを安全な既定値へ変換したbranch.
+    """
     return ReplayDownloadResponseContractBranch(
         branch=_string_value(branch, "branch"),
         status_label=_string_value(branch, "status_label"),
@@ -988,6 +1239,15 @@ def _response_contract_branch_from_entry(
 def _body_decision_from_document(
     document: Mapping[str, object],
 ) -> ReplayDownloadBodyDecision:
+    """Body assembly decision documentをtyped decisionへ変換する.
+
+    Args:
+        document (Mapping[str, object]): Body assembly decision fixtureのJSON object.
+
+    Returns:
+        ReplayDownloadBodyDecision: Decision mappingがない場合はblockedかつunverifiedの既定
+            decision.
+    """
     decision = document.get("decision")
     if not isinstance(decision, Mapping):
         return build_replay_download_body_decision(
@@ -1014,6 +1274,14 @@ def _body_decision_from_document(
 
 
 def _body_decision_message(decision: Mapping[str, object]) -> str:
+    """Body decisionの安全な診断messageをfield名と値から組み立てる.
+
+    Args:
+        decision (Mapping[str, object]): Body assembly decision mapping.
+
+    Returns:
+        str: Status,strategy,任意blocker,任意format classificationを結合したmessage.
+    """
     status = _string_value(decision, "status")
     strategy = _string_value(decision, "download_body_strategy")
     blocker = _optional_string_value(decision, "blocker")
@@ -1033,6 +1301,14 @@ def _body_decision_message(decision: Mapping[str, object]) -> str:
 def _target_route_contract_from_document(
     request_metadata: Mapping[str, object],
 ) -> ReplayDownloadTargetRouteContract:
+    """Request metadataからtarget route contractを取り出しtyped objectへ変換する.
+
+    Args:
+        request_metadata (Mapping[str, object]): Target client request metadataのJSON object.
+
+    Returns:
+        ReplayDownloadTargetRouteContract: Route contractがない場合は空の安全なfieldを持つobject.
+    """
     route_contract = request_metadata.get("target_route_contract")
     if not isinstance(route_contract, Mapping):
         route_contract = {}
@@ -1063,6 +1339,15 @@ def _sanitized_fixture_from_capture(
     request_capture: Mapping[str, object],
     response_capture: Mapping[str, object],
 ) -> ReplayDownloadSanitizedFixture:
+    """Request/response captureをreport-safeなfixture viewへ変換する.
+
+    Args:
+        request_capture (Mapping[str, object]): Target client request captureのJSON object.
+        response_capture (Mapping[str, object]): 対応するresponse captureのJSON object.
+
+    Returns:
+        ReplayDownloadSanitizedFixture: Raw valueを保持せずmetadataだけを持つfixture view.
+    """
     return ReplayDownloadSanitizedFixture(
         target_client_family=_string_value(request_capture, "target_client_family"),
         target_build_observed=_bool_value(request_capture.get("target_build_observed")),
@@ -1096,6 +1381,19 @@ def _sanitized_fixture_from_capture(
 
 
 def _read_json_object(path: Path) -> Mapping[str, object]:
+    """JSON object fixtureを読み込みmappingとして返す.
+
+    Args:
+        path (Path): 読み込むJSON fixture path.
+
+    Returns:
+        Mapping[str, object]: Top-level JSON objectのfield mapping.
+
+    Raises:
+        OSError: Fixture fileを開けない場合.
+        json.JSONDecodeError: FixtureがJSONとして不正な場合.
+        TypeError: Top-level valueがJSON objectでない場合.
+    """
     parsed = cast("object", json.loads(path.read_text(encoding="utf-8")))
     if not isinstance(parsed, Mapping):
         raise TypeError(f"{path.name} must contain a JSON object")
@@ -1104,6 +1402,14 @@ def _read_json_object(path: Path) -> Mapping[str, object]:
 
 
 def _captures_by_name(document: Mapping[str, object]) -> Mapping[str, Mapping[str, object]]:
+    """Capture listをnameで引けるmappingへ変換する.
+
+    Args:
+        document (Mapping[str, object]): `captures` fieldを持ち得るfixture document.
+
+    Returns:
+        Mapping[str, Mapping[str, object]]: 文字列nameを持つcaptureだけを格納したmapping.
+    """
     captures: dict[str, Mapping[str, object]] = {}
     for capture in _capture_mappings(document):
         name = capture.get("name")
@@ -1116,6 +1422,14 @@ def _captures_by_name(document: Mapping[str, object]) -> Mapping[str, Mapping[st
 
 
 def _capture_mappings(document: Mapping[str, object]) -> tuple[Mapping[str, object], ...]:
+    """Documentの`captures` sequenceからmapping entryだけを取り出す.
+
+    Args:
+        document (Mapping[str, object]): `captures` fieldを持ち得るfixture document.
+
+    Returns:
+        tuple[Mapping[str, object], ...]: Mappingとして読めるcapture entry.field不正時は空tuple.
+    """
     captures_value = document.get("captures")
     if not isinstance(captures_value, Sequence) or isinstance(
         captures_value,
@@ -1136,6 +1450,14 @@ def _capture_mappings(document: Mapping[str, object]) -> tuple[Mapping[str, obje
 def _reference_response_mappings(
     document: Mapping[str, object],
 ) -> tuple[Mapping[str, object], ...]:
+    """Documentの`references` sequenceからmapping entryだけを取り出す.
+
+    Args:
+        document (Mapping[str, object]): `references` fieldを持ち得るfixture document.
+
+    Returns:
+        tuple[Mapping[str, object], ...]: Mappingとして読めるreference entry.field不正時は空tuple.
+    """
     references_value = document.get("references")
     if not isinstance(references_value, Sequence) or isinstance(
         references_value,
@@ -1156,6 +1478,14 @@ def _reference_response_mappings(
 def _response_contract_branch_mappings(
     document: Mapping[str, object],
 ) -> tuple[Mapping[str, object], ...]:
+    """Documentの`branches` sequenceからmapping entryだけを取り出す.
+
+    Args:
+        document (Mapping[str, object]): `branches` fieldを持ち得るfixture document.
+
+    Returns:
+        tuple[Mapping[str, object], ...]: Mappingとして読めるbranch entry.field不正時は空tuple.
+    """
     branches_value = document.get("branches")
     if not isinstance(branches_value, Sequence) or isinstance(
         branches_value,
@@ -1174,6 +1504,15 @@ def _response_contract_branch_mappings(
 
 
 def _auth_fields(value: object) -> tuple[ReplayDownloadAuthField, ...]:
+    """Auth field sequenceをreport-safeなtyped field tupleへ変換する.
+
+    Args:
+        value (object): JSON fixtureから取得したauth field候補.
+
+    Returns:
+        tuple[ReplayDownloadAuthField, ...]: Mappingとして読めるauth fieldの解析結果.型不正時は
+            空tuple.
+    """
     if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
         return ()
 
@@ -1195,6 +1534,14 @@ def _auth_fields(value: object) -> tuple[ReplayDownloadAuthField, ...]:
 
 
 def _auth_field_mappings(value: object) -> tuple[Mapping[str, object], ...]:
+    """Auth field sequenceからmapping entryだけを取り出す.
+
+    Args:
+        value (object): JSON fixtureから取得したauth field候補.
+
+    Returns:
+        tuple[Mapping[str, object], ...]: Mappingとして読めるauth field entry.型不正時は空tuple.
+    """
     if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
         return ()
 
@@ -1212,6 +1559,15 @@ def _missing_required_fields(
     entry: Mapping[str, object],
     required_fields: frozenset[str],
 ) -> tuple[str, ...]:
+    """Entryにない必須field名をerror codeとして返す.
+
+    Args:
+        entry (Mapping[str, object]): 検査するJSON object.
+        required_fields (frozenset[str]): 存在を要求するfield名の集合.
+
+    Returns:
+        tuple[str, ...]: `missing_required_fields:`接頭辞付きerror.欠落がなければ空tuple.
+    """
     missing_fields = sorted(
         field_name for field_name in required_fields if field_name not in entry
     )
@@ -1226,6 +1582,16 @@ def _missing_required_fields_with_prefix(
     required_fields: frozenset[str],
     prefix: str,
 ) -> tuple[str, ...]:
+    """Entryにない必須field名を指定接頭辞のerror codeとして返す.
+
+    Args:
+        entry (Mapping[str, object]): 検査するJSON object.
+        required_fields (frozenset[str]): 存在を要求するfield名の集合.
+        prefix (str): Error codeへ付ける対象領域の接頭辞.
+
+    Returns:
+        tuple[str, ...]: 接頭辞付きmissing-field error.欠落がなければ空tuple.
+    """
     missing_fields = sorted(
         field_name for field_name in required_fields if field_name not in entry
     )
@@ -1242,6 +1608,17 @@ def _validate_string_list_field(
     required: bool = True,
     safe_token: bool = True,
 ) -> tuple[str, ...]:
+    """Entryのfieldが安全な文字列listかを検証する.
+
+    Args:
+        entry (Mapping[str, object]): 検査するJSON object.
+        key (str): 検査するfield名.
+        required (bool): Noneを許容しない場合はTrue.
+        safe_token (bool): 各文字列へ安全token制約を適用する場合はTrue.
+
+    Returns:
+        tuple[str, ...]: 型または安全性が不正な場合のerror code.正常時は空tuple.
+    """
     value = entry.get(key)
     if value is None and not required:
         return ()
@@ -1257,6 +1634,16 @@ def _validate_string_field(
     *,
     safe_token: bool = True,
 ) -> tuple[str, ...]:
+    """Entryのfieldが空でない文字列かを検証する.
+
+    Args:
+        entry (Mapping[str, object]): 検査するJSON object.
+        key (str): 検査するfield名.
+        safe_token (bool): 文字列へ安全token制約を適用する場合はTrue.
+
+    Returns:
+        tuple[str, ...]: 型または安全性が不正な場合のerror code.正常時は空tuple.
+    """
     value = entry.get(key)
     if isinstance(value, str) and value and (not safe_token or _is_safe_metadata_token(value)):
         return ()
@@ -1268,6 +1655,15 @@ def _validate_optional_string_field(
     entry: Mapping[str, object],
     key: str,
 ) -> tuple[str, ...]:
+    """Entryの任意fieldがNoneまたは空でない文字列かを検証する.
+
+    Args:
+        entry (Mapping[str, object]): 検査するJSON object.
+        key (str): 検査する任意field名.
+
+    Returns:
+        tuple[str, ...]: 値がNoneでも文字列でもない場合のerror code.正常時は空tuple.
+    """
     value = entry.get(key)
     if value is None:
         return ()
@@ -1284,6 +1680,17 @@ def _validate_observed_metadata(
     value_key: str,
     note_key: str,
 ) -> tuple[str, ...]:
+    """Observed flagと対応するvalue/note fieldの整合を検証する.
+
+    Args:
+        entry (Mapping[str, object]): 検査するJSON object.
+        observed_key (str): 観測有無を示すbool field名.
+        value_key (str): 観測値またはNoneを保持するfield名.
+        note_key (str): 観測状況を補足する安全なnote field名.
+
+    Returns:
+        tuple[str, ...]: Flag,value,noteの不整合を示すerror code.正常時は空tuple.
+    """
     errors: list[str] = []
     observed_value = entry.get(observed_key)
     if not isinstance(observed_value, bool):
@@ -1313,10 +1720,27 @@ def _validate_observed_metadata(
 
 
 def _is_safe_string_list(value: object) -> bool:
+    """値が安全tokenだけから成る文字列sequenceか判定する.
+
+    Args:
+        value (object): 判定するJSON value.
+
+    Returns:
+        bool: 空を含むsequenceの全要素が安全な文字列ならTrue.
+    """
     return _is_string_list(value, safe_token=True)
 
 
 def _is_string_list(value: object, *, safe_token: bool) -> bool:
+    """値が文字列sequenceかを任意の安全token制約付きで判定する.
+
+    Args:
+        value (object): 判定するJSON value.
+        safe_token (bool): 各文字列へ安全token制約を適用する場合はTrue.
+
+    Returns:
+        bool: Valueが文字列やbytesでないsequenceかつ全要素が条件を満たす場合はTrue.
+    """
     if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
         return False
 
@@ -1327,6 +1751,15 @@ def _is_string_list(value: object, *, safe_token: bool) -> bool:
 
 
 def _validate_int_field(entry: Mapping[str, object], key: str) -> tuple[str, ...]:
+    """Entryのfieldがboolではない整数かを検証する.
+
+    Args:
+        entry (Mapping[str, object]): 検査するJSON object.
+        key (str): 検査するfield名.
+
+    Returns:
+        tuple[str, ...]: 整数でない場合のerror code.正常時は空tuple.
+    """
     value = entry.get(key)
     if isinstance(value, int) and not isinstance(value, bool):
         return ()
@@ -1338,6 +1771,15 @@ def _validate_optional_int_field(
     entry: Mapping[str, object],
     key: str,
 ) -> tuple[str, ...]:
+    """Entryの任意fieldがNoneまたはboolではない整数かを検証する.
+
+    Args:
+        entry (Mapping[str, object]): 検査するJSON object.
+        key (str): 検査する任意field名.
+
+    Returns:
+        tuple[str, ...]: Noneでも整数でもない場合のerror code.正常時は空tuple.
+    """
     value = entry.get(key)
     if value is None or (isinstance(value, int) and not isinstance(value, bool)):
         return ()
@@ -1346,6 +1788,15 @@ def _validate_optional_int_field(
 
 
 def _validate_bool_field(entry: Mapping[str, object], key: str) -> tuple[str, ...]:
+    """Entryのfieldがboolかを検証する.
+
+    Args:
+        entry (Mapping[str, object]): 検査するJSON object.
+        key (str): 検査するfield名.
+
+    Returns:
+        tuple[str, ...]: Boolでない場合のerror code.正常時は空tuple.
+    """
     if isinstance(entry.get(key), bool):
         return ()
 
@@ -1353,10 +1804,27 @@ def _validate_bool_field(entry: Mapping[str, object], key: str) -> tuple[str, ..
 
 
 def _is_safe_metadata_token(value: str) -> bool:
+    """Metadata tokenにquery delimiterやkey-value delimiterが含まれないか判定する.
+
+    Args:
+        value (str): 判定するmetadata token.
+
+    Returns:
+        bool: `=`,`&`,`:`を含まない場合はTrue.
+    """
     return "=" not in value and "&" not in value and ":" not in value
 
 
 def _string_value(entry: Mapping[str, object], key: str) -> str:
+    """Entryから文字列fieldを安全に取り出す.
+
+    Args:
+        entry (Mapping[str, object]): 値を取り出すJSON object.
+        key (str): 取得するfield名.
+
+    Returns:
+        str: 値が文字列ならその値.それ以外は空文字列.
+    """
     value = entry.get(key)
     if isinstance(value, str):
         return value
@@ -1365,6 +1833,15 @@ def _string_value(entry: Mapping[str, object], key: str) -> str:
 
 
 def _optional_string_value(entry: Mapping[str, object], key: str) -> str | None:
+    """Entryから任意の文字列fieldを安全に取り出す.
+
+    Args:
+        entry (Mapping[str, object]): 値を取り出すJSON object.
+        key (str): 取得する任意field名.
+
+    Returns:
+        str | None: 値が文字列ならその値.Noneまたは型不正ならNone.
+    """
     value = entry.get(key)
     if value is None:
         return None
@@ -1376,6 +1853,14 @@ def _optional_string_value(entry: Mapping[str, object], key: str) -> str | None:
 
 
 def _bool_value(value: object) -> bool:
+    """Objectからbool値だけを取り出す.
+
+    Args:
+        value (object): JSON objectから取得した値.
+
+    Returns:
+        bool: 値がboolならその値.それ以外はFalse.
+    """
     if isinstance(value, bool):
         return value
 
@@ -1383,6 +1868,15 @@ def _bool_value(value: object) -> bool:
 
 
 def _optional_int_value(entry: Mapping[str, object], key: str) -> int | None:
+    """Entryから任意のboolではない整数fieldを取り出す.
+
+    Args:
+        entry (Mapping[str, object]): 値を取り出すJSON object.
+        key (str): 取得する任意field名.
+
+    Returns:
+        int | None: 値がboolではない整数ならその値.Noneまたは型不正ならNone.
+    """
     value = entry.get(key)
     if isinstance(value, int) and not isinstance(value, bool):
         return value
@@ -1394,6 +1888,15 @@ def _verification_status_value(
     entry: Mapping[str, object],
     key: str,
 ) -> VerificationStatus:
+    """Entryの文字列fieldをVerificationStatusへ変換する.
+
+    Args:
+        entry (Mapping[str, object]): 値を取り出すJSON object.
+        key (str): VerificationStatus値を持つfield名.
+
+    Returns:
+        VerificationStatus: 有効なenum値.欠損または不正値はKNOWN_GAP.
+    """
     value = entry.get(key)
     if isinstance(value, str):
         try:
@@ -1408,6 +1911,15 @@ def _blob_integrity_value(
     entry: Mapping[str, object],
     key: str,
 ) -> ReplayDownloadBlobIntegrity:
+    """Entryの文字列fieldをReplayDownloadBlobIntegrityへ変換する.
+
+    Args:
+        entry (Mapping[str, object]): 値を取り出すJSON object.
+        key (str): Blob integrity値を持つfield名.
+
+    Returns:
+        ReplayDownloadBlobIntegrity: 有効なenum値.欠損または不正値はUNAVAILABLE.
+    """
     value = entry.get(key)
     if isinstance(value, str):
         try:
@@ -1422,6 +1934,15 @@ def _body_compatibility_value(
     entry: Mapping[str, object],
     key: str,
 ) -> ReplayDownloadBodyCompatibility:
+    """Entryの文字列fieldをReplayDownloadBodyCompatibilityへ変換する.
+
+    Args:
+        entry (Mapping[str, object]): 値を取り出すJSON object.
+        key (str): Body compatibility値を持つfield名.
+
+    Returns:
+        ReplayDownloadBodyCompatibility: 有効なenum値.欠損または不正値はLOCAL_ONLY_UNVERIFIED.
+    """
     value = entry.get(key)
     if isinstance(value, str):
         try:
@@ -1436,6 +1957,15 @@ def _body_strategy_value(
     entry: Mapping[str, object],
     key: str,
 ) -> ReplayDownloadBodyStrategy:
+    """Entryの文字列fieldをReplayDownloadBodyStrategyへ変換する.
+
+    Args:
+        entry (Mapping[str, object]): 値を取り出すJSON object.
+        key (str): Download body strategy値を持つfield名.
+
+    Returns:
+        ReplayDownloadBodyStrategy: 有効なenum値.欠損または不正値はBLOCKED.
+    """
     value = entry.get(key)
     if isinstance(value, str):
         try:
@@ -1447,6 +1977,14 @@ def _body_strategy_value(
 
 
 def _string_tuple(value: object) -> tuple[str, ...]:
+    """Sequenceから文字列要素だけを保持するtupleを作る.
+
+    Args:
+        value (object): JSON fixtureから取得したsequence候補.
+
+    Returns:
+        tuple[str, ...]: 文字列要素だけを元の順序で保持するtuple.型不正時は空tuple.
+    """
     if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
         return ()
 
@@ -1454,6 +1992,14 @@ def _string_tuple(value: object) -> tuple[str, ...]:
 
 
 def _raw_values_committed(request_capture: Mapping[str, object]) -> bool:
+    """Request captureがraw valueをcommitしたと示すか判定する.
+
+    Args:
+        request_capture (Mapping[str, object]): Target client request captureのJSON object.
+
+    Returns:
+        bool: `raw_values_committed`または後方互換の`query_values_committed`がTrueならTrue.
+    """
     raw_values_committed = request_capture.get("raw_values_committed")
     if isinstance(raw_values_committed, bool):
         return raw_values_committed
@@ -1466,6 +2012,16 @@ def _validation_result_from_errors(
     reference: str,
     errors: tuple[str, ...],
 ) -> SurfaceResult:
+    """Validation error code列をPASSまたはFAILのsurface resultへ変換する.
+
+    Args:
+        prefix (str): 診断messageへ付けるfixture種別の名前.
+        reference (str): 検証したfixtureの参照名.
+        errors (tuple[str, ...]): Report-safeなvalidation error code.
+
+    Returns:
+        SurfaceResult: Errorが空ならPASS,それ以外はredaction policy failureを表す結果.
+    """
     if not errors:
         return _validation_result(
             VerificationStatus.PASS,
@@ -1485,6 +2041,16 @@ def _validation_result(
     message: str,
     reference: str,
 ) -> SurfaceResult:
+    """Replay download surfaceのmandatory golden fixture結果を組み立てる.
+
+    Args:
+        status (VerificationStatus): 検証の成否または可用性を表す状態.
+        message (str): Report-safeな診断message.
+        reference (str): Evidence fixtureの参照名.
+
+    Returns:
+        SurfaceResult: `StableSurface.REPLAY_DOWNLOAD`とmandatory scopeを持つ結果.
+    """
     return SurfaceResult(
         surface=StableSurface.REPLAY_DOWNLOAD,
         status=status,
@@ -1496,6 +2062,14 @@ def _validation_result(
 
 
 def _sorted_unique(values: Sequence[str]) -> tuple[str, ...]:
+    """文字列列から重複を除き辞書順に並べたtupleを返す.
+
+    Args:
+        values (Sequence[str]): 重複し得る文字列列.
+
+    Returns:
+        tuple[str, ...]: 重複を除いた昇順の文字列tuple.
+    """
     return tuple(sorted(set(values)))
 
 

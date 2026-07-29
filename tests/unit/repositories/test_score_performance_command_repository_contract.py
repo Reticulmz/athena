@@ -1,4 +1,4 @@
-"""Command repository contract tests for score performance persistence."""
+"""Score performance command repositoryの永続化契約を検証するtests."""
 
 from __future__ import annotations
 
@@ -36,10 +36,23 @@ _NOW = datetime(2026, 6, 16, 0, 0, 0, tzinfo=UTC)
 
 
 def _memory_factory() -> UnitOfWorkFactory:
+    """Score performance command test用のmemory Unit of Work factoryを構築する.
+
+    Returns:
+        UnitOfWorkFactory: 各testで独立したInMemoryUnitOfWorkFactory.
+    """
     return InMemoryUnitOfWorkFactory()
 
 
 async def test_duplicate_requests_reuse_one_current_calculation() -> None:
+    """同一requestが1件のcurrent calculationを再利用する契約を検証する.
+
+    同じscoreとcalculator versionで2回requestし,
+    初回だけがcreateとcommitを要求して同じcalculationを返すことを確認する.
+
+    Returns:
+        None: idempotent request結果を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _memory_factory()
 
     async with factory() as uow:
@@ -65,6 +78,14 @@ async def test_duplicate_requests_reuse_one_current_calculation() -> None:
 
 
 async def test_claim_conflict_is_retryable_without_marking_unavailable() -> None:
+    """有効なclaim競合がretry可能でcurrent calculationをunavailableにしないことを検証する.
+
+    worker Aのclaim中にworker Bを拒否し,
+    expiry後のworker Bには再claimを許可してstateがqueuedのまま残ることを確認する.
+
+    Returns:
+        None: claim競合とstale reclaim結果を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _memory_factory()
     created_id = await _create_current(factory, score_id=11)
 
@@ -97,6 +118,14 @@ async def test_claim_conflict_is_retryable_without_marking_unavailable() -> None
 
 
 async def test_pending_calculation_state_transitions_are_durable() -> None:
+    """保留中calculationの順方向state transitionが永続化される契約を検証する.
+
+    queuedからfetching fileを経てcalculatingへ遷移し,
+    current readが最後のstateを返すことを確認する.
+
+    Returns:
+        None: 正常transitionのdurable結果を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _memory_factory()
     created_id = await _create_current(factory, score_id=21)
 
@@ -128,6 +157,14 @@ async def test_pending_calculation_state_transitions_are_durable() -> None:
 
 
 async def test_pending_calculation_state_transitions_do_not_skip_forward() -> None:
+    """保留中calculationが期待stateを飛ばして遷移しない契約を検証する.
+
+    queued calculationにfetching fileを期待するtransitionを要求し,
+    更新を返さずqueuedのまま残ることを確認する.
+
+    Returns:
+        None: 不正なstate skipの拒否を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _memory_factory()
     created_id = await _create_current(factory, score_id=23)
 
@@ -149,6 +186,14 @@ async def test_pending_calculation_state_transitions_do_not_skip_forward() -> No
 
 
 async def test_terminal_calculation_state_does_not_transition_back_to_pending() -> None:
+    """終端calculationがpending stateへ戻らない契約を検証する.
+
+    completed calculationへqueued起点のtransitionを要求し,
+    更新を返さずcompleted値を保持することを確認する.
+
+    Returns:
+        None: terminal stateの不変性を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _memory_factory()
     created_id = await _create_current(factory, score_id=22)
     completed = await _complete(
@@ -174,6 +219,14 @@ async def test_terminal_calculation_state_does_not_transition_back_to_pending() 
 
 
 async def test_replacement_preserves_old_current_until_completed_finalization() -> None:
+    """replacement計算の完了まで旧current calculationを維持する契約を検証する.
+
+    completed currentに新version requestを作り,
+    新calculation完了時だけ旧currentをsupersedeして切り替えることを確認する.
+
+    Returns:
+        None: replacement finalizationのcurrent切替を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _memory_factory()
     current_id = await _create_current(factory, score_id=12, calculator_version="4.0.2")
     _ = await _complete(factory, calculation_id=current_id, calculator_version="4.0.2")
@@ -215,6 +268,14 @@ async def test_replacement_preserves_old_current_until_completed_finalization() 
 
 
 async def test_mismatched_pending_replacement_is_superseded_before_new_replacement() -> None:
+    """version不一致のpending replacementを次のreplacement前にsupersedeする契約を検証する.
+
+    pending replacementより新しいversionをrequestし,
+    旧replacementをclaimもfinalizeもできない状態にすることを確認する.
+
+    Returns:
+        None: stale replacementを検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _memory_factory()
     current_id = await _create_current(factory, score_id=20, calculator_version="4.0.2")
     _ = await _complete(factory, calculation_id=current_id, calculator_version="4.0.2")
@@ -277,6 +338,14 @@ async def test_mismatched_pending_replacement_is_superseded_before_new_replaceme
 
 
 async def test_unavailable_replacement_finalization_switches_current_once() -> None:
+    """利用不可replacementのfinalizationもcurrent calculationを一度だけ切り替えることを検証する.
+
+    completed currentのreplacementをunavailableとしてfinalizeし,
+    新しいunavailable値がcurrentとなり旧値がsupersededになることを確認する.
+
+    Returns:
+        None: unavailable finalizationのcurrent切替を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _memory_factory()
     current_id = await _create_current(factory, score_id=13, calculator_version="4.0.2")
     _ = await _complete(factory, calculation_id=current_id, calculator_version="4.0.2")
@@ -314,6 +383,14 @@ async def test_unavailable_replacement_finalization_switches_current_once() -> N
 
 
 async def test_recalculation_batch_creation_preserves_work_set() -> None:
+    """再計算batch作成がfilterとwork setを永続化する契約を検証する.
+
+    3件の理由付きwork itemからbatchを作成し,
+    reason countとpending work itemがcommit後も一致することを確認する.
+
+    Returns:
+        None: batch metadataと初期work stateを検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _memory_factory()
 
     async with factory() as uow:
@@ -358,6 +435,14 @@ async def test_recalculation_batch_creation_preserves_work_set() -> None:
 
 
 async def test_recalculation_work_claim_is_bounded_and_recovers_stale_claims() -> None:
+    """再計算work claimがlimitを守りstale claimを回収する契約を検証する.
+
+    worker Aの2件claim後にworker Bへ残り1件だけを返し,
+    expiry後には先頭2件をworker Bへ再割当することを確認する.
+
+    Returns:
+        None: bounded claimとstale reclaim結果を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _memory_factory()
     batch_id = await _create_recalculation_batch(factory)
 
@@ -386,6 +471,14 @@ async def test_recalculation_work_claim_is_bounded_and_recovers_stale_claims() -
 
 
 async def test_stale_recalculation_work_owner_cannot_finalize_after_reclaim() -> None:
+    """期限切れwork ownerがreclaim後のwork itemをfinalizeできない契約を検証する.
+
+    worker Aのclaimをexpiry後にworker Bへ再割当し,
+    worker Aのcomplete操作がstateとcalculation IDを変えないことを確認する.
+
+    Returns:
+        None: stale ownerのfinalization拒否を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _memory_factory()
     batch_id = await _create_recalculation_batch(factory)
 
@@ -423,6 +516,14 @@ async def test_stale_recalculation_work_owner_cannot_finalize_after_reclaim() ->
 
 
 async def test_recalculation_work_outcomes_update_batch_progress_and_last_error() -> None:
+    """再計算work結果がbatch progressとlast errorを更新する契約を検証する.
+
+    completeとunavailableとfailureを処理した後にfailureをretry完了し,
+    countとterminal statusとlast errorが期待通り残ることを確認する.
+
+    Returns:
+        None: work outcomeからbatch progressへの反映を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = _memory_factory()
     batch_id = await _create_recalculation_batch(factory)
 
@@ -516,6 +617,16 @@ async def _create_current(
     score_id: int,
     calculator_version: str = "4.0.2",
 ) -> int:
+    """scoreのcurrent performance calculationを作成してIDを返す.
+
+    Args:
+        factory (UnitOfWorkFactory): calculationをcommitするUnit of Work factory.
+        score_id (int): current calculationを作成するscore ID.
+        calculator_version (str): calculation requestに使うcalculator version.
+
+    Returns:
+        int: commit済みcurrent calculationのID.
+    """
     async with factory() as uow:
         result = await uow.score_performance.create_or_reuse_calculation(
             _request(score_id=score_id, calculator_version=calculator_version)
@@ -526,6 +637,14 @@ async def _create_current(
 
 
 async def _create_recalculation_batch(factory: UnitOfWorkFactory) -> int:
+    """3件のrecalculation workを含むbatchを作成してIDを返す.
+
+    Args:
+        factory (UnitOfWorkFactory): batchとwork itemをcommitするUnit of Work factory.
+
+    Returns:
+        int: commit済みrecalculation batchのID.
+    """
     async with factory() as uow:
         batch = await uow.score_performance.create_recalculation_batch(
             _batch(
@@ -554,6 +673,16 @@ async def _complete(
     calculation_id: int,
     calculator_version: str,
 ) -> PerformanceCalculation:
+    """calculationをcompletedとしてfinalizeし成功結果を返す.
+
+    Args:
+        factory (UnitOfWorkFactory): finalizationをcommitするUnit of Work factory.
+        calculation_id (int): completedへ遷移するcalculation ID.
+        calculator_version (str): completion metadataに保存するcalculator version.
+
+    Returns:
+        PerformanceCalculation: Noneでないことを確認済みのcompleted calculation.
+    """
     completed = await _complete_or_none(
         factory,
         calculation_id=calculation_id,
@@ -569,6 +698,16 @@ async def _complete_or_none(
     calculation_id: int,
     calculator_version: str,
 ) -> PerformanceCalculation | None:
+    """calculationのcompletionを試みoptional結果を返す.
+
+    Args:
+        factory (UnitOfWorkFactory): completionをcommitするUnit of Work factory.
+        calculation_id (int): completionを要求するcalculation ID.
+        calculator_version (str): completion metadataに保存するcalculator version.
+
+    Returns:
+        PerformanceCalculation | None: completion成功時のcalculation. 条件不一致ならNone.
+    """
     async with factory() as uow:
         completed = await uow.score_performance.mark_completed(
             CompleteScorePerformanceCalculation(
@@ -592,6 +731,15 @@ def _request(
     score_id: int,
     calculator_version: str,
 ) -> CreateScorePerformanceCalculation:
+    """Current calculation作成requestを構築する.
+
+    Args:
+        score_id (int): calculationを要求するscore ID.
+        calculator_version (str): requestが対象とするcalculator version.
+
+    Returns:
+        CreateScorePerformanceCalculation: 固定calculator nameとformula profileを持つ作成request.
+    """
     return CreateScorePerformanceCalculation(
         score_id=score_id,
         calculator_name="rosu-pp-py",
@@ -607,6 +755,16 @@ def _claim(
     owner: str,
     claimed_at: datetime,
 ) -> ClaimScorePerformanceCalculation:
+    """5分でexpireするpending calculation claimを構築する.
+
+    Args:
+        calculation_id (int): claimするpending calculation ID.
+        owner (str): claimを所有するworker識別子.
+        claimed_at (datetime): claim開始時刻.
+
+    Returns:
+        ClaimScorePerformanceCalculation: claim expiryを5分後に設定したcommand.
+    """
     return ClaimScorePerformanceCalculation(
         calculation_id=calculation_id,
         owner=owner,
@@ -620,6 +778,16 @@ def _batch(
     filters: dict[str, object],
     candidates: tuple[CreateScorePerformanceRecalculationWorkItem, ...],
 ) -> CreateScorePerformanceRecalculationBatch:
+    """candidate群と理由別countからrecalculation batch commandを構築する.
+
+    Args:
+        filters (dict[str, object]): candidate selectionに使用したfilter snapshot.
+        candidates (tuple[CreateScorePerformanceRecalculationWorkItem, ...]):
+            batchへ保存するwork item群.
+
+    Returns:
+        CreateScorePerformanceRecalculationBatch: reason countを持つbatch command.
+    """
     reason_counts: dict[RecalculationCandidateReason, int] = {}
     for candidate in candidates:
         reason = candidate.reason
@@ -639,6 +807,15 @@ def _work(
     score_id: int,
     reason: RecalculationCandidateReason,
 ) -> CreateScorePerformanceRecalculationWorkItem:
+    """scoreのrecalculation理由を表すwork item commandを構築する.
+
+    Args:
+        score_id (int): recalculationするscore ID.
+        reason (RecalculationCandidateReason): scoreを再計算対象にする理由.
+
+    Returns:
+        CreateScorePerformanceRecalculationWorkItem: batch作成へ渡す未claim work item.
+    """
     return CreateScorePerformanceRecalculationWorkItem(
         score_id=score_id,
         reason=reason,
@@ -652,6 +829,17 @@ def _work_claim(
     claimed_at: datetime,
     limit: int,
 ) -> ClaimScorePerformanceRecalculationWork:
+    """5分でexpireするbounded recalculation work claimを構築する.
+
+    Args:
+        batch_id (int): claim対象workを持つbatch ID.
+        owner (str): claimを所有するworker識別子.
+        claimed_at (datetime): claim開始時刻.
+        limit (int): 1回のclaimで返す最大work item数.
+
+    Returns:
+        ClaimScorePerformanceRecalculationWork: expiryと取得上限を持つwork claim command.
+    """
     return ClaimScorePerformanceRecalculationWork(
         batch_id=batch_id,
         owner=owner,

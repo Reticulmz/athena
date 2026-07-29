@@ -1,4 +1,4 @@
-"""Command-side beatmap repository contract."""
+"""Beatmap refresh workflow の command-side repository 契約."""
 
 from __future__ import annotations
 
@@ -20,13 +20,26 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class BeatmapSubmissionCounts:
-    """beatmap 単位の submitted play/pass count。"""
+    """Beatmap 単位の submitted play/pass count.
+
+    Attributes:
+        play_count (int): 送信済み play の非負累積件数.
+        pass_count (int): 送信済み pass の非負累積件数.play_count を超えない.
+    """
 
     play_count: int
     pass_count: int
 
     def __post_init__(self) -> None:
-        """count として不正な負数を拒否する。"""
+        """Count として不正な値を拒否する.
+
+        Returns:
+            None: Play/pass count が集計制約を満たすことを示す.
+
+        Raises:
+            ValueError: いずれかの count が負の場合,または pass_count が play_count を
+                超える場合に送出する.
+        """
         if self.play_count < 0:
             msg = "play_count must be non-negative"
             raise ValueError(msg)
@@ -40,34 +53,92 @@ class BeatmapSubmissionCounts:
 
 @runtime_checkable
 class BeatmapCommandRepository(Protocol):
-    """Mutation and consistency-check port for beatmap refresh workflows."""
+    """Beatmap refresh workflow の mutation と consistency-check port.
+
+    Notes:
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
+        実行しない.
+    """
 
     async def get_beatmap(self, beatmap_id: int) -> Beatmap | None:
-        """Return a beatmap for command-side consistency checks."""
+        """Command-side consistency check 用に Beatmap を返す.
+
+        Args:
+            beatmap_id (int): 取得する Beatmap ID.
+
+        Returns:
+            Beatmap | None: 一致する Beatmap.存在しない場合は None.
+        """
         ...
 
     async def get_beatmapset(self, beatmapset_id: int) -> BeatmapSet | None:
-        """Return a beatmap set for command-side consistency checks."""
+        """Command-side consistency check 用に BeatmapSet を返す.
+
+        Args:
+            beatmapset_id (int): 取得する BeatmapSet ID.
+
+        Returns:
+            BeatmapSet | None: 一致する BeatmapSet.存在しない場合は None.
+        """
         ...
 
     async def get_beatmap_by_checksum(self, checksum_md5: str) -> Beatmap | None:
-        """Return a beatmap by checksum for command-side consistency checks."""
+        """Command-side consistency check 用に checksum から Beatmap を返す.
+
+        Args:
+            checksum_md5 (str): 検索する Beatmap の MD5 checksum.
+
+        Returns:
+            Beatmap | None: 一致する Beatmap.存在しない場合は None.
+        """
         ...
 
     async def get_beatmap_by_filename_in_beatmapset(
         self, beatmapset_id: int, original_filename: str
     ) -> Beatmap | None:
-        """Return a beatmap by filename within a set for command checks."""
+        """Command check 用に BeatmapSet 内の filename から Beatmap を返す.
+
+        Args:
+            beatmapset_id (int): 検索範囲となる BeatmapSet ID.
+            original_filename (str): BeatmapSet 内で照合する元の filename.
+
+        Returns:
+            Beatmap | None: 範囲内で一致する Beatmap.存在しない場合は None.
+        """
         ...
 
     async def save_beatmapset_snapshot(self, snapshot: BeatmapSet) -> None:
-        """Persist a fetched beatmap set snapshot."""
+        """取得済み BeatmapSet snapshot を永続化する.
+
+        Args:
+            snapshot (BeatmapSet): 保存する取得済み BeatmapSet snapshot.
+
+        Returns:
+            None: Snapshot の保存が Unit of Work に反映されたことを示す.
+
+        Raises:
+            ValueError: Snapshot 内または保存済み Beatmap と,同じ checksum を異なる Beatmap ID に
+                対応付けようとした場合に送出する.
+        """
         ...
 
     async def set_local_status_override(
         self, beatmap_id: int, status: LocalBeatmapStatus | None
     ) -> Beatmap:
-        """Persist a local beatmap status override."""
+        """Local Beatmap status override を永続化する.
+
+        Args:
+            beatmap_id (int): Override する Beatmap ID.
+            status (LocalBeatmapStatus | None): 設定する local status.None の場合は override を
+                解除する.
+
+        Returns:
+            Beatmap: 更新後の Beatmap.
+
+        Raises:
+            LookupError: beatmap_id に対応する Beatmap が存在しない場合に送出する.
+        """
         ...
 
     async def increment_submission_counts(
@@ -76,31 +147,92 @@ class BeatmapCommandRepository(Protocol):
         *,
         passed: bool,
     ) -> BeatmapSubmissionCounts:
-        """Increment submitted play/pass count and return the post-increment values."""
+        """Submitted play/pass count を増やし,更新後の値を返す.
+
+        Args:
+            beatmap_id (int): Count を増やす Beatmap ID.
+            passed (bool): Pass count も増やす成功 submission かどうか.
+
+        Returns:
+            BeatmapSubmissionCounts: 増分を反映した play/pass count.
+
+        Raises:
+            LookupError: 永続化対象の Beatmap が存在せず,count increment を実行できない場合に
+                送出する.
+        """
         ...
 
     async def get_current_file_attachment(self, beatmap_id: int) -> BeatmapFileAttachment | None:
-        """Return the current file attachment for command-side checks."""
+        """Command-side check 用に現在の file attachment を返す.
+
+        Args:
+            beatmap_id (int): Attachment を取得する Beatmap ID.
+
+        Returns:
+            BeatmapFileAttachment | None: 現在の attachment.未登録時は None.
+        """
         ...
 
     async def attach_osu_file(self, attachment: BeatmapFileAttachment) -> BeatmapFileAttachment:
-        """Attach an osu file blob to a beatmap."""
+        """Osu file blob を Beatmap に関連付ける.
+
+        Args:
+            attachment (BeatmapFileAttachment): 保存する Beatmap と blob の関連付け.
+
+        Returns:
+            BeatmapFileAttachment: 永続化後の attachment.
+
+        Raises:
+            LookupError: attachment が参照する Beatmap が存在しない場合に送出する.
+        """
         ...
 
     async def get_fetch_state(self, target: BeatmapFetchTarget) -> BeatmapFetchRecord | None:
-        """Return fetch state for command-side concurrency checks."""
+        """Command-side concurrency check 用に fetch state を返す.
+
+        Args:
+            target (BeatmapFetchTarget): 状態を取得する fetch target.
+
+        Returns:
+            BeatmapFetchRecord | None: 現在の fetch state.未登録時は None.
+        """
         ...
 
     async def try_mark_fetch_pending(self, target: BeatmapFetchTarget, now: datetime) -> bool:
-        """Try to claim a fetch target for work."""
+        """Fetch target を work 用に claim する.
+
+        Args:
+            target (BeatmapFetchTarget): Claim を試行する fetch target.
+            now (datetime): Pending 状態を記録する現在日時.
+
+        Returns:
+            bool: Work を claim できた場合は True.既存状態により claim できない場合は False.
+        """
         ...
 
     async def mark_fetch_succeeded(self, target: BeatmapFetchTarget, now: datetime) -> None:
-        """Mark a fetch target as completed successfully."""
+        """Fetch target を成功完了として記録する.
+
+        Args:
+            target (BeatmapFetchTarget): 成功完了にする fetch target.
+            now (datetime): 成功日時.
+
+        Returns:
+            None: 成功状態が Unit of Work に反映されたことを示す.
+        """
         ...
 
     async def mark_fetch_failed(
         self, target: BeatmapFetchTarget, reason: str, now: datetime
     ) -> None:
-        """Mark a fetch target as failed."""
+        """Fetch target を失敗として記録する.
+
+        Args:
+            target (BeatmapFetchTarget): 失敗にする fetch target.
+            reason (str): Operator が確認できる失敗理由.
+            now (datetime): 失敗日時.
+
+        Returns:
+            None: 失敗状態が Unit of Work に反映されたことを示す.
+        """
         ...

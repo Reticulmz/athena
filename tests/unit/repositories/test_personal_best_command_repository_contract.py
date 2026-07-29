@@ -1,3 +1,5 @@
+"""PersonalBest command repositoryのupsert契約を検証するtests."""
+
 from datetime import UTC, datetime
 
 import pytest
@@ -15,6 +17,14 @@ from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactor
 
 @pytest.mark.asyncio
 async def test_personal_best_upsert_keeps_existing_score_on_tie_or_lower_value() -> None:
+    """同値または低いranking valueが既存PersonalBestを置換しないことを検証する.
+
+    同じscopeへ同順位の別scoreをupsertし,
+    最初に保存したscore IDがcurrent entryのまま残ることを確認する.
+
+    Returns:
+        None: tie時の既存entry保持を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = InMemoryUnitOfWorkFactory()
 
     async with factory() as uow:
@@ -38,6 +48,14 @@ async def test_personal_best_upsert_keeps_existing_score_on_tie_or_lower_value()
 
 @pytest.mark.asyncio
 async def test_personal_best_upsert_replaces_existing_score_on_higher_value() -> None:
+    """より高いranking valueが同じscopeのPersonalBestを置換することを検証する.
+
+    初期entryの後に高得点scoreをupsertし,
+    返却entryが新しいscore IDとranking valueを持つことを確認する.
+
+    Returns:
+        None: 高い値の置換結果を検証して完了し, 呼び出し側へ値を返さない.
+    """
     factory = InMemoryUnitOfWorkFactory()
 
     async with factory() as uow:
@@ -60,6 +78,11 @@ async def test_personal_best_upsert_replaces_existing_score_on_higher_value() ->
 
 
 def _scope() -> PersonalBestScope:
+    """fixture用のglobal PersonalBest scopeを構築する.
+
+    Returns:
+        PersonalBestScope: user, beatmap, ruleset, playstyle, categoryを固定した比較scope.
+    """
     return PersonalBestScope(
         user_id=1000,
         beatmap_id=1,
@@ -70,6 +93,15 @@ def _scope() -> PersonalBestScope:
 
 
 def _score(*, online_checksum: str, score: int) -> Score:
+    """PersonalBest比較用の保存前Score fixtureを構築する.
+
+    Args:
+        online_checksum (str): scoreを一意に識別するonline checksum.
+        score (int): PersonalBestのranking valueに対応する得点.
+
+    Returns:
+        Score: 指定したchecksumと得点を持つ保存前のscore.
+    """
     return Score(
         id=None,
         user_id=1000,

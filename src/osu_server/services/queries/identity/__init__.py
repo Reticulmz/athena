@@ -1,4 +1,8 @@
-"""Identity query use-case package."""
+"""Identity query use-caseのpublic boundaryを提供するpackage.
+
+認可, session, password, friend relationshipのread-only use-caseとquery modelをexportする.
+command workflowやconcrete adapterはこのpackageの責務に含めない.
+"""
 
 from osu_server.services.queries.identity.authorization import (
     ComputePermissionsQuery,

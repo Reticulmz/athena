@@ -1,0 +1,1 @@
+"""メッセージングinfrastructureのunit test packageです."""

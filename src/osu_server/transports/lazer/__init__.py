@@ -1,1 +1,1 @@
-"""Lazer transport family package."""
+"""Lazer client向けtransport familyを提供するpackage."""

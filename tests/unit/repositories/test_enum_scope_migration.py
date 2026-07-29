@@ -1,3 +1,5 @@
+"""Enum scope migrationの構造とcurrent metadata contractを検証する."""
+
 import ast
 from pathlib import Path
 from typing import cast
@@ -24,6 +26,17 @@ from osu_server.repositories.sqlalchemy.models import (
 
 
 def _find_repository_root(start: Path) -> Path:
+    """開始pathからrepository rootを探索する.
+
+    Args:
+        start (Path): repository内またはその子directoryであることを前提にした探索開始path.
+
+    Returns:
+        Path: pyproject.tomlとalembic.iniを含む最初の親directory.
+
+    Raises:
+        RuntimeError: startからrepository rootを見つけられない場合.
+    """
     for candidate in (start, *start.parents):
         if (candidate / "pyproject.toml").is_file() and (candidate / "alembic.ini").is_file():
             return candidate
@@ -47,6 +60,18 @@ ONLINE_INDEX_MIGRATION_PATH = Path(
 
 
 def _migration_tree(path: Path) -> ast.Module:
+    """Migration sourceをrepository相対path対応のASTへ解析する.
+
+    Args:
+        path (Path): absolute pathまたはrepository rootからのrelative migration path.
+
+    Returns:
+        ast.Module: migration source全体を表すPython AST module.
+
+    Raises:
+        OSError: pathに対応するmigration sourceを読み取れない場合.
+        SyntaxError: migration sourceをPython ASTとして解析できない場合.
+    """
     resolved_path = path if path.is_absolute() else _REPOSITORY_ROOT / path
     return ast.parse(
         resolved_path.read_text(encoding="utf-8"),
@@ -55,6 +80,18 @@ def _migration_tree(path: Path) -> ast.Module:
 
 
 def _top_level_function(tree: ast.Module, name: str) -> ast.FunctionDef:
+    """Migration ASTから指定名のtop-level functionを取得する.
+
+    Args:
+        tree (ast.Module): 検索対象のmigration AST.
+        name (str): top-levelに存在することを前提にしたfunction名.
+
+    Returns:
+        ast.FunctionDef: 指定名を持つtop-level function definition.
+
+    Raises:
+        AssertionError: treeのtop-levelにnameのfunctionが存在しない場合.
+    """
     function = next(
         (node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name),
         None,
@@ -66,6 +103,18 @@ def _top_level_function(tree: ast.Module, name: str) -> ast.FunctionDef:
 
 
 def _top_level_assignment_value(tree: ast.Module, name: str) -> ast.expr:
+    """Migration ASTから指定名のtop-level assignment値を取得する.
+
+    Args:
+        tree (ast.Module): 検索対象のmigration AST.
+        name (str): 値を持つtop-level assignmentとして存在することを前提にした名前.
+
+    Returns:
+        ast.expr: 指定assignmentの右辺を表すAST expression.
+
+    Raises:
+        AssertionError: treeのtop-levelにnameの値付きassignmentが存在しない場合.
+    """
     for node in tree.body:
         if (
             isinstance(node, ast.AnnAssign)
@@ -83,6 +132,14 @@ def _top_level_assignment_value(tree: ast.Module, name: str) -> ast.expr:
 
 
 def _top_level_assignment_names(tree: ast.Module) -> set[str]:
+    """Migration ASTのtop-level assignment名を収集する.
+
+    Args:
+        tree (ast.Module): top-level assignmentを調べるmigration AST.
+
+    Returns:
+        set[str]: annotation付きassignmentと通常assignmentに定義された名前の集合.
+    """
     names: set[str] = set()
     for node in tree.body:
         if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
@@ -93,6 +150,18 @@ def _top_level_assignment_names(tree: ast.Module) -> set[str]:
 
 
 def _string_assignment(tree: ast.Module, name: str) -> str:
+    """指定top-level assignmentが保持する文字列値を取得する.
+
+    Args:
+        tree (ast.Module): 値を調べるmigration AST.
+        name (str): 文字列constantを保持することを前提にしたassignment名.
+
+    Returns:
+        str: 指定assignmentに設定された文字列値.
+
+    Raises:
+        AssertionError: assignmentが存在しないか文字列constantでない場合.
+    """
     value = _top_level_assignment_value(tree, name)
     assert isinstance(value, ast.Constant)
     assert isinstance(value.value, str)
@@ -100,12 +169,32 @@ def _string_assignment(tree: ast.Module, name: str) -> str:
 
 
 def _assigned_call(tree: ast.Module, name: str) -> ast.Call:
+    """指定top-level assignmentが保持するcall expressionを取得する.
+
+    Args:
+        tree (ast.Module): 値を調べるmigration AST.
+        name (str): call expressionを保持することを前提にしたassignment名.
+
+    Returns:
+        ast.Call: 指定assignmentの右辺call expression.
+
+    Raises:
+        AssertionError: assignmentが存在しないかcall expressionでない場合.
+    """
     value = _top_level_assignment_value(tree, name)
     assert isinstance(value, ast.Call)
     return value
 
 
 def _qualified_name(node: ast.expr) -> str | None:
+    """NameまたはAttribute ASTをdot区切りのqualified nameへ変換する.
+
+    Args:
+        node (ast.expr): 名前解決対象のName, Attribute, またはCall AST expression.
+
+    Returns:
+        str | None: 解決できたqualified name. 対象外のexpressionではNone.
+    """
     if isinstance(node, ast.Name):
         return node.id
     if isinstance(node, ast.Call):
@@ -117,6 +206,14 @@ def _qualified_name(node: ast.expr) -> str | None:
 
 
 def _import_aliases(tree: ast.Module) -> dict[str, str]:
+    """Migration ASTのabsolute importをlocal alias対応表へ変換する.
+
+    Args:
+        tree (ast.Module): import statementを調べるmigration AST.
+
+    Returns:
+        dict[str, str]: local nameをcanonical absolute import名へ対応付けるmapping.
+    """
     aliases: dict[str, str] = {}
     for node in tree.body:
         if isinstance(node, ast.Import):
@@ -136,12 +233,30 @@ def _import_aliases(tree: ast.Module) -> dict[str, str]:
 
 
 def _resolved_name(name: str, aliases: dict[str, str]) -> str:
+    """Qualified nameの先頭segmentをimport aliasに基づいて解決する.
+
+    Args:
+        name (str): aliasを含む可能性があるdot区切りのqualified name.
+        aliases (dict[str, str]): local import nameからcanonical nameへのmapping.
+
+    Returns:
+        str: aliasesで置換済みのcanonical qualified name.
+    """
     root_name, separator, remainder = name.partition(".")
     resolved_root = aliases.get(root_name, root_name)
     return resolved_root if not separator else f"{resolved_root}.{remainder}"
 
 
 def _calls_named(node: ast.AST, name: str) -> tuple[ast.Call, ...]:
+    """AST subtreeから指定qualified nameを直接呼ぶcallを収集する.
+
+    Args:
+        node (ast.AST): callを探索するAST subtree.
+        name (str): alias解決前に一致させるqualified function名.
+
+    Returns:
+        tuple[ast.Call, ...]: function名がnameと一致するcallの順序付きtuple.
+    """
     return tuple(
         candidate
         for candidate in ast.walk(node)
@@ -154,6 +269,16 @@ def _calls_resolved_as(
     node: ast.AST,
     canonical_name: str,
 ) -> tuple[ast.Call, ...]:
+    """Import aliasを解決してcanonical API呼び出しをAST subtreeから収集する.
+
+    Args:
+        tree (ast.Module): import aliasを解決するmigration AST.
+        node (ast.AST): callを探索するAST subtree.
+        canonical_name (str): alias解決後に一致させる完全修飾API名.
+
+    Returns:
+        tuple[ast.Call, ...]: canonical_nameに解決されるcallの順序付きtuple.
+    """
     aliases = _import_aliases(tree)
     return tuple(
         candidate
@@ -165,6 +290,14 @@ def _calls_resolved_as(
 
 
 def _direct_call_names(function: ast.FunctionDef) -> tuple[str, ...]:
+    """Function body直下のexpression call名をsource順で取得する.
+
+    Args:
+        function (ast.FunctionDef): direct call statementを調べるfunction definition.
+
+    Returns:
+        tuple[str, ...]: direct expression callのqualified nameをsource順に並べたtuple.
+    """
     names: list[str] = []
     for statement in function.body:
         if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
@@ -176,6 +309,18 @@ def _direct_call_names(function: ast.FunctionDef) -> tuple[str, ...]:
 
 
 def _keyword_expression(call: ast.Call, name: str) -> ast.expr:
+    """Callから指定名のkeyword argument expressionを取得する.
+
+    Args:
+        call (ast.Call): keyword argumentを調べるcall expression.
+        name (str): 明示的に設定されていることを前提にしたkeyword名.
+
+    Returns:
+        ast.expr: 指定keywordに渡されたAST expression.
+
+    Raises:
+        AssertionError: callにnameのkeyword argumentが存在しない場合.
+    """
     value = next((keyword.value for keyword in call.keywords if keyword.arg == name), None)
     if value is None:
         msg = f"missing keyword {name} on {_qualified_name(call.func)}"
@@ -184,6 +329,18 @@ def _keyword_expression(call: ast.Call, name: str) -> ast.expr:
 
 
 def _boolean_keyword(call: ast.Call, name: str) -> bool:
+    """Callの指定keywordが保持するbool constantを取得する.
+
+    Args:
+        call (ast.Call): keyword argumentを調べるcall expression.
+        name (str): bool constantとして設定されていることを前提にしたkeyword名.
+
+    Returns:
+        bool: 指定keywordに設定されたbool値.
+
+    Raises:
+        AssertionError: keywordが存在しないかbool constantでない場合.
+    """
     value = _keyword_expression(call, name)
     assert isinstance(value, ast.Constant)
     assert isinstance(value.value, bool)
@@ -191,6 +348,18 @@ def _boolean_keyword(call: ast.Call, name: str) -> bool:
 
 
 def _string_keyword(call: ast.Call, name: str) -> str:
+    """Callの指定keywordが保持する文字列constantを取得する.
+
+    Args:
+        call (ast.Call): keyword argumentを調べるcall expression.
+        name (str): 文字列constantとして設定されていることを前提にしたkeyword名.
+
+    Returns:
+        str: 指定keywordに設定された文字列値.
+
+    Raises:
+        AssertionError: keywordが存在しないか文字列constantでない場合.
+    """
     value = _keyword_expression(call, name)
     assert isinstance(value, ast.Constant)
     assert isinstance(value.value, str)
@@ -198,6 +367,18 @@ def _string_keyword(call: ast.Call, name: str) -> str:
 
 
 def _string_sequence_argument(call: ast.Call, index: int) -> tuple[str, ...]:
+    """Callのpositional argumentから文字列sequenceを取得する.
+
+    Args:
+        call (ast.Call): positional argumentを調べるcall expression.
+        index (int): listまたはtupleの文字列sequenceを期待するargument index.
+
+    Returns:
+        tuple[str, ...]: argument内の文字列値をsource順に並べたtuple.
+
+    Raises:
+        AssertionError: indexのargumentが文字列だけのlistまたはtupleでない場合.
+    """
     value = call.args[index]
     assert isinstance(value, (ast.List, ast.Tuple))
     items: list[str] = []
@@ -209,6 +390,15 @@ def _string_sequence_argument(call: ast.Call, index: int) -> tuple[str, ...]:
 
 
 def _has_autocommit_block(tree: ast.Module, function: ast.FunctionDef) -> bool:
+    """Function内にAlembic autocommit blockが存在するか判定する.
+
+    Args:
+        tree (ast.Module): import aliasを解決するmigration AST.
+        function (ast.FunctionDef): autocommit blockを調べるfunction definition.
+
+    Returns:
+        bool: alembic.op.get_context.autocommit_blockを使用するwith blockがあればTrue.
+    """
     aliases = _import_aliases(tree)
     return any(
         isinstance(node, (ast.With, ast.AsyncWith))
@@ -226,6 +416,18 @@ def _assert_index_operations_are_concurrent(
     tree: ast.Module,
     function: ast.FunctionDef,
 ) -> None:
+    """Index createとdrop operationがconcurrent指定を持つことを検証する.
+
+    Args:
+        tree (ast.Module): import aliasを解決するmigration AST.
+        function (ast.FunctionDef): index operationを含むことを前提にしたfunction definition.
+
+    Returns:
+        None: 全index operationのconcurrent指定を検証して完了する.
+
+    Raises:
+        AssertionError: index operationがないかpostgresql_concurrentlyがFalseの場合.
+    """
     index_calls = (
         *_calls_resolved_as(tree, function, "alembic.op.create_index"),
         *_calls_resolved_as(tree, function, "alembic.op.drop_index"),
@@ -235,11 +437,34 @@ def _assert_index_operations_are_concurrent(
 
 
 def _assert_no_calls(tree: ast.Module, *canonical_names: str) -> None:
+    """Migration ASTに禁止されたcanonical API呼び出しがないことを検証する.
+
+    Args:
+        tree (ast.Module): callを探索するmigration AST.
+        canonical_names (str): alias解決後に存在してはならないAPIの完全修飾名.
+
+    Returns:
+        None: 全canonical APIが不在であることを検証して完了する.
+
+    Raises:
+        AssertionError: canonical_namesのいずれかに解決されるcallが存在する場合.
+    """
     for canonical_name in canonical_names:
         assert _calls_resolved_as(tree, tree, canonical_name) == ()
 
 
 def _assert_check_constraints_are_structural(tree: ast.Module) -> None:
+    """Migration ASTのCHECK constraintがstructural SQLAlchemy expressionを使うことを検証する.
+
+    Args:
+        tree (ast.Module): CHECK constraint callを探索するmigration AST.
+
+    Returns:
+        None: string literal predicateを使うCHECK constraintがないことを検証して完了する.
+
+    Raises:
+        AssertionError: CHECK constraintのpredicateがraw string literalの場合.
+    """
     for call in _calls_resolved_as(tree, tree, "sqlalchemy.CheckConstraint"):
         assert call.args
         predicate = call.args[0]
@@ -250,7 +475,7 @@ def test_migration_tree_resolves_relative_path_from_repository_root(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """migration pathがpytest起動時のCWDに依存しないことを検証する.
+    """Repository rootからrelative migration pathを解決するcontractを検証する.
 
     Args:
         monkeypatch (pytest.MonkeyPatch): test processのCWDを一時変更するfixture.
@@ -322,10 +547,34 @@ def test_banned_call_detection_resolves_import_aliases(
 
 
 def _column(table: Table, name: str) -> Column[object]:
+    """Tableから指定名のcolumnをtyped Columnとして取得する.
+
+    Args:
+        table (Table): columnを所有するSQLAlchemy table metadata.
+        name (str): 存在することを前提に取得するcolumn名.
+
+    Returns:
+        Column[object]: 指定名に対応するtyped column.
+
+    Raises:
+        KeyError: tableにnameのcolumnが存在しない場合.
+    """
     return cast("Column[object]", table.c[name])
 
 
 def _enum_type(table: Table, column_name: str) -> SQLAlchemyEnum:
+    """Table columnからCHECK付きSQLAlchemy Enum型を取得する.
+
+    Args:
+        table (Table): enum columnを所有するSQLAlchemy table metadata.
+        column_name (str): SQLAlchemy Enum型であることを前提にしたcolumn名.
+
+    Returns:
+        SQLAlchemyEnum: 指定columnに設定されたSQLAlchemy Enum型.
+
+    Raises:
+        AssertionError: column_nameの型がSQLAlchemy Enumでない場合.
+    """
     enum_type = _column(table, column_name).type
     assert isinstance(enum_type, SQLAlchemyEnum)
     return enum_type
@@ -337,6 +586,21 @@ def _assert_checked_string_enum(
     constraint_name: str,
     length: int,
 ) -> None:
+    """ColumnがCHECK付きnon-native string Enum contractを満たすことを検証する.
+
+    Args:
+        table (Table): enum columnとCHECK constraintを所有するtable metadata.
+        column_name (str): 検証対象のenum column名.
+        constraint_name (str): enumのconstraint名とCHECK constraint名.
+        length (int): enum文字列の宣言済み最大長.
+
+    Returns:
+        None: enum storage設定と対応するCHECK constraintを検証して完了する.
+
+    Raises:
+        AssertionError: native enum, constraint設定, name, length, またはCHECK constraintが
+            contractと一致しない場合.
+    """
     enum_type = _enum_type(table, column_name)
     assert cast("bool", enum_type.native_enum) is False
     assert cast("bool", enum_type.create_constraint) is True
@@ -623,7 +887,7 @@ def test_current_models_use_checked_string_enums_for_closed_value_columns() -> N
         None: 全対象カラムの型と制約を検証したことを示す.
 
     Raises:
-        AssertionError: native Enum、CHECK未作成、または制約名不一致の場合.
+        AssertionError: native Enum, CHECK未作成, または制約名不一致の場合.
     """
     cases = (
         (ChannelModel.__table__, "channel_type", "ck_channels_channel_type_known", 16),
@@ -750,6 +1014,14 @@ def test_current_models_use_checked_string_enums_for_closed_value_columns() -> N
 
 
 def test_current_leaderboard_projection_is_mod_scoped_and_score_unique() -> None:
+    """Current leaderboard projectionがmod scopeとscore uniquenessを保持することを検証する.
+
+    現行projection tableを条件に, legacy mod_filter_keyがなく, non-null mods scopeとscope unique
+    key, score ID unique keyがobservable metadataとして一致することを確認する.
+
+    Returns:
+        None: mod-scoped leaderboard projection metadata contractを検証して完了する.
+    """
     table = cast("Table", BeatmapLeaderboardUserBestModel.__table__)
     unique_constraints = {
         constraint.name: constraint

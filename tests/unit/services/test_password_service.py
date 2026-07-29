@@ -1,3 +1,9 @@
+"""PasswordServiceのpassword hash,照合,禁止判定の契約を検証するmodule.
+
+stable client互換のMD5 credentialとargon2id hash,HIBPおよびcustom禁止listの
+observable outcomeを対象にする.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -9,19 +15,35 @@ from tests.support import FakeHIBPClient
 
 
 class TestHash:
+    """PasswordService.hashのargon2id hash生成契約を検証する."""
+
     async def test_returns_argon2id_hash(self) -> None:
+        """hashがargon2id形式の保存文字列を返す契約を検証する.
+
+        Returns:
+            None: 生成されたhash形式を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService()
         hashed = await svc.hash("some_password")
         assert hashed.startswith("$argon2id$")
 
     async def test_different_inputs_produce_different_hashes(self) -> None:
+        """異なるpassword入力が異なるhash文字列になる契約を検証する.
+
+        Returns:
+            None: 異なる入力のhash結果を比較して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService()
         h1 = await svc.hash("password_a")
         h2 = await svc.hash("password_b")
         assert h1 != h2
 
     async def test_same_input_produces_different_hashes(self) -> None:
-        """argon2 uses random salt, so hashing the same input twice yields different strings."""
+        """同じpassword入力でもsaltによりhashが変わる契約を検証する.
+
+        Returns:
+            None: 同一入力の2回のhash結果を比較して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService()
         h1 = await svc.hash("same_password")
         h2 = await svc.hash("same_password")
@@ -29,26 +51,49 @@ class TestHash:
 
 
 class TestVerify:
+    """PasswordService.verifyのcredential照合契約を検証する."""
+
     async def test_roundtrip_success(self) -> None:
+        """hash直後の正しいcredentialを照合できる契約を検証する.
+
+        Returns:
+            None: 成功した照合結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService()
         password = "correct_password"
         hashed = await svc.hash(password)
         assert await svc.verify(hashed, password) is True
 
     async def test_mismatch_returns_false(self) -> None:
+        """異なるcredentialを照合した場合にFalseとなる契約を検証する.
+
+        Returns:
+            None: 不一致時の照合結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService()
         hashed = await svc.hash("correct_password")
         assert await svc.verify(hashed, "wrong_password") is False
 
     async def test_empty_password_mismatch(self) -> None:
+        """空文字列credentialが保存済みhashと一致しない契約を検証する.
+
+        Returns:
+            None: 空文字列の照合結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService()
         hashed = await svc.hash("non_empty")
         assert await svc.verify(hashed, "") is False
 
 
 class TestPreparePassword:
+    """PasswordService.prepare_passwordのstable互換保存契約を検証する."""
+
     def test_legacy_plaintext_md5_matches_stable_client_hash(self) -> None:
-        """legacy_plaintext_md5 は stable client 互換の lowercase MD5 hex を返す。"""
+        """平文passwordのMD5がstable client互換のlowercase hexとなる契約を検証する.
+
+        Returns:
+            None: stable clientと同じMD5 hexを検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService()
         plain = "my_secure_password"
 
@@ -58,7 +103,11 @@ class TestPreparePassword:
         )
 
     async def test_prepare_password_roundtrip(self) -> None:
-        """prepare_password(plain) produces a hash verifiable with md5(plain)."""
+        """prepare_passwordの結果を平文passwordのMD5で照合できる契約を検証する.
+
+        Returns:
+            None: stable互換credentialによる照合成功を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService()
         plain = "my_secure_password"
         stored_hash = await svc.prepare_password(plain)
@@ -67,12 +116,21 @@ class TestPreparePassword:
         assert await svc.verify(stored_hash, md5_of_plain) is True
 
     async def test_prepare_password_returns_argon2id(self) -> None:
+        """prepare_passwordがargon2id形式の保存hashを返す契約を検証する.
+
+        Returns:
+            None: 保存hashの形式を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService()
         stored_hash = await svc.prepare_password("test_password")
         assert stored_hash.startswith("$argon2id$")
 
     async def test_prepare_password_wrong_plain_fails(self) -> None:
-        """Verifying with md5 of a different plaintext must fail."""
+        """別の平文passwordのMD5では照合に失敗する契約を検証する.
+
+        Returns:
+            None: 異なる平文由来credentialの拒否を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService()
         stored_hash = await svc.prepare_password("original_password")
 
@@ -80,8 +138,10 @@ class TestPreparePassword:
         assert await svc.verify(stored_hash, wrong_md5) is False
 
     async def test_prepare_password_simulates_login_flow(self) -> None:
-        """Registration: prepare_password(plain) → store hash.
-        Login: client sends md5(plain), server calls verify(hash, client_md5).
+        """登録時の保存hashをlogin時のMD5 credentialで照合できる契約を検証する.
+
+        Returns:
+            None: 登録からloginまでの互換照合結果を検証して完了し,呼び出し側へ値を返さない.
         """
         svc = PasswordService()
         plain = "hunter2"
@@ -94,7 +154,11 @@ class TestPreparePassword:
         assert await svc.verify(stored_hash, client_md5) is True
 
     async def test_prepare_password_accepts_uppercase_client_md5(self) -> None:
-        """Stable auth の password MD5 hex は大小文字差を認証差にしない."""
+        """Stable authのpassword MD5 hexが大文字でも照合できる契約を検証する.
+
+        Returns:
+            None: 大文字MD5 credentialの照合成功を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService()
         plain = "SecurePass1234"
         stored_hash = await svc.prepare_password(plain)
@@ -105,10 +169,14 @@ class TestPreparePassword:
 
 
 class TestCheckHibp:
-    """PasswordService.check_hibp のテスト。"""
+    """PasswordService.check_hibpのHIBP照会契約を検証する."""
 
     async def test_returns_true_when_compromised(self) -> None:
-        """HIBPClient が漏洩判定した場合 True を返す。"""
+        """HIBPが漏洩済みと判定したpasswordを禁止扱いにする契約を検証する.
+
+        Returns:
+            None: 漏洩passwordのTrue結果と照会記録を検証して完了し,呼び出し側へ値を返さない.
+        """
         hibp = FakeHIBPClient(compromised_passwords={"leaked_password"})
         svc = PasswordService(hibp_client=hibp, banned_passwords=[])
 
@@ -118,7 +186,11 @@ class TestCheckHibp:
         assert "leaked_password" in hibp.calls
 
     async def test_returns_false_when_safe(self) -> None:
-        """HIBPClient が安全判定した場合 False を返す。"""
+        """HIBPが安全と判定したpasswordを禁止扱いにしない契約を検証する.
+
+        Returns:
+            None: 安全passwordのFalse結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         hibp = FakeHIBPClient()
         svc = PasswordService(hibp_client=hibp, banned_passwords=[])
 
@@ -127,7 +199,11 @@ class TestCheckHibp:
         assert result is False
 
     async def test_returns_false_when_hibp_client_is_none(self) -> None:
-        """HIBPClient が None の場合 False を返す(HIBP 無効環境)。"""
+        """HIBP client未設定時にnetwork照会せずFalseを返す契約を検証する.
+
+        Returns:
+            None: HIBP無効時のFalse結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService(hibp_client=None, banned_passwords=[])
 
         result = await svc.check_hibp("any_password")
@@ -136,30 +212,46 @@ class TestCheckHibp:
 
 
 class TestIsPasswordBanned:
-    """PasswordService.is_password_banned のテスト。"""
+    """PasswordService.is_password_bannedの統合禁止判定契約を検証する."""
 
     async def test_banned_by_custom_list(self) -> None:
-        """カスタム禁止リストに含まれるパスワードは True を返す。"""
+        """custom禁止listに含まれるpasswordを禁止と判定する契約を検証する.
+
+        Returns:
+            None: custom禁止listの一致結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService(hibp_client=None, banned_passwords=["forbidden", "secret123"])
 
         assert await svc.is_password_banned("forbidden") is True
         assert await svc.is_password_banned("secret123") is True
 
     async def test_custom_list_case_insensitive(self) -> None:
-        """カスタム禁止リストの照合は大文字小文字を区別しない。"""
+        """custom禁止listの照合が大文字小文字を区別しない契約を検証する.
+
+        Returns:
+            None: 大文字小文字の異なる入力の禁止結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService(hibp_client=None, banned_passwords=["Forbidden"])
 
         assert await svc.is_password_banned("forbidden") is True
         assert await svc.is_password_banned("FORBIDDEN") is True
 
     async def test_not_in_custom_list_and_no_hibp(self) -> None:
-        """禁止リストに無く、HIBP も None の場合は False。"""
+        """custom禁止list非一致かつHIBP未設定ならFalseとなる契約を検証する.
+
+        Returns:
+            None: 禁止根拠がないpasswordのFalse結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService(hibp_client=None, banned_passwords=["other"])
 
         assert await svc.is_password_banned("safe_password") is False
 
     async def test_banned_by_hibp(self) -> None:
-        """カスタムリストに無いが HIBP で漏洩判定された場合は True。"""
+        """custom禁止list非一致でもHIBP漏洩判定ならTrueとなる契約を検証する.
+
+        Returns:
+            None: HIBP由来の禁止結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         hibp = FakeHIBPClient(compromised_passwords={"leaked_password"})
         svc = PasswordService(hibp_client=hibp, banned_passwords=[])
 
@@ -168,7 +260,11 @@ class TestIsPasswordBanned:
         assert result is True
 
     async def test_custom_list_checked_before_hibp(self) -> None:
-        """カスタムリストを先にチェックし、一致すれば HIBP は呼ばない。"""
+        """custom禁止list一致時にHIBP照会を省略する順序契約を検証する.
+
+        Returns:
+            None: custom一致時の照会回数と禁止結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         hibp = FakeHIBPClient()
         svc = PasswordService(hibp_client=hibp, banned_passwords=["banned_pass"])
 
@@ -178,7 +274,11 @@ class TestIsPasswordBanned:
         assert len(hibp.calls) == 0
 
     async def test_hibp_fallback_on_api_unreachable(self) -> None:
-        """HIBP が False を返す(API 不達フォールバック)場合、カスタムリストのみで判定。"""
+        """HIBPが安全結果を返す場合にcustom禁止listだけで判定する契約を検証する.
+
+        Returns:
+            None: HIBP fallback時の安全と禁止の両結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         hibp = FakeHIBPClient()
         svc = PasswordService(hibp_client=hibp, banned_passwords=["banned_one"])
 
@@ -188,7 +288,11 @@ class TestIsPasswordBanned:
         assert await svc.is_password_banned("banned_one") is True
 
     async def test_safe_password_with_both_checks(self) -> None:
-        """両方のチェックをパスした場合のみ False。"""
+        """custom禁止listとHIBPの両方を通過したpasswordがFalseとなる契約を検証する.
+
+        Returns:
+            None: 両方の検査を通過した結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         hibp = FakeHIBPClient()
         svc = PasswordService(hibp_client=hibp, banned_passwords=["other"])
 
@@ -198,30 +302,47 @@ class TestIsPasswordBanned:
 
 
 class TestPasswordServiceBackwardCompatibility:
-    """既存コンストラクタとの後方互換性テスト。"""
+    """PasswordServiceの既存constructor互換性を検証する."""
 
     async def test_default_constructor_still_works(self) -> None:
-        """引数なしコンストラクタで既存動作が維持される。"""
+        """引数なしconstructorでもhash機能を利用できる契約を検証する.
+
+        Returns:
+            None: default構築後のhash形式を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService()
         hashed = await svc.hash("test")
         assert hashed.startswith("$argon2id$")
 
     async def test_check_hibp_returns_false_with_defaults(self) -> None:
-        """デフォルト構築時、check_hibp は常に False。"""
+        """default構築時にcheck_hibpがFalseを返す契約を検証する.
+
+        Returns:
+            None: HIBP未設定のdefault結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService()
         assert await svc.check_hibp("anything") is False
 
     async def test_is_password_banned_returns_false_with_defaults(self) -> None:
-        """デフォルト構築時、is_password_banned は常に False。"""
+        """default構築時にis_password_bannedがFalseを返す契約を検証する.
+
+        Returns:
+            None: 禁止設定がないdefault結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService()
         assert await svc.is_password_banned("anything") is False
 
 
 class TestPasswordVerificationFailedLog:
-    """verify() 失敗時の password_verification_failed ログイベント検証。"""
+    """verify失敗時のpassword_verification_failed log契約を検証する."""
 
     async def test_mismatch_emits_log(self) -> None:
-        """パスワード不一致時に password_verification_failed イベントが出力される。"""
+        """credential不一致時にwarning logが一度出力される契約を検証する.
+
+        Returns:
+            None: 不一致結果とpassword_verification_failed logを検証して完了する.
+                呼び出し側へ値を返さない.
+        """
         svc = PasswordService()
         hashed = await svc.hash("correct_password")
         with capture_logs() as cap_logs:
@@ -233,7 +354,11 @@ class TestPasswordVerificationFailedLog:
         assert events[0]["log_level"] == "warning"
 
     async def test_success_does_not_emit_log(self) -> None:
-        """パスワード一致時に password_verification_failed イベントは出力されない。"""
+        """credential一致時に失敗logを出力しない契約を検証する.
+
+        Returns:
+            None: 成功結果と失敗log不在を検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService()
         password = "correct_password"
         hashed = await svc.hash(password)
@@ -245,10 +370,14 @@ class TestPasswordVerificationFailedLog:
 
 
 class TestPasswordBannedLog:
-    """is_password_banned() の password_banned ログイベント検証。"""
+    """is_password_banned時のpassword_banned log契約を検証する."""
 
     async def test_custom_list_emits_log_with_source(self) -> None:
-        """カスタム禁止リスト一致時に source=custom_list でログが出力される。"""
+        """custom禁止list一致時にcustom_list sourceのwarning logを出す契約を検証する.
+
+        Returns:
+            None: custom禁止結果とlog sourceを検証して完了し,呼び出し側へ値を返さない.
+        """
         svc = PasswordService(hibp_client=None, banned_passwords=["forbidden"])
         with capture_logs() as cap_logs:
             result = await svc.is_password_banned("forbidden")
@@ -259,7 +388,11 @@ class TestPasswordBannedLog:
         assert events[0]["log_level"] == "warning"
 
     async def test_hibp_emits_log_with_source(self) -> None:
-        """HIBP 漏洩判定時に source=hibp でログが出力される。"""
+        """HIBP漏洩判定時にhibp sourceのwarning logを出す契約を検証する.
+
+        Returns:
+            None: HIBP禁止結果とlog sourceを検証して完了し,呼び出し側へ値を返さない.
+        """
         hibp = FakeHIBPClient(compromised_passwords={"leaked_password"})
         svc = PasswordService(hibp_client=hibp, banned_passwords=[])
         with capture_logs() as cap_logs:
@@ -271,7 +404,11 @@ class TestPasswordBannedLog:
         assert events[0]["log_level"] == "warning"
 
     async def test_safe_password_does_not_emit_log(self) -> None:
-        """安全なパスワードでは password_banned イベントは出力されない。"""
+        """安全なpasswordではpassword_banned logを出力しない契約を検証する.
+
+        Returns:
+            None: 安全結果と禁止log不在を検証して完了し,呼び出し側へ値を返さない.
+        """
         hibp = FakeHIBPClient()
         svc = PasswordService(hibp_client=hibp, banned_passwords=["other"])
         with capture_logs() as cap_logs:
@@ -281,7 +418,11 @@ class TestPasswordBannedLog:
         assert len(events) == 0
 
     async def test_custom_list_hit_does_not_call_hibp(self) -> None:
-        """カスタムリスト一致時は HIBP を呼ばず custom_list のみログ出力される。"""
+        """custom禁止list一致時にHIBPを呼ばずcustom_list logだけを出す契約を検証する.
+
+        Returns:
+            None: HIBP照会不在とcustom_list logを検証して完了し,呼び出し側へ値を返さない.
+        """
         hibp = FakeHIBPClient()
         svc = PasswordService(hibp_client=hibp, banned_passwords=["banned_pass"])
         with capture_logs() as cap_logs:

@@ -1,4 +1,7 @@
-"""HTTP request logging middleware."""
+"""HTTP request loggingとSQL query diagnosticsのmiddlewareを提供する.
+
+requestごとのdiagnostic scopeとstructured logをapplication middleware chainへ追加する.
+"""
 
 from __future__ import annotations
 
@@ -24,15 +27,27 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger()  # pyright: ignore
 
 
 class _ConfigState(Protocol):
+    """middlewareが要求するconfiguration stateを表す.
+
+    Attributes:
+        config (object): application lifespanが設定するruntime configuration候補.
+    """
+
     config: object
 
 
 class _ConfigApp(Protocol):
+    """middlewareが要求するapplication interfaceを表す.
+
+    Attributes:
+        state (_ConfigState): runtime configurationを保持するapplication state.
+    """
+
     state: _ConfigState
 
 
 class SQLQueryDiagnosticsMiddleware(BaseHTTPMiddleware):
-    """HTTP request ごとに SQL query diagnostics scope を開く middleware."""
+    """HTTP requestごとにSQL query diagnostics scopeを開くmiddlewareを表す."""
 
     @override
     async def dispatch(
@@ -40,14 +55,14 @@ class SQLQueryDiagnosticsMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: RequestResponseEndpoint,
     ) -> Response:
-        """Development runtime で SQL query diagnostics warning を出す.
+        """開発runtimeでSQL query diagnostics warningを出す.
 
         Args:
-            request: Starlette request.
-            call_next: 次の middleware または endpoint を呼び出す callable.
+            request (Request): 診断scope名とruntime configurationを取得するStarlette request.
+            call_next (RequestResponseEndpoint): 次のmiddlewareまたはendpointを呼び出すcallable.
 
         Returns:
-            後続処理が返した response.
+            Response: 後続処理が返したresponse.
         """
         config = _get_request_config(request)
         if config is None or not config.query_diagnostics_effective_enabled:
@@ -69,11 +84,10 @@ class SQLQueryDiagnosticsMiddleware(BaseHTTPMiddleware):
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Log every HTTP request with method, path, status, and duration.
+    """HTTP requestのmethod,path,status,durationをstructured logへ記録する.
 
-    Clears ``structlog.contextvars`` at the start of each request so that
-    context bound during one request (e.g. ``user``, ``user_id``) does not
-    leak into subsequent requests.
+    各requestの開始時に`structlog.contextvars`をclearし,前requestでbindしたuser contextが
+    次requestへ漏れないようにする.
     """
 
     async def dispatch(  # pyright: ignore[reportImplicitOverride]
@@ -81,10 +95,14 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: RequestResponseEndpoint,
     ) -> Response:
-        """Record an ``http_request`` event after the response is produced.
+        """response生成後に`http_request` eventを記録する.
 
-        Uses ``try/finally`` so that unhandled exceptions are still logged
-        (with ``status=500``) before propagating.
+        Args:
+            request (Request): logにhost,method,pathを記録するStarlette request.
+            call_next (RequestResponseEndpoint): 次のmiddlewareまたはendpointを呼び出すcallable.
+
+        Returns:
+            Response: 後続処理が返したresponse.
         """
         structlog.contextvars.clear_contextvars()
 
@@ -111,6 +129,14 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 def _get_request_config(request: Request) -> AppConfig | None:
+    """アプリケーションstateから有効なAppConfigだけを取り出す.
+
+    Args:
+        request (Request): application stateを持つStarlette request.
+
+    Returns:
+        AppConfig | None: stateにAppConfigが設定済みならその値. state未設定または別型ならNone.
+    """
     try:
         config = cast("_ConfigApp", request.app).state.config
     except AttributeError:

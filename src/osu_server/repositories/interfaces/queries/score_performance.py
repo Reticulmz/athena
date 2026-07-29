@@ -1,4 +1,4 @@
-"""Query-side score performance repository contract."""
+"""Current performance と recalculation candidate 用 read-only repository contract を定義する."""
 
 from __future__ import annotations
 
@@ -18,7 +18,21 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class ScorePerformanceCandidateSelection:
-    """Read-side filters for PP recalculation candidate dry-run."""
+    """PP recalculation candidate dry-run の read-side filter を表す.
+
+    Attributes:
+        target_calculator_name (str): 対象 performance calculator の name.
+        target_calculator_version (str): 対象 performance calculator の version.
+        target_formula_profile (FormulaProfile): 対象 calculation の formula profile.
+        score_id (int | None): 一つの Score に絞る filter. 未指定時は `None`.
+        beatmap_id (int | None): 一つの Beatmap に絞る filter. 未指定時は `None`.
+        user_id (int | None): 一人の User に絞る filter. 未指定時は `None`.
+        ruleset (Ruleset | None): Ruleset に絞る filter. 未指定時は `None`.
+        limit (int | None): Candidate の最大数. 未指定時は `None`.
+        include_unavailable (bool): Unavailable calculation を candidate に含めるかを表す flag.
+        target_beatmap_file_attachment_id (int | None): Target file attachment ID filter.
+        target_beatmap_file_checksum_md5 (str | None): Target file MD5 checksum filter.
+    """
 
     target_calculator_name: str
     target_calculator_version: str
@@ -35,7 +49,13 @@ class ScorePerformanceCandidateSelection:
 
 @dataclass(frozen=True, slots=True)
 class ScorePerformanceRecalculationCandidate:
-    """One score selected for recalculation."""
+    """Recalculation 対象として選ばれた一つの Score を表す.
+
+    Attributes:
+        score_id (int): Recalculation 対象 Score ID.
+        reason (RecalculationCandidateReason): Candidate に選ばれた理由.
+        current_calculation_id (int | None): 現在の calculation ID. 未作成時は `None`.
+    """
 
     score_id: int
     reason: RecalculationCandidateReason
@@ -44,28 +64,62 @@ class ScorePerformanceRecalculationCandidate:
 
 @dataclass(frozen=True, slots=True)
 class ScorePerformanceRecalculationCandidateResult:
-    """Dry-run candidate selection result."""
+    """Recalculation candidate dry-run の選択結果を表す.
+
+    Attributes:
+        candidates (tuple[ScorePerformanceRecalculationCandidate, ...]): 選択された candidate.
+        reason_counts (Mapping[RecalculationCandidateReason, int]): Reason ごとの candidate 数.
+    """
 
     candidates: tuple[ScorePerformanceRecalculationCandidate, ...]
     reason_counts: Mapping[RecalculationCandidateReason, int]
 
     @property
     def candidate_count(self) -> int:
+        """選択された recalculation candidate の件数を返す.
+
+        Returns:
+            int: `candidates` に含まれる candidate 数.
+        """
         return len(self.candidates)
 
 
 class ScorePerformanceQueryRepository(Protocol):
-    """Read-only port for current PP and recalculation candidate selection."""
+    """Current PP と recalculation candidate selection 用 read-only port を定義する.
+
+    Notes:
+        この Protocol は current calculation と dry-run candidate projection を返すだけである.
+        Calculation state や work item を変更せず Command Unit of Work を開始または
+        commit/rollback しない.
+    """
 
     async def get_current_for_score(self, score_id: int) -> PerformanceCalculation | None:
-        """Return only the current Performance Calculation for a score."""
+        """Score の current PerformanceCalculation だけを返す.
+
+        Args:
+            score_id (int): Current calculation を取得する Score ID.
+
+        Returns:
+            PerformanceCalculation | None: Current calculation. 未作成の場合は `None`.
+        """
         ...
 
     async def select_recalculation_candidates(
         self,
         selection: ScorePerformanceCandidateSelection,
     ) -> ScorePerformanceRecalculationCandidateResult:
-        """Return recalculation candidates and dry-run reason counts."""
+        """Recalculation candidate と dry-run reason count を返す.
+
+        Args:
+            selection (ScorePerformanceCandidateSelection): Target calculation と filter を表す
+                選択条件.
+
+        Returns:
+            ScorePerformanceRecalculationCandidateResult: Candidate と reason ごとの件数.
+
+        Notes:
+            この dry-run read は recalculation batch や work item を作成しない.
+        """
         ...
 
 

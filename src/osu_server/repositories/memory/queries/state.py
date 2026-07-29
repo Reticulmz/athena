@@ -1,4 +1,4 @@
-"""In-memory query repository state snapshot provider."""
+"""Query repository 用の in-memory state snapshot provider を提供する."""
 
 from __future__ import annotations
 
@@ -11,37 +11,29 @@ if TYPE_CHECKING:
 class InMemoryQueryStateSnapshotProvider:
     """Query repository 向けに committed in-memory state snapshot を返す.
 
-    引数:
-        state: In-memory repository family が共有する committed state.
+    Attributes:
+        _state (InMemoryCommandRepositoryState): repository family が共有する committed state.
 
-    戻り値:
-        Class のため戻り値はない.
-
-    例外:
-        なし.
-
-    制約:
-        Command Unit of Work factory には依存しない. 呼び出しごとに clone を返し,
-        query repository が mutable committed state を直接変更できないようにする.
+    Notes:
+        Command Unit of Work factory には依存しない. 各 snapshot 呼び出しで clone を返し,
+        query repository が committed state の container を直接変更しないようにする.
     """
 
     def __init__(self, state: InMemoryCommandRepositoryState) -> None:
+        """共有する committed state を snapshot source として保持する.
+
+        Args:
+            state (InMemoryCommandRepositoryState): query repository family が読む committed state.
+        """
         self._state: InMemoryCommandRepositoryState = state
 
     def snapshot(self) -> InMemoryCommandRepositoryState:
-        """Committed in-memory state の read snapshot を返す.
+        """Committed in-memory state の read snapshot を clone して返す.
 
-        引数:
-            なし.
+        Returns:
+            InMemoryCommandRepositoryState: committed state から clone した snapshot.
 
-        戻り値:
-            Committed state から複製した snapshot.
-
-        例外:
-            なし.
-
-        制約:
-            返した snapshot の変更は committed state に反映されない.
+        Notes:
+            返した snapshot への変更は provider の committed state に反映されない.
         """
-
         return self._state.clone()

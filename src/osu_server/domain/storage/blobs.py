@@ -1,3 +1,5 @@
+"""Content-addressed blob metadataと保存結果を定義するstorage domain module."""
+
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -7,7 +9,7 @@ SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 
 
 class InvalidBlobError(ValueError):
-    """Raised when blob metadata violates domain invariants."""
+    """Blob metadataがdomain不変条件に反する場合に送出するerror."""
 
 
 class BlobStorageBackendKind(StrEnum):
@@ -18,7 +20,7 @@ class BlobStorageBackendKind(StrEnum):
         S3 (str): S3互換object storage backendの永続化値.
 
     Notes:
-        Domain内ではEnum memberを使い、設定/DB境界だけで文字列値へ変換する.
+        Domain内ではEnum memberを使い,設定/DB境界だけで文字列値へ変換する.
     """
 
     LOCAL = "local"
@@ -39,7 +41,9 @@ class Blob:
         created_at (datetime): metadataを永続化した日時.
 
     Notes:
-        sha256は64文字の小文字16進数、byte_sizeは0以上、文字列値は空を許可しない.
+        sha256はSHA256_PATTERN.fullmatch()で64文字すべてが小文字16進数であることを検証する.
+        末尾改行など,64文字を超える値は受け入れない.
+        byte_sizeは0以上,文字列値は空を許可しない.
     """
 
     id: int
@@ -51,13 +55,22 @@ class Blob:
     created_at: datetime
 
     def __post_init__(self) -> None:
+        """永続化済みblob metadataの不変条件を検証する.
+
+        Returns:
+            None: 各fieldを検証して完了する.
+
+        Raises:
+            InvalidBlobError: 空の文字列,負のbyte_size,無効なSHA-256,未知のbackendを
+                受け取った場合.
+        """
         if not self.content_type:
             raise InvalidBlobError("content_type must not be empty")
 
         if self.byte_size < 0:
             raise InvalidBlobError("byte_size must be non-negative")
 
-        if not SHA256_PATTERN.match(self.sha256):
+        if not SHA256_PATTERN.fullmatch(self.sha256):
             raise InvalidBlobError("sha256 must be a 64-character lowercase hexadecimal string")
 
         _validate_storage_backend(self.storage_backend)
@@ -78,7 +91,9 @@ class NewBlob:
         storage_key (str): backend内でblob本体を識別するkey.
 
     Notes:
-        sha256は64文字の小文字16進数、byte_sizeは0以上、文字列値は空を許可しない.
+        sha256はSHA256_PATTERN.fullmatch()で64文字すべてが小文字16進数であることを検証する.
+        末尾改行など,64文字を超える値は受け入れない.
+        byte_sizeは0以上,文字列値は空を許可しない.
     """
 
     sha256: str
@@ -88,13 +103,22 @@ class NewBlob:
     storage_key: str
 
     def __post_init__(self) -> None:
+        """新規blob metadataの不変条件を検証する.
+
+        Returns:
+            None: 各fieldを検証して完了する.
+
+        Raises:
+            InvalidBlobError: 空の文字列,負のbyte_size,無効なSHA-256,未知のbackendを
+                受け取った場合.
+        """
         if not self.content_type:
             raise InvalidBlobError("content_type must not be empty")
 
         if self.byte_size < 0:
             raise InvalidBlobError("byte_size must be non-negative")
 
-        if not SHA256_PATTERN.match(self.sha256):
+        if not SHA256_PATTERN.fullmatch(self.sha256):
             raise InvalidBlobError("sha256 must be a 64-character lowercase hexadecimal string")
 
         _validate_storage_backend(self.storage_backend)
@@ -105,14 +129,22 @@ class NewBlob:
 
 @dataclass(frozen=True, slots=True)
 class BlobStored:
-    """Result for newly persisted blob content."""
+    """新規blob contentを永続化した結果を表す.
+
+    Attributes:
+        blob (Blob): 新たに永続化されたblob metadata.
+    """
 
     blob: Blob
 
 
 @dataclass(frozen=True, slots=True)
 class BlobDeduplicated:
-    """Result for content that matched an existing blob."""
+    """既存blob contentと一致して重複排除した結果を表す.
+
+    Attributes:
+        blob (Blob): 再利用する既存blob metadata.
+    """
 
     blob: Blob
 
@@ -121,6 +153,17 @@ type BlobStoreResult = BlobStored | BlobDeduplicated
 
 
 def _validate_storage_backend(value: object) -> None:
+    """Storage backend値が閉集合のmemberか検証する.
+
+    Args:
+        value (object): 検証するstorage backend値.
+
+    Returns:
+        None: valueがBlobStorageBackendKindのmemberであることを確認して完了する.
+
+    Raises:
+        InvalidBlobError: valueが空文字列またはBlobStorageBackendKind以外の場合.
+    """
     if value == "":
         raise InvalidBlobError("storage_backend must not be empty")
     if not isinstance(value, BlobStorageBackendKind):

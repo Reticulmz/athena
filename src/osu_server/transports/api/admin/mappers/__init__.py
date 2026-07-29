@@ -1,1 +1,1 @@
-"""First-party admin API mapper package."""
+"""Athena管理APIのwire mapperを提供するpackage."""

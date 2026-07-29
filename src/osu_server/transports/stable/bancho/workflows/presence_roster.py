@@ -1,4 +1,4 @@
-"""Stable presence roster packet policy."""
+"""Stable Bancho login roster と live presence fan-out packet の policy を提供する."""
 
 from __future__ import annotations
 
@@ -46,7 +46,12 @@ _STABLE_DEFAULT_RANK = 0
 
 @dataclass(slots=True, frozen=True)
 class StableLoginPresenceRoster:
-    """Presence packets that must be split around channel/friend packets."""
+    """login stream 内で channel と friend packet の前後に分ける presence roster を表す.
+
+    Attributes:
+        leading_packets (tuple[bytes, ...]): channel packet より前に置く presence と stats packet.
+        bundle_packet (bytes): completion packet の末尾に置く USER_PRESENCE_BUNDLE packet.
+    """
 
     leading_packets: tuple[bytes, ...]
     bundle_packet: bytes
@@ -54,18 +59,32 @@ class StableLoginPresenceRoster:
 
 @dataclass(slots=True, frozen=True)
 class StableLivePresenceFanout:
-    """One live presence packet plus recipient user ids."""
+    """live presence packet と配信対象 user ID を表す.
+
+    Attributes:
+        packet (bytes): enqueue する USER_PRESENCE または USER_QUIT packet.
+        recipient_user_ids (tuple[int, ...]): packet を配信する online user の ID.
+    """
 
     packet: bytes
     recipient_user_ids: tuple[int, ...]
 
 
 class StablePresenceRoster:
-    """Builds stable login roster and live presence fan-out packets."""
+    """stable login roster と live presence fan-out packet を構築する.
+
+    Attributes:
+        _bot_identity (SystemUserIdentity): roster に常に含める system bot identity.
+    """
 
     _bot_identity: SystemUserIdentity
 
     def __init__(self, bot_identity: SystemUserIdentity | None = None) -> None:
+        """Roster に使用する system bot identity を設定する.
+
+        Args:
+            bot_identity (SystemUserIdentity | None): roster に含める bot. None なら BanchoBot.
+        """
         self._bot_identity = bot_identity or BANCHO_BOT_IDENTITY
 
     def login_roster(
@@ -76,7 +95,22 @@ class StablePresenceRoster:
         current_stats_by_user_id: Mapping[int, UserCurrentStats] | None = None,
         statuses_by_user_id: Mapping[int, StableUserStatus] | None = None,
     ) -> StableLoginPresenceRoster:
-        """login 初期 presence packets と final roster bundle を返す。"""
+        """Login 初期 presence packet と final roster bundle を構築する.
+
+        Args:
+            login_response (LoginResponse): successful login の session と authorization.
+            active_sessions (Iterable[OnlineSessionSnapshot]): online session snapshot.
+            current_stats_by_user_id (Mapping[int, UserCurrentStats] | None): stats.
+            statuses_by_user_id (Mapping[int, StableUserStatus] | None): stable status mapping.
+
+        Returns:
+            StableLoginPresenceRoster: stream の前半 packet と最後の roster bundle.
+
+        Notes:
+            login user と bot の packet を先頭に置く.
+            active session 内の login user と bot は重複させない.
+            USER_PRESENCE_BUNDLE は source order を保った重複なしの roster にする.
+        """
         user = login_response.user
         session = login_response.session_data
         stats_by_user_id = current_stats_by_user_id or {}
@@ -127,22 +161,19 @@ class StablePresenceRoster:
         active_sessions: Iterable[OnlineSessionSnapshot],
         play_mode: int | None = None,
     ) -> StableLivePresenceFanout | None:
-        """接続した user の USER_PRESENCE fan-out を返す。
+        """接続した user の USER_PRESENCE fan-out を構築する.
 
-        引数:
-            user_id: 接続イベントの対象 user id。
-            active_sessions: 現在 online として扱われる session snapshot 群。
-            play_mode: 対象 user の current stable mode。未指定時は osu! として扱う。
+        Args:
+            user_id (int): connection event の対象 user ID.
+            active_sessions (Iterable[OnlineSessionSnapshot]): 現在 online の session snapshot.
+            play_mode (int | None): 対象 user の current stable mode. None なら osu! mode.
 
-        戻り値:
-            配信 packet と recipient user id 群。対象 session がなければ None。
+        Returns:
+            StableLivePresenceFanout | None: recipient を持つ packet. 対象 session がなければ None.
 
-        例外:
-            独自例外は送出しない。
-
-        制約:
-            Stable client の user list mode toggle は USER_PRESENCE の mode bit を
-            client-side filter に使うため、要求者ではなく対象 user の mode を載せる。
+        Notes:
+            stable client の user list mode filter は USER_PRESENCE の mode を使う.
+            request 元ではなく接続した対象 user の mode を packet に載せる.
         """
         sessions = tuple(active_sessions)
         connected_session = next(
@@ -167,7 +198,15 @@ class StablePresenceRoster:
         user_id: int,
         active_sessions: Iterable[OnlineSessionSnapshot],
     ) -> StableLivePresenceFanout:
-        """Return USER_QUIT fan-out for a user that just disconnected."""
+        """切断直後の user を通知する USER_QUIT fan-out を構築する.
+
+        Args:
+            user_id (int): disconnect event の対象 user ID.
+            active_sessions (Iterable[OnlineSessionSnapshot]): 現在 online の session snapshot.
+
+        Returns:
+            StableLivePresenceFanout: 対象 user を除く recipient 向け USER_QUIT packet.
+        """
         quit_packet = write_packet(
             ServerPacketID.USER_QUIT,
             _INT32_FMT.pack(user_id),
@@ -185,6 +224,15 @@ class StablePresenceRoster:
         *,
         user_id: int,
     ) -> tuple[OnlineSessionSnapshot, ...]:
+        """Login user と system bot を除いた active session を返す.
+
+        Args:
+            active_sessions (Iterable[OnlineSessionSnapshot]): online session snapshot.
+            user_id (int): roster から除外する login user の ID.
+
+        Returns:
+            tuple[OnlineSessionSnapshot, ...]: bot と login user を含まない session snapshot.
+        """
         excluded_user_ids = {self._bot_identity.user_id, user_id}
         return tuple(
             session for session in active_sessions if session.user_id not in excluded_user_ids
@@ -196,6 +244,15 @@ class StablePresenceRoster:
         user_id: int,
         other_active_sessions: Iterable[OnlineSessionSnapshot],
     ) -> list[int]:
+        """bot, login user, other session の順で重複なし roster ID を作る.
+
+        Args:
+            user_id (int): login を完了した user の ID.
+            other_active_sessions (Iterable[OnlineSessionSnapshot]): other online session.
+
+        Returns:
+            list[int]: USER_PRESENCE_BUNDLE に渡す source order を保った user ID.
+        """
         return list(
             dict.fromkeys(
                 [
@@ -213,6 +270,16 @@ def _online_session_login_packets(
     current_stats_by_user_id: Mapping[int, UserCurrentStats],
     statuses_by_user_id: Mapping[int, StableUserStatus],
 ) -> Iterator[bytes]:
+    """Online session ごとの USER_PRESENCE と USER_STATS packet を順に生成する.
+
+    Args:
+        sessions (Iterable[OnlineSessionSnapshot]): packet に変換する online session snapshot.
+        current_stats_by_user_id (Mapping[int, UserCurrentStats]): user ID ごとの current stats.
+        statuses_by_user_id (Mapping[int, StableUserStatus]): user ID ごとの stable status.
+
+    Yields:
+        bytes: 各 session の USER_PRESENCE の後に続く USER_STATS packet.
+    """
     for session in sessions:
         status = _status_for_user(session.user_id, statuses_by_user_id)
         yield online_session_presence_packet_for_mode(session, play_mode=status.play_mode)
@@ -228,10 +295,27 @@ def _status_for_user(
     user_id: int,
     statuses_by_user_id: Mapping[int, StableUserStatus],
 ) -> StableUserStatus:
+    """User の stable status を取得し未登録時は default を返す.
+
+    Args:
+        user_id (int): status を求める user の ID.
+        statuses_by_user_id (Mapping[int, StableUserStatus]): user ID ごとの stable status.
+
+    Returns:
+        StableUserStatus: 登録済み status. 未登録なら DEFAULT_STABLE_USER_STATUS.
+    """
     return statuses_by_user_id.get(user_id, DEFAULT_STABLE_USER_STATUS)
 
 
 def _stable_play_mode(play_mode: int | None) -> int:
+    """Optional stable play mode を protocol で有効な値へ正規化する.
+
+    Args:
+        play_mode (int | None): status または caller から得た stable mode wire 値.
+
+    Returns:
+        int: valid stable mode. None または無効値なら osu! mode.
+    """
     if play_mode is None:
         return StableMode.Osu.value
     try:

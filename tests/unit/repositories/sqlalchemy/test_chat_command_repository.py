@@ -1,4 +1,4 @@
-"""Tests for command-side SQLAlchemy chat persistence repository logging."""
+"""SQLAlchemyチャット永続化repositoryの障害ログ契約を検証する."""
 
 from __future__ import annotations
 
@@ -20,17 +20,39 @@ if TYPE_CHECKING:
 
 
 class ChannelIdResult:
-    """Minimal scalar result returned by the fake command session."""
+    """fakeコマンドsessionが返すチャンネル識別子のscalar結果.
+
+    Attributes:
+        _channel_id (int | None): scalar取得時に返すチャンネル識別子.
+    """
 
     def __init__(self, channel_id: int | None) -> None:
+        """scalar取得結果に含めるチャンネル識別子を保持する.
+
+        Args:
+            channel_id (int | None): 見つかったチャンネルの識別子または未検出を表すNone.
+        """
         self._channel_id: int | None = channel_id
 
     def scalar_one_or_none(self) -> int | None:
+        """設定済みのチャンネル識別子をscalar結果として返す.
+
+        Returns:
+            int | None: 初期化時に設定したチャンネル識別子またはNone.
+        """
         return self._channel_id
 
 
 class FakeCommandSession:
-    """Session fake for command repository tests without a DB driver."""
+    """DB driverなしでコマンドrepositoryを検証するsession fake.
+
+    Attributes:
+        channel_id (int | None): execute時にチャンネル検索結果として返す識別子.
+        flush_error (SQLAlchemyError | None): flush時に送出する永続化エラー.
+        added (list[object]): addで記録した永続化対象instance.
+        execute_calls (int): executeの呼び出し回数.
+        flush_calls (int): 成功したflushの呼び出し回数.
+    """
 
     def __init__(
         self,
@@ -38,6 +60,12 @@ class FakeCommandSession:
         channel_id: int | None = None,
         flush_error: SQLAlchemyError | None = None,
     ) -> None:
+        """チャンネル検索結果と任意のflush障害を設定する.
+
+        Args:
+            channel_id (int | None): execute時に返すチャンネル識別子.
+            flush_error (SQLAlchemyError | None): flush時に送出するSQLAlchemyエラー.
+        """
         self.channel_id: int | None = channel_id
         self.flush_error: SQLAlchemyError | None = flush_error
         self.added: list[object] = []
@@ -45,24 +73,64 @@ class FakeCommandSession:
         self.flush_calls: int = 0
 
     async def execute(self, statement: Executable) -> ChannelIdResult:
+        """検索statementを記録して設定済みチャンネル結果を返す.
+
+        Args:
+            statement (Executable): repositoryが発行したチャンネル検索statement.
+
+        Returns:
+            ChannelIdResult: 設定済みチャンネル識別子を含むscalar結果.
+        """
         _ = statement
         self.execute_calls += 1
         return ChannelIdResult(self.channel_id)
 
     def add(self, instance: object) -> None:
+        """永続化対象instanceを記録する.
+
+        Args:
+            instance (object): repositoryがsessionへ追加するmodel instance.
+
+        Returns:
+            None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+        """
         self.added.append(instance)
 
     async def flush(self) -> None:
+        """設定済み障害を送出するか成功回数を加算する.
+
+        Raises:
+            SQLAlchemyError: 初期化時に設定されたflush障害.
+
+        Returns:
+            None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+        """
         if self.flush_error is not None:
             raise self.flush_error
         self.flush_calls += 1
 
 
 def make_repo(session: FakeCommandSession) -> SQLAlchemyChatCommandRepository:
+    """Fake sessionを使用するチャットコマンドrepositoryを生成する.
+
+    Args:
+        session (FakeCommandSession): SQLAlchemy sessionとして扱うテストdouble.
+
+    Returns:
+        SQLAlchemyChatCommandRepository: 指定sessionへ書き込むチャットrepository.
+    """
     return SQLAlchemyChatCommandRepository(cast("AsyncSession", cast("object", session)))
 
 
 def make_statement_error(message: str) -> StatementError:
+    """詳細ログ検証用のStatementErrorを生成する.
+
+    Args:
+        message (str): 永続化失敗としてログに含まれるエラーメッセージ.
+
+    Returns:
+        StatementError: SQLとパラメーターを保持するStatementError.
+    """
     return StatementError(
         message,
         "insert into channel_messages",
@@ -72,6 +140,11 @@ def make_statement_error(message: str) -> StatementError:
 
 
 async def test_save_channel_message_logs_storage_error_details() -> None:
+    """チャンネル保存失敗がSQLAlchemy詳細を構造化ログへ出力することを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     session = FakeCommandSession(
         channel_id=10,
         flush_error=make_statement_error("channel insert failed"),
@@ -109,6 +182,11 @@ async def test_save_channel_message_logs_storage_error_details() -> None:
 
 
 async def test_save_private_message_logs_storage_error_details() -> None:
+    """個人メッセージ保存失敗が操作別の構造化ログを出力することを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     session = FakeCommandSession(
         flush_error=SQLAlchemyError("private insert failed"),
     )

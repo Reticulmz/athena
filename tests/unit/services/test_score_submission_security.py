@@ -1,7 +1,7 @@
-"""スコア送信の security verification test。
+"""score submissionのprivacyとsecurity契約を検証する unit test module.
 
-Requirement 11 の privacy/security 条件を、credential 非露出、failure category、
-opaque field hash 化、fingerprint、snapshot の観点で検証する。
+credentialの非露出, failure category, opaque fieldのhash化, fingerprint, result snapshotを対象に,
+submission workflowが機微情報を記録しないことを確認する.
 """
 
 import hashlib
@@ -46,6 +46,11 @@ _BEATMAP_CHECKSUM = "0123456789abcdef0123456789abcdef"
 
 
 def _resolved_beatmap() -> Beatmap:
+    """security検証で解決済みとして返すranked beatmapを作成する.
+
+    Returns:
+        Beatmap: score submissionを受理できる固定IDとchecksumを持つranked beatmap.
+    """
     return Beatmap(
         id=123,
         beatmapset_id=456,
@@ -80,6 +85,17 @@ def _fingerprint_for(
     beatmap_checksum: str = _BEATMAP_CHECKSUM,
     submitted_timestamp: str | None = None,
 ) -> str:
+    """Test inputとsubmission識別子から期待するfingerprintを計算する.
+
+    Args:
+        input_data (ParsedSubmissionInput): request hashとsubmission時刻を持つ正規化済みinput.
+        user_id (int): fingerprintへ含める認証済みuser ID.
+        beatmap_checksum (str): fingerprintへ含めるbeatmap checksum MD5.
+        submitted_timestamp (str | None): fingerprintへ明示的に渡す時刻. Noneならinputの値を使う.
+
+    Returns:
+        str: serviceが永続化する値と同じsubmission fingerprint.
+    """
     return generate_submission_fingerprint(
         user_id=user_id,
         beatmap_checksum=beatmap_checksum,
@@ -93,6 +109,15 @@ def _valid_parsed_score(
     beatmap_checksum: str = _BEATMAP_CHECKSUM,
     online_checksum: str = "12345678",
 ) -> ParsedScore:
+    """security検証で受理可能なparse済みscoreを作成する.
+
+    Args:
+        beatmap_checksum (str): scoreが参照するbeatmap checksum MD5.
+        online_checksum (str): 重複検出とfingerprint検証に使うonline score checksum.
+
+    Returns:
+        ParsedScore: osu! vanillaの成功playを表す固定user用score.
+    """
     return ParsedScore(
         user_id=1000,
         username="test_user",
@@ -115,6 +140,13 @@ def _valid_parsed_score(
 
 @dataclass(slots=True)
 class FakeBeatmapResolver:
+    """security test用に一定のbeatmap解決結果を返すfake resolver.
+
+    Attributes:
+        eligibility (BeatmapEligibility | None): checksum解決結果へ含めるscore submission
+            eligibility.
+    """
+
     eligibility: BeatmapEligibility | None = None
 
     async def resolve_by_beatmap_id(
@@ -122,6 +154,15 @@ class FakeBeatmapResolver:
         beatmap_id: int,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """Beatmap IDによる解決要求へmetadataのみの結果を返す.
+
+        Args:
+            beatmap_id (int): 呼び出し側が指定するbeatmap ID. fakeでは結果を変えない.
+            options (BeatmapResolveOptions | None): 解決option. fakeでは使用しない.
+
+        Returns:
+            BeatmapResolveResult: beatmap本体を含まず,設定済みeligibilityを含むfreshな解決結果.
+        """
         del beatmap_id, options
         return BeatmapResolveResult(
             beatmap=None,
@@ -141,6 +182,15 @@ class FakeBeatmapResolver:
         checksum_md5: str,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapResolveResult:
+        """checksumによる解決要求へranked beatmapを含む結果を返す.
+
+        Args:
+            checksum_md5 (str): 呼び出し側が指定するbeatmap checksum MD5. fakeでは結果を変えない.
+            options (BeatmapResolveOptions | None): 解決option. fakeでは使用しない.
+
+        Returns:
+            BeatmapResolveResult: 設定済みeligibilityと固定ranked beatmapを含むfreshな解決結果.
+        """
         del checksum_md5, options
         return BeatmapResolveResult(
             beatmap=_resolved_beatmap(),
@@ -164,6 +214,16 @@ def _make_process_score_submission_use_case(
     ProcessScoreSubmissionUseCase,
     UowScoreSubmissionRepositoryView,
 ]:
+    """Security assertion用repository viewを接続したsubmission use-caseを構成する.
+
+    Args:
+        resolver (FakeBeatmapResolver): submission可否を返すfake beatmap resolver.
+        auth_service (ScoreAuthorizationService): credentialとsessionを照合する認可service.
+
+    Returns:
+        tuple[ProcessScoreSubmissionUseCase, UowScoreSubmissionRepositoryView]:
+            実行対象use-caseと保存済みsubmissionを読むrepository view.
+    """
     uow_factory = InMemoryUnitOfWorkFactory()
     _, submission_repo, _ = make_score_repository_views(uow_factory)
     service = ProcessScoreSubmissionUseCase(
@@ -177,19 +237,16 @@ def _make_process_score_submission_use_case(
 
 @pytest.mark.asyncio
 async def test_authorization_failure_does_not_log_raw_password_md5() -> None:
-    """認可失敗時に raw password-md5 を log へ出さないことを検証する。
+    """認可失敗時にraw password MD5をlogへ露出しない契約を検証する.
 
-    Args:
-        なし。
+    有効なbeatmapと無効credentialを持つsubmissionを実行し,terminal rejectionのlogには
+    生のpassword MD5ではなくSHA-256 hashとfailure categoryだけが残ることを確認する.
 
     Returns:
-        None。
+        None: credential非露出と認可failure分類を検証して完了し,呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: log に raw credential が含まれる、または hash が欠落する場合。
-
-    Constraints:
-        raw password-md5 は保存せず、診断には SHA-256 hash だけを使う。
+    Notes:
+        raw password MD5は保存せず,診断にはSHA-256 hashだけを使用する.
     """
     auth_service = make_score_authorization_service()
     resolver = FakeBeatmapResolver(
@@ -250,20 +307,16 @@ async def test_authorization_failure_does_not_log_raw_password_md5() -> None:
 
 @pytest.mark.asyncio
 async def test_failure_categories_are_logged() -> None:
-    """失敗 category を診断用 log に記録することを検証する。
+    """認可failureとbeatmap不適格を別々のdiagnostic categoryとして記録する契約を検証する.
 
-    Args:
-        なし。
+    無効credentialのsubmissionと不適格beatmapのsubmissionを個別に実行し,
+    どちらもterminal rejectionとなり対応するfailure categoryがlogへ記録されることを確認する.
 
     Returns:
-        None。
+        None: 2種類のfailure categoryを検証して完了し,呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: terminal reject の result や log category が期待と異なる場合。
-
-    Constraints:
-        raw credential を使わず、authorization と beatmap ineligibility の分類だけを
-        log で検証する。
+    Notes:
+        log内容はcredentialの生値ではなくauthorizationとbeatmap ineligibilityの分類だけを確認する.
     """
     auth_service = make_score_authorization_service()
 
@@ -354,19 +407,16 @@ async def test_failure_categories_are_logged() -> None:
 
 @pytest.mark.asyncio
 async def test_opaque_fields_stored_as_sha256_hashes_only() -> None:
-    """不透明 field が SHA-256 hash だけで snapshot に保存されることを検証する。
+    """Opaque fieldをSHA-256 hashだけでresult snapshotへ保存する契約を検証する.
 
-    Args:
-        なし。
+    tokenを含む複数のopaque field hashを持つ有効submissionを保存し,
+    snapshotには各hashが残る一方で対応する生値と未hash keyが残らないことを確認する.
 
     Returns:
-        None。
+        None: hash化済みsnapshotを検証して完了し,呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: raw opaque field が snapshot に残る、または hash が不一致の場合。
-
-    Constraints:
-        token などの opaque field 生値は result_snapshot に保存しない。
+    Notes:
+        tokenなどのopaque fieldの生値はresult snapshotへ保存しない.
     """
     auth_service = make_score_authorization_service()
     resolver = FakeBeatmapResolver(
@@ -435,19 +485,16 @@ async def test_opaque_fields_stored_as_sha256_hashes_only() -> None:
 
 @pytest.mark.asyncio
 async def test_no_raw_credentials_in_logs() -> None:
-    """通常 submission flow の log に raw credential や token を出さない。
+    """成功するsubmission flowがraw credentialとtokenをlogへ露出しない契約を検証する.
 
-    Args:
-        なし。
+    credential, 暗号化payload marker, opaque session tokenを持つ有効submissionを実行し,
+    実際のstructlog outputにいずれの生値も含まれないことを確認する.
 
     Returns:
-        None。
+        None: 成功flowの機微情報非露出を検証して完了し,呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: log に credential、token、payload の生値が含まれる場合。
-
-    Constraints:
-        log 検証は actual structlog output を対象にし、mask 済み値だけを許可する。
+    Notes:
+        log検証はactual structlog outputを対象にし,mask済みまたはhash化済みの値だけを許可する.
     """
     auth_service = make_score_authorization_service()
     resolver = FakeBeatmapResolver(
@@ -504,20 +551,16 @@ async def test_no_raw_credentials_in_logs() -> None:
 
 @pytest.mark.asyncio
 async def test_submission_fingerprint_and_result_snapshot_recorded() -> None:
-    """送信 fingerprint と result snapshot を保存することを検証する。
+    """成功submissionがfingerprintとresult snapshotを永続化する契約を検証する.
 
-    Args:
-        なし。
+    replayを含む有効submissionを実行し,completed outcomeのscore IDに対応する保存済み
+    submissionが期待するfingerprintとobservability用snapshotを持つことを確認する.
 
     Returns:
-        None。
+        None: idempotencyとobservability用の永続化結果を検証して完了し,呼び出し側へ値を返さない.
 
-    Raises:
-        AssertionError: fingerprint、score_id、snapshot が保存されない場合。
-
-    Constraints:
-        成功 submission は idempotency 用 fingerprint と observability 用 snapshot を
-        両方保存する。
+    Notes:
+        成功submissionはidempotency用fingerprintとobservability用snapshotの両方を保存する.
     """
     auth_service = make_score_authorization_service()
     resolver = FakeBeatmapResolver(

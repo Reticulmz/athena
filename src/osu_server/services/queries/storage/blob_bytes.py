@@ -1,4 +1,4 @@
-"""Blob byte read boundary for query services."""
+"""query serviceがblob bytesをbackend detailなしで読むboundaryを定義する."""
 
 from __future__ import annotations
 
@@ -6,79 +6,64 @@ from typing import Protocol
 
 
 class BlobBytesUnavailableError(FileNotFoundError):
-    """Blob bytes が query workflow で利用できないことを表す例外です。
+    """query workflowでblob bytesを利用できないことを表す例外.
 
-    Args:
-        blob_id: query repository が返した blob id。
+    Attributes:
+        blob_id (int): query repositoryが返したblob ID.
 
-    Returns:
-        なし。
-
-    Raises:
-        なし。
-
-    Constraints:
-        storage key、filesystem path、backend detail、raw bytes は保持しません。
-        `str()` と `repr()` に出る値は blob id と固定文言だけです。
+    Notes:
+        storage keyとfilesystem pathとbackend detailとraw bytesを保持しない. str()とrepr()に
+        出る値はblob IDと固定文言だけである.
     """
 
     blob_id: int
 
     def __init__(self, blob_id: int) -> None:
+        """利用不能なblobを識別するIDだけを保持して例外messageを初期化する.
+
+        Args:
+            blob_id (int): query repositoryが返したblob ID.
+        """
         self.blob_id = blob_id
         super().__init__(f"blob bytes are unavailable: blob_id={blob_id}")
 
 
 class BlobByteReader(Protocol):
-    """Query workflow に blob bytes read だけを公開する protocol です。
+    """query workflowへblob bytes readだけを公開するprotocolを定義する.
 
-    Args:
-        なし。
-
-    Returns:
-        なし。
-
-    Raises:
-        なし。
-
-    Constraints:
-        実装は storage key、filesystem path、backend detail を response 側へ公開しません。
+    Notes:
+        実装はstorage keyとfilesystem pathとbackend detailをresponse側へ公開しない.
     """
 
     async def read_bytes(self, blob_id: int) -> bytes:
-        """blob id に対応する bytes を読み込みます。
+        """Blob IDに対応するbytesを読み込む.
 
         Args:
-            blob_id: query repository が返した blob id。
+            blob_id (int): query repositoryが返したblob ID.
 
         Returns:
-            blob id に対応する blob bytes。
+            bytes: blob IDに対応するraw bytes.
 
         Raises:
-            BlobBytesUnavailableError: blob metadata または backend content が利用できない場合。
+            BlobBytesUnavailableError: blob metadataまたはbackend contentが利用できない場合.
 
-        Constraints:
-            storage backend key、filesystem path、blob implementation detail は返しません。
+        Notes:
+            storage backend keyとfilesystem pathとblob implementation detailは返さない.
         """
         ...
 
 
 class BlobByteReaderAdapter:
-    """既存 reader を query-layer `BlobByteReader` として包む adapter です。
+    """既存readerをquery-layer BlobByteReaderとして包むadapterを定義する.
 
-    Args:
-        reader: `read_bytes(blob_id)` を持つ read-only reader。
-        unavailable_exception_types: query-layer unavailable error に変換する例外型。
+    Attributes:
+        _reader (BlobByteReader): raw bytesを読む既存reader.
+        _unavailable_exception_types (tuple[type[Exception], ...]): query-layer unavailable
+            errorへ変換するexception type列.
 
-    Returns:
-        なし。
-
-    Raises:
-        なし。
-
-    Constraints:
-        変換後の error は blob id だけを保持し、backend detail を公開しません。
-        想定外の例外は変換せず、そのまま呼び出し元へ伝播します。
+    Notes:
+        変換後errorはblob IDだけを保持してbackend detailを公開しない. 想定外exceptionは
+        変換せずcallerへ伝播する.
     """
 
     def __init__(
@@ -87,27 +72,33 @@ class BlobByteReaderAdapter:
         *,
         unavailable_exception_types: tuple[type[Exception], ...] = (),
     ) -> None:
+        """既存readerとunavailable errorへ変換するexception type列を保持する.
+
+        Args:
+            reader (BlobByteReader): read_bytes(blob_id)を持つread-only reader.
+            unavailable_exception_types (tuple[type[Exception], ...]): BlobBytesUnavailableErrorへ
+                変換するexception type列.
+        """
         self._reader: BlobByteReader = reader
         self._unavailable_exception_types: tuple[type[Exception], ...] = (
             unavailable_exception_types
         )
 
     async def read_bytes(self, blob_id: int) -> bytes:
-        """blob id から bytes を読み、設定済み unavailable 例外だけを変換します。
+        """Blob IDからbytesを読み設定済みunavailable exceptionだけを変換する.
 
         Args:
-            blob_id: query repository が返した blob id。
+            blob_id (int): query repositoryが返したblob ID.
 
         Returns:
-            blob id に対応する blob bytes。
+            bytes: blob IDに対応するraw bytes.
 
         Raises:
-            BlobBytesUnavailableError: reader が query-layer unavailable error を投げた場合、
-                または設定済み unavailable 例外型を投げた場合。
-            Exception: 設定済み unavailable 例外以外は変換せず再送出します。
+            BlobBytesUnavailableError: readerがunavailable errorまたは設定済みexceptionを
+                送出した場合.
 
-        Constraints:
-            cause の詳細は保持しても、query-layer error の message には混ぜません。
+        Notes:
+            causeの詳細は保持してもquery-layer errorのmessageには混ぜない.
         """
         try:
             return await self._reader.read_bytes(blob_id)

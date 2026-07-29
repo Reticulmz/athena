@@ -1,1 +1,1 @@
-"""First-party admin API transport package."""
+"""Athena管理APIのtransport adapterを提供するpackage."""

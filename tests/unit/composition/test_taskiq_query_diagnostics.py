@@ -1,4 +1,4 @@
-"""Taskiq SQL query diagnostics integration tests."""
+"""Taskiq SQL query diagnostics middleware の契約を検証する."""
 
 from __future__ import annotations
 
@@ -19,6 +19,15 @@ def _make_message(
     task_id: str = "job-1",
     task_name: str = "calculate_score_performance",
 ) -> TaskiqMessage:
+    """診断 middleware に渡す最小の Taskiq message を作る.
+
+    Args:
+        task_id (str): task 実行を識別する id.
+        task_name (str): 診断 log へ出す task 名.
+
+    Returns:
+        TaskiqMessage: 引数なし job を表す message.
+    """
     return TaskiqMessage(
         task_id=task_id,
         task_name=task_name,
@@ -29,6 +38,14 @@ def _make_message(
 
 
 def _make_result(*, is_err: bool = False) -> TaskiqResult[object]:
+    """診断 middleware の完了 hook に渡す Taskiq result を作る.
+
+    Args:
+        is_err (bool): job 実行が失敗した結果として扱うか.
+
+    Returns:
+        TaskiqResult[object]: 固定実行時間と値なしを持つ result.
+    """
     return TaskiqResult[object](
         is_err=is_err,
         return_value=None,
@@ -39,6 +56,14 @@ def _make_result(*, is_err: bool = False) -> TaskiqResult[object]:
 def _diagnostics_middlewares(
     broker: InMemoryBroker,
 ) -> list[SQLQueryDiagnosticsTaskiqMiddleware]:
+    """Broker に登録済みの SQL query diagnostics middleware だけを抽出する.
+
+    Args:
+        broker (InMemoryBroker): middleware 登録を調べる broker.
+
+    Returns:
+        list[SQLQueryDiagnosticsTaskiqMiddleware]: 診断 middleware の登録順 list.
+    """
     return [
         middleware
         for middleware in broker.middlewares
@@ -48,7 +73,11 @@ def _diagnostics_middlewares(
 
 @pytest.mark.asyncio
 async def test_taskiq_sql_query_diagnostics_warns_in_development() -> None:
-    """Development job で threshold 超過時に redacted warning を出す."""
+    """開発 job の query 数超過時に秘密値を伏せた warning を一件出す契約を検証する.
+
+    Returns:
+        None: warning の scope, 集計値, redaction 後の query template を検証して完了する.
+    """
     config = make_app_config(
         environment="development",
         query_diagnostics_max_queries=1,
@@ -85,7 +114,11 @@ async def test_taskiq_sql_query_diagnostics_warns_in_development() -> None:
 
 @pytest.mark.asyncio
 async def test_taskiq_sql_query_diagnostics_skips_non_development_default() -> None:
-    """Production default では Taskiq runtime warning を出さない."""
+    """本番既定では query を記録しても Taskiq runtime warning を出さない契約を検証する.
+
+    Returns:
+        None: middleware が同じ message を返し warning がないことを検証して完了する.
+    """
     config = make_app_config(
         environment="production",
         query_diagnostics_max_queries=1,
@@ -105,7 +138,11 @@ async def test_taskiq_sql_query_diagnostics_skips_non_development_default() -> N
 
 @pytest.mark.asyncio
 async def test_taskiq_sql_query_diagnostics_closes_scope_on_error_once() -> None:
-    """Job 失敗時も scope を閉じ, 二重 warning を出さない."""
+    """Job error 後の post execute が scope を再閉鎖せず warning を一件に保つ契約を検証する.
+
+    Returns:
+        None: error hook と post execute 後の warning 数と scope 種別を検証して完了する.
+    """
     config = make_app_config(
         environment="development",
         query_diagnostics_max_queries=1,
@@ -128,7 +165,13 @@ async def test_taskiq_sql_query_diagnostics_closes_scope_on_error_once() -> None
 
 
 def test_setup_taskiq_query_diagnostics_installs_once_in_development() -> None:
-    """Development broker に diagnostics middleware を一度だけ登録する."""
+    """開発brokerへのdiagnostics setupを二回呼んでもmiddlewareを一つだけ登録する.
+
+    この契約を検証する.
+
+    Returns:
+        None: diagnostics middleware の登録数を検証して完了する.
+    """
     broker = InMemoryBroker()
     config = make_app_config(environment="development")
 
@@ -141,10 +184,26 @@ def test_setup_taskiq_query_diagnostics_installs_once_in_development() -> None:
 def test_setup_taskiq_query_diagnostics_mutates_existing_broker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Diagnostics setup は with_middlewares の戻り値 semantics に依存しない."""
+    """Diagnostics setup が with_middlewares を使わず既存 broker を直接変更する契約を検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): 禁止 API を失敗関数へ差し替える fixture.
+
+    Returns:
+        None: 例外なく middleware が既存 broker に登録されることを検証して完了する.
+    """
     broker = InMemoryBroker()
 
     def fail_with_middlewares(*args: object, **kwargs: object) -> object:
+        """禁止された broker API が使われたことを失敗として通知する.
+
+        Args:
+            *args (object): 呼出し側が渡した位置引数.
+            **kwargs (object): 呼出し側が渡した keyword 引数.
+
+        Raises:
+            AssertionError: setup が with_middlewares に依存した場合.
+        """
         _ = (args, kwargs)
         msg = "with_middlewares must not be used for diagnostics setup"
         raise AssertionError(msg)
@@ -157,7 +216,11 @@ def test_setup_taskiq_query_diagnostics_mutates_existing_broker(
 
 
 def test_setup_taskiq_query_diagnostics_removes_existing_when_disabled() -> None:
-    """Disabled config では既存 diagnostics middleware を取り除く."""
+    """診断を無効化した設定が既存 diagnostics middleware を取り除く契約を検証する.
+
+    Returns:
+        None: 開発設定で登録後, 本番設定で登録 list が空になることを検証して完了する.
+    """
     broker = InMemoryBroker()
     setup_taskiq_query_diagnostics(make_app_config(environment="development"), broker)
 

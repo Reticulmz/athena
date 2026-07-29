@@ -1,4 +1,4 @@
-"""Stable stats request packet handlers."""
+"""stable BanchoのSTATS_REQUEST C2S packetをcurrent statsへ適応する."""
 
 from __future__ import annotations
 
@@ -39,7 +39,17 @@ logger = cast("structlog.stdlib.BoundLogger", structlog.get_logger(__name__))
 
 
 class StatsRequestHandler(HandlerGroup):
-    """C2S STATS_REQUEST handler."""
+    """STATS_REQUESTをvisible online userのUSER_STATS packetへ変換する.
+
+    Attributes:
+        _current_user_stats_query (CurrentUserStatsQuery): userのcurrent statsを取得するquery.
+        _packet_queue (PacketQueue): USER_STATS packetをrequesterへenqueueするqueue.
+        _stable_user_status_store (StableUserStatusStore | None):
+            user statusとplay modeを取得するstore.
+        _active_sessions_by_user_ids_query (GetActiveSessionsByUserIdsQuery | None):
+            online可視性を確認するquery.
+        _bot_identity (SystemUserIdentity): STATS_REQUESTで返すBanchoBot identity.
+    """
 
     _current_user_stats_query: CurrentUserStatsQuery
     _packet_queue: PacketQueue
@@ -56,6 +66,17 @@ class StatsRequestHandler(HandlerGroup):
         active_sessions_by_user_ids_query: GetActiveSessionsByUserIdsQuery | None = None,
         bot_identity: SystemUserIdentity | None = None,
     ) -> None:
+        """STATS_REQUESTを処理する依存を初期化する.
+
+        Args:
+            current_user_stats_query (CurrentUserStatsQuery): current statsを取得するquery.
+            packet_queue (PacketQueue): S2C packetをenqueueするqueue.
+            stable_user_status_store (StableUserStatusStore | None): status読取用のoptional store.
+            active_sessions_by_user_ids_query (GetActiveSessionsByUserIdsQuery | None):
+                可視性確認用のoptional query.
+            bot_identity (SystemUserIdentity | None): statsを返すBanchoBot identity.
+                Noneなら既定値を使う.
+        """
         self._current_user_stats_query = current_user_stats_query
         self._packet_queue = packet_queue
         self._stable_user_status_store = stable_user_status_store
@@ -64,7 +85,18 @@ class StatsRequestHandler(HandlerGroup):
 
     @handles(ClientPacketID.STATS_REQUEST)
     async def handle_stats_request(self, payload: bytes, user_id: int) -> None:
-        """STATS_REQUEST (85) - requested users の current stats を返す。"""
+        """STATS_REQUESTのvisible targetへ対応するUSER_STATS packetを返す.
+
+        Args:
+            payload (bytes): target user ID群を含むSTATS_REQUEST payload.
+            user_id (int): statsを要求した認証済みuserのID.
+
+        Returns:
+            None: 取得できたvisible targetのUSER_STATS packetをenqueueして値を返さずに完了する.
+
+        Notes:
+            requester自身,offline user,leaderboard非公開userはstats queryの前に除外する.
+        """
         requested_user_ids = _parse_stats_request(payload)
         if requested_user_ids is None:
             return
@@ -126,6 +158,17 @@ class StatsRequestHandler(HandlerGroup):
         await self._packet_queue.enqueue(user_id, *packets_tuple)
 
     async def _visible_online_user_ids(self, user_ids: tuple[int, ...]) -> tuple[int, ...]:
+        """onlineかつleaderboard表示可能なtarget user IDを絞り込む.
+
+        Args:
+            user_ids (tuple[int, ...]): deduplicate済みのSTATS_REQUEST target user ID群.
+
+        Returns:
+            tuple[int, ...]: statsを返せるvisible online user ID群. query失敗時は空tuple.
+
+        Notes:
+            BanchoBotはactive sessionを持たないため常に保持する.
+        """
         bot_user_id = self._bot_identity.user_id
         session_user_ids = tuple(user_id for user_id in user_ids if user_id != bot_user_id)
         if self._active_sessions_by_user_ids_query is None:
@@ -158,6 +201,18 @@ class StatsRequestHandler(HandlerGroup):
         *,
         play_modes_by_user_id: Mapping[int, int],
     ) -> dict[int, UserCurrentStats]:
+        """Play mode単位でcurrent statsを取得してuser IDへ対応付ける.
+
+        Args:
+            user_ids (tuple[int, ...]): statsを取得するvisible human user ID群.
+            play_modes_by_user_id (Mapping[int, int]): user IDからtargetのstable play modeへの対応.
+
+        Returns:
+            dict[int, UserCurrentStats]: 取得できたcurrent statsのuser ID対応.
+
+        Notes:
+            一つのplay modeのqueryが失敗しても,他のplay modeの結果は保持する.
+        """
         stats_by_user_id: dict[int, UserCurrentStats] = {}
         for play_mode, scoped_user_ids in _user_ids_by_play_mode(
             user_ids,
@@ -186,6 +241,15 @@ class StatsRequestHandler(HandlerGroup):
         self,
         user_ids: tuple[int, ...],
     ) -> dict[int, StableUserStatus]:
+        """Target userの保存済みstable statusを取得する.
+
+        Args:
+            user_ids (tuple[int, ...]): statusを取得するhuman user ID群.
+
+        Returns:
+            dict[int, StableUserStatus]: 取得できたuser statusのuser ID対応.
+                store未設定または失敗時は空dict.
+        """
         if self._stable_user_status_store is None:
             return {}
         try:
@@ -197,6 +261,14 @@ class StatsRequestHandler(HandlerGroup):
             return {}
 
     async def _requester_play_mode(self, user_id: int) -> int:
+        """requesterへ表示するBanchoBotのstable play modeを取得する.
+
+        Args:
+            user_id (int): STATS_REQUESTを送信したuserのID.
+
+        Returns:
+            int: 正規化済みstable play mode. statusがないか読取失敗時はosu mode.
+        """
         if self._stable_user_status_store is None:
             return StableMode.Osu.value
         try:
@@ -211,6 +283,14 @@ class StatsRequestHandler(HandlerGroup):
 
 
 def _parse_stats_request(payload: bytes) -> tuple[int, ...] | None:
+    """STATS_REQUEST payloadを安全にparseする.
+
+    Args:
+        payload (bytes): target user ID群を含むC2S packet payload.
+
+    Returns:
+        tuple[int, ...] | None: parseしたtarget user ID群. payloadが不正な場合はNone.
+    """
     try:
         return parse_stats_request_payload(payload)
     except PacketReadError as exc:
@@ -227,6 +307,15 @@ def _user_ids_by_play_mode(
     user_ids: tuple[int, ...],
     play_modes_by_user_id: Mapping[int, int],
 ) -> dict[int, tuple[int, ...]]:
+    """User ID群を有効なstable play modeごとにgroup化する.
+
+    Args:
+        user_ids (tuple[int, ...]): group化するtarget user ID群.
+        play_modes_by_user_id (Mapping[int, int]): user IDから保存済みmodeへの対応.
+
+    Returns:
+        dict[int, tuple[int, ...]]: 正規化済みplay modeから対象user ID群への対応.
+    """
     grouped: dict[int, list[int]] = defaultdict(list)
     for user_id in user_ids:
         grouped[_play_mode_for_user(user_id, play_modes_by_user_id)].append(user_id)
@@ -236,6 +325,14 @@ def _user_ids_by_play_mode(
 def _play_modes_by_user_id(
     statuses_by_user_id: Mapping[int, StableUserStatus],
 ) -> dict[int, int]:
+    """Stable statusのplay modeをuser IDごとのmappingへ変換する.
+
+    Args:
+        statuses_by_user_id (Mapping[int, StableUserStatus]): user IDからstable statusへの対応.
+
+    Returns:
+        dict[int, int]: user IDからstatusに保存されたplay modeへの対応.
+    """
     return {user_id: status.play_mode for user_id, status in statuses_by_user_id.items()}
 
 
@@ -243,6 +340,15 @@ def _play_mode_for_user(
     user_id: int,
     play_modes_by_user_id: Mapping[int, int],
 ) -> int:
+    """userのplay modeを取得してstable modeとして正規化する.
+
+    Args:
+        user_id (int): modeを選択するtarget user ID.
+        play_modes_by_user_id (Mapping[int, int]): user IDから保存済みmodeへの対応.
+
+    Returns:
+        int: 有効なstable play mode. 値がないか不正な場合はosu mode.
+    """
     play_mode = play_modes_by_user_id.get(user_id, StableMode.Osu.value)
     try:
         return StableMode(play_mode).value
@@ -251,6 +357,14 @@ def _play_mode_for_user(
 
 
 def _ruleset_for_play_mode(play_mode: int) -> Ruleset:
+    """Stable play modeに対応するRulesetを返す.
+
+    Args:
+        play_mode (int): stable clientから得たmode値.
+
+    Returns:
+        Ruleset: 対応するRuleset. 不正な値の場合はOSU ruleset.
+    """
     try:
         return Ruleset(play_mode)
     except ValueError:
@@ -258,6 +372,14 @@ def _ruleset_for_play_mode(play_mode: int) -> Ruleset:
 
 
 def _stable_play_mode(play_mode: int | None) -> int:
+    """optionalなplay modeを有効なstable modeへ正規化する.
+
+    Args:
+        play_mode (int | None): status storeから得た可能性のあるmode値.
+
+    Returns:
+        int: 有効なstable play mode. Noneまたは不正値の場合はosu mode.
+    """
     if play_mode is None:
         return StableMode.Osu.value
     try:

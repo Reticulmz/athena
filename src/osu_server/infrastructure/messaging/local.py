@@ -1,4 +1,4 @@
-"""Local-only event fanout contract."""
+"""プロセス内イベント配信の契約を定義します."""
 
 from __future__ import annotations
 
@@ -12,14 +12,22 @@ TEvent = TypeVar("TEvent", bound=object)
 
 @runtime_checkable
 class LocalEventBus(Protocol):
-    """In-process event fanout contract.
+    """プロセス内イベントを同一プロセスの購読者へ配信する契約です.
 
-    Implementations do not provide cross-replica, worker, durability, or replay
-    guarantees. Use this only for same-process non-critical fanout.
+    Notes:
+        実装は cross-replica,worker,durability,replay の保証を提供しません.
+        同一プロセス内の非クリティカルな fanout にだけ使用します.
     """
 
     async def fire(self, event: object) -> None:
-        """Notify all local handlers subscribed for the event's concrete type."""
+        """イベントの具象型を購読する全ローカル handler へ通知します.
+
+        Args:
+            event (object): 配信するイベント値です.
+
+        Returns:
+            None: 通知処理を完了し, 呼び出し側へ値を返さずに終了します.
+        """
         ...
 
     def subscribe(
@@ -27,5 +35,14 @@ class LocalEventBus(Protocol):
         event_type: type[TEvent],
         handler: Callable[[TEvent], Awaitable[None]],
     ) -> None:
-        """Register a local async handler for a concrete event type."""
+        """具象イベント型に対する非同期ローカル handler を登録します.
+
+        Args:
+            event_type (type[TEvent]): 購読する具象イベント型です.
+            handler (Callable[[TEvent], Awaitable[None]]): 該当イベントを受け取り
+                非同期で処理する handler です.
+
+        Returns:
+            None: handlerの登録を完了し, 呼び出し側へ値を返さずに終了します.
+        """
         ...

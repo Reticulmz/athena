@@ -1,4 +1,4 @@
-"""BeatmapInfo C2S request wire struct のテスト。"""
+"""BeatmapInfo C2S request wire struct を検証する."""
 
 import struct
 
@@ -10,7 +10,7 @@ from osu_server.transports.stable.bancho.protocol.types import BanchoString
 
 
 def test_beatmap_info_request_round_trips_mixed_collections_in_wire_order() -> None:
-    """mixed filename / beatmap ID request の wire 順序を構造的に検証する.
+    """混在 filename / beatmap ID request の wire 順序を構造的に検証する.
 
     Returns:
         None: pytest assertion による検証結果を表す.
@@ -53,7 +53,7 @@ def test_beatmap_info_request_round_trips_mixed_collections_in_wire_order() -> N
 
 
 def test_beatmap_info_request_round_trips_empty_collections() -> None:
-    """empty collection request の count field 境界を構造的に検証する.
+    """空の collection request の count field 境界を構造的に検証する.
 
     Returns:
         None: pytest assertion による検証結果を表す.

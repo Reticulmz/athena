@@ -1,4 +1,4 @@
-"""Modern getscores completion evidence の typed manifest boundary。"""
+"""Modern getscores completion evidenceのtyped manifest boundaryを定義する."""
 
 from __future__ import annotations
 
@@ -132,40 +132,42 @@ _SCORE_ROW_NUMERIC_FIELD_INDICES = (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 1
 
 
 class GetscoresEvidenceValidationError(ValueError):
-    """Getscores evidence manifest の安全な検証失敗を表す。
+    """Getscores evidence manifest の安全な検証失敗を表す.
 
-    Args:
-        errors (Sequence[str]): File名, entry位置, field名, error codeだけで構成した診断。
-
-    Returns:
-        None: 例外初期化のため戻り値はない。
-
-    Raises:
-        なし。
+    Attributes:
+        errors (Sequence[str]): File名, entry位置, field名, error codeだけで構成した診断.
 
     Notes:
-        JSONのraw value, credential, username, query valueは診断へ含めない。
+        JSONのraw value, credential, username, query valueは診断へ含めない.
     """
 
     errors: tuple[str, ...]
 
     def __init__(self, errors: Sequence[str]) -> None:
+        """安全なvalidation error code群から例外を初期化する.
+
+        Args:
+            errors (Sequence[str]): File名,entry位置,field名,error codeだけで構成した診断.
+
+        Notes:
+            JSONのraw value,credential,username,query valueは例外messageへ含めない.
+        """
         self.errors = tuple(errors)
         super().__init__("; ".join(self.errors))
 
 
 class GetscoresWireShapeId(StrEnum):
-    """Getscoresのdistinct wire shapeを表す。
+    """Getscoresのdistinct wire shapeを表す.
 
     Attributes:
-        AUTH_FAILURE (str): Authentication failureのempty body shape。
-        UNAVAILABLE (str): Beatmap unavailableのshort body shape。
-        UPDATE_AVAILABLE (str): Beatmap update availableのshort body shape。
-        HEADER_ONLY (str): Score rowを含まないheader shape。
-        HEADER_WITH_ROWS (str): Personal Bestとleaderboard rowを含むshape。
+        AUTH_FAILURE (str): Authentication failureのempty body shape.
+        UNAVAILABLE (str): Beatmap unavailableのshort body shape.
+        UPDATE_AVAILABLE (str): Beatmap update availableのshort body shape.
+        HEADER_ONLY (str): Score rowを含まないheader shape.
+        HEADER_WITH_ROWS (str): Personal Bestとleaderboard rowを含むshape.
 
     Notes:
-        Manifestはこのclosed value以外を受け付けない。
+        Manifestはこのclosed value以外を受け付けない.
     """
 
     AUTH_FAILURE = "auth_failure"
@@ -176,29 +178,29 @@ class GetscoresWireShapeId(StrEnum):
 
 
 class GetscoresBodyEncoding(StrEnum):
-    """Exact response body fixtureの保存encodingを表す。
+    """Exact response body fixtureの保存encodingを表す.
 
     Attributes:
-        BASE64 (str): Repository hookのtext normalizationからdecoded bytesを分離するBase64。
+        BASE64 (str): Repository hookのtext normalizationからdecoded bytesを分離するBase64.
 
     Notes:
-        Manifestはcanonical Base64以外の保存形式を受け付けない。
+        Manifestはcanonical Base64以外の保存形式を受け付けない.
     """
 
     BASE64 = "base64"
 
 
 class GetscoresEvidenceStatus(StrEnum):
-    """Getscores evidenceの確度を表す。
+    """Getscores evidenceの確度を表す.
 
     Attributes:
-        CONFIRMED (str): Higher-authority evidenceで確認済みの状態。
-        ATHENA_DETERMINISTIC (str): Athena current behaviorで固定した状態。
-        PROVISIONAL_ATHENA_BEHAVIOR (str): Target未確認の暫定Athena behavior。
-        UNCONFIRMED (str): Evidenceが未確認の状態。
+        CONFIRMED (str): Higher-authority evidenceで確認済みの状態.
+        ATHENA_DETERMINISTIC (str): Athena current behaviorで固定した状態.
+        PROVISIONAL_ATHENA_BEHAVIOR (str): Target未確認の暫定Athena behavior.
+        UNCONFIRMED (str): Evidenceが未確認の状態.
 
     Notes:
-        Provisionalとconfirmedを同一の互換保証として扱わない。
+        Provisionalとconfirmedを同一の互換保証として扱わない.
     """
 
     CONFIRMED = "confirmed"
@@ -208,19 +210,19 @@ class GetscoresEvidenceStatus(StrEnum):
 
 
 class GetscoresIdentityProfile(StrEnum):
-    """Branch caseが利用するbeatmap identity profileを表す。
+    """Branch caseが利用するbeatmap identity profileを表す.
 
     Attributes:
-        AUTH_MISSING (str): Credentialが存在しないprofile。
-        AUTH_INVALID (str): Credentialが不正なprofile。
-        KNOWN_BEATMAP (str): Known beatmap identity profile。
-        MISSING_BEATMAP_IDENTITY (str): Beatmap identity不足profile。
-        INVALID_CHECKSUM (str): Checksum形式不正profile。
-        UNAVAILABLE_BEATMAP (str): Beatmap unavailable profile。
-        UPDATE_CANDIDATE (str): Same-set update candidate profile。
+        AUTH_MISSING (str): Credentialが存在しないprofile.
+        AUTH_INVALID (str): Credentialが不正なprofile.
+        KNOWN_BEATMAP (str): Known beatmap identity profile.
+        MISSING_BEATMAP_IDENTITY (str): Beatmap identity不足profile.
+        INVALID_CHECKSUM (str): Checksum形式不正profile.
+        UNAVAILABLE_BEATMAP (str): Beatmap unavailable profile.
+        UPDATE_CANDIDATE (str): Same-set update candidate profile.
 
     Notes:
-        Raw credential, username, checksum valueは保持しない。
+        Raw credential, username, checksum valueは保持しない.
     """
 
     AUTH_MISSING = "auth_missing"
@@ -233,20 +235,20 @@ class GetscoresIdentityProfile(StrEnum):
 
 
 class GetscoresRequestSelector(StrEnum):
-    """Stable getscores requestのselector意味を表す。
+    """Stable getscores requestのselector意味を表す.
 
     Attributes:
-        GLOBAL_DOMAIN (str): Athena Global domain scope。
-        LOCAL (str): Stable Local selector。
-        SELECTED_MODS (str): Stable Selected Mods selector。
-        FRIENDS (str): Stable Friends selector。
-        COUNTRY (str): Stable Country selector。
-        SONG_SELECT (str): Song select header-only selector。
-        UNSUPPORTED_LEADERBOARD (str): Unsupported leaderboard selector。
-        UNSUPPORTED_PLAYSTYLE (str): Unsupported playstyle selector。
+        GLOBAL_DOMAIN (str): Athena Global domain scope.
+        LOCAL (str): Stable Local selector.
+        SELECTED_MODS (str): Stable Selected Mods selector.
+        FRIENDS (str): Stable Friends selector.
+        COUNTRY (str): Stable Country selector.
+        SONG_SELECT (str): Song select header-only selector.
+        UNSUPPORTED_LEADERBOARD (str): Unsupported leaderboard selector.
+        UNSUPPORTED_PLAYSTYLE (str): Unsupported playstyle selector.
 
     Notes:
-        Stable selector meaningとdomain category meaningを分離する。
+        Stable selector meaningとdomain category meaningを分離する.
     """
 
     GLOBAL_DOMAIN = "global_domain"
@@ -260,22 +262,22 @@ class GetscoresRequestSelector(StrEnum):
 
 
 class GetscoresSeedProfile(StrEnum):
-    """Branch caseが要求するsynthetic seed profileを表す。
+    """Branch caseが要求するsynthetic seed profileを表す.
 
     Attributes:
-        NONE (str): Seed不要profile。
-        RANKED_NO_SCORES (str): Ranked beatmap with no scores。
-        RANKED_WITH_ROWS (str): Ranked beatmap with score rows。
-        SELECTED_MODS_SUPPORTED (str): Supported exact mod selection。
-        SELECTED_MODS_UNSUPPORTED (str): Unsupported mod selection。
-        FRIENDS_DIRECTIONAL (str): Outbound friend directionality seed。
-        COUNTRY_MATCH (str): Viewer country match seed。
-        COUNTRY_MISSING (str): Viewer country missing seed。
-        COUNTRY_XX (str): Viewer country XX seed。
-        UPDATE_CANDIDATE (str): Same-set update candidate seed。
+        NONE (str): Seed不要profile.
+        RANKED_NO_SCORES (str): Ranked beatmap with no scores.
+        RANKED_WITH_ROWS (str): Ranked beatmap with score rows.
+        SELECTED_MODS_SUPPORTED (str): Supported exact mod selection.
+        SELECTED_MODS_UNSUPPORTED (str): Unsupported mod selection.
+        FRIENDS_DIRECTIONAL (str): Outbound friend directionality seed.
+        COUNTRY_MATCH (str): Viewer country match seed.
+        COUNTRY_MISSING (str): Viewer country missing seed.
+        COUNTRY_XX (str): Viewer country XX seed.
+        UPDATE_CANDIDATE (str): Same-set update candidate seed.
 
     Notes:
-        Database row自体は保持せず, symbolic seed IDだけを表す。
+        Database row自体は保持せず, symbolic seed IDだけを表す.
     """
 
     NONE = "none"
@@ -291,21 +293,21 @@ class GetscoresSeedProfile(StrEnum):
 
 
 class GetscoresMutationProfile(StrEnum):
-    """Branch caseが表すsafeなrequest mutation profileを表す。
+    """Branch caseが表すsafeなrequest mutation profileを表す.
 
     Attributes:
-        INVALID_MODE (str): Invalid mode mutation。
-        INVALID_MODS (str): Invalid mods mutation。
-        INVALID_LEADERBOARD_TYPE (str): Invalid leaderboard type mutation。
-        INVALID_LEADERBOARD_VERSION (str): Invalid leaderboard version mutation。
-        INVALID_SONG_SELECT_FLAG (str): Invalid song select flag mutation。
-        INVALID_ANTI_CHEAT_SIGNAL (str): Invalid anti-cheat signal mutation。
-        INVALID_BEATMAPSET_ID_HINT (str): Invalid beatmapset hint mutation。
-        VALID_ANTI_CHEAT_SIGNAL (str): Valid anti-cheat signal mutation。
-        REQUEST_VERSION_VARIANT (str): Request version variation。
+        INVALID_MODE (str): Invalid mode mutation.
+        INVALID_MODS (str): Invalid mods mutation.
+        INVALID_LEADERBOARD_TYPE (str): Invalid leaderboard type mutation.
+        INVALID_LEADERBOARD_VERSION (str): Invalid leaderboard version mutation.
+        INVALID_SONG_SELECT_FLAG (str): Invalid song select flag mutation.
+        INVALID_ANTI_CHEAT_SIGNAL (str): Invalid anti-cheat signal mutation.
+        INVALID_BEATMAPSET_ID_HINT (str): Invalid beatmapset hint mutation.
+        VALID_ANTI_CHEAT_SIGNAL (str): Valid anti-cheat signal mutation.
+        REQUEST_VERSION_VARIANT (str): Request version variation.
 
     Notes:
-        Raw malformed query valueは保持しない。
+        Raw malformed query valueは保持しない.
     """
 
     INVALID_MODE = "invalid_mode"
@@ -367,16 +369,16 @@ _CATEGORY_UNAVAILABLE_IDENTITY_PROFILES = frozenset(
 
 
 class StatusRepresentation(StrEnum):
-    """Endpoint statusのwire表現種別を表す。
+    """Endpoint statusのwire表現種別を表す.
 
     Attributes:
-        WIRE (str): Numeric wire statusを持つ表現。
-        UNAVAILABLE (str): Unavailable responseへ対応する表現。
-        UNSUPPORTED (str): Endpointで未対応の表現。
-        UNCONFIRMED (str): Wire representation未確認の表現。
+        WIRE (str): Numeric wire statusを持つ表現.
+        UNAVAILABLE (str): Unavailable responseへ対応する表現.
+        UNSUPPORTED (str): Endpointで未対応の表現.
+        UNCONFIRMED (str): Wire representation未確認の表現.
 
     Notes:
-        WIRE以外へnumeric wire statusを設定しない。
+        WIRE以外へnumeric wire statusを設定しない.
     """
 
     WIRE = "wire"
@@ -386,17 +388,17 @@ class StatusRepresentation(StrEnum):
 
 
 class EndpointEvidenceState(StrEnum):
-    """Endpoint status evidenceの確定状態を表す。
+    """Endpoint status evidenceの確定状態を表す.
 
     Attributes:
-        CONFIRMED (str): Confirmed evidenceに基づく状態。
-        OFFICIAL_FIXTURE (str): Official fixtureに基づく状態。
-        REFERENCE_IMPLEMENTATION (str): 単一reference implementationに基づく状態。
-        ATHENA_DETERMINISTIC (str): Athena deterministic behaviorに基づく状態。
-        UNCONFIRMED (str): Evidence未確認の状態。
+        CONFIRMED (str): Confirmed evidenceに基づく状態.
+        OFFICIAL_FIXTURE (str): Official fixtureに基づく状態.
+        REFERENCE_IMPLEMENTATION (str): 単一reference implementationに基づく状態.
+        ATHENA_DETERMINISTIC (str): Athena deterministic behaviorに基づく状態.
+        UNCONFIRMED (str): Evidence未確認の状態.
 
     Notes:
-        Endpointごとのevidence authorityを明示する。
+        Endpointごとのevidence authorityを明示する.
     """
 
     CONFIRMED = "confirmed"
@@ -455,24 +457,35 @@ _BEATMAP_INFO_RANKED_SOURCE = (
 
 @final
 class GetscoresEvidenceSource(str):
-    """Getscores evidenceのsafeなsymbolic source reference。
+    """Getscores evidenceのsafeなsymbolic source reference.
 
     Args:
-        value (str): 証跡種別prefixとsafe identifierで構成した参照名。
+        value (str): 証跡種別prefixとsafe identifierで構成した参照名.
 
     Returns:
-        GetscoresEvidenceSource: Raw query, credential, 制御文字を含まない参照名。
+        GetscoresEvidenceSource: Raw query, credential, 制御文字を含まない参照名.
 
     Raises:
-        ValueError: 許可されたsymbolic reference形式でない場合。
+        ValueError: 許可されたsymbolic reference形式でない場合.
 
     Notes:
-        参照名はfixtureやtestの識別子だけを表し, raw request valueやsecretを保持しない。
+        参照名はfixtureやtestの識別子だけを表し, raw request valueやsecretを保持しない.
     """
 
     __slots__ = ()
 
     def __new__(cls, value: str) -> GetscoresEvidenceSource:
+        """安全なsymbolic source referenceだけを生成する.
+
+        Args:
+            value (str): Evidence source prefixとsafe identifierで構成した参照名.
+
+        Returns:
+            GetscoresEvidenceSource: Raw query,credential,制御文字を含まない参照名.
+
+        Raises:
+            ValueError: 許可されたsymbolic reference形式でない場合.
+        """
         if not _is_safe_evidence_source(value):
             raise ValueError("unsafe evidence source")
         return cast("GetscoresEvidenceSource", str.__new__(cls, value))
@@ -480,27 +493,21 @@ class GetscoresEvidenceSource(str):
 
 @dataclass(frozen=True, slots=True)
 class GetscoresWireShapeFixture:
-    """Getscoresのclient-visible wire shape metadataを保持する。
+    """Getscoresのclient-visible wire shape metadataを保持する.
 
-    Args:
-        shape_id (GetscoresWireShapeId): Distinct response shapeの識別子。
-        http_status (int): Shapeが返すHTTP status。
-        required_headers (Mapping[str, str]): Deterministicに検証するheader subset。
-        absent_headers (tuple[str, ...]): 存在してはならないheader名。
-        body_file (Path): Base64 encoded body fixture path。
-        body_encoding (GetscoresBodyEncoding): Body fixtureの保存encoding。
-        terminal_lf_count (int): Body末尾の連続LF数。
-        personal_best_present (bool): Personal Best欄を含むか。
-        leaderboard_row_count (int): Personal Bestを除いたleaderboard row数。
-
-    Returns:
-        None: Dataclass初期化のため戻り値はない。
-
-    Raises:
-        なし。
+    Attributes:
+        shape_id (GetscoresWireShapeId): Distinct response shapeの識別子.
+        http_status (int): Shapeが返すHTTP status.
+        required_headers (Mapping[str, str]): Deterministicに検証するheader subset.
+        absent_headers (tuple[str, ...]): 存在してはならないheader名.
+        body_file (Path): Base64 encoded body fixture path.
+        body_encoding (GetscoresBodyEncoding): Body fixtureの保存encoding.
+        terminal_lf_count (int): Body末尾の連続LF数.
+        personal_best_present (bool): Personal Best欄を含むか.
+        leaderboard_row_count (int): Personal Bestを除いたleaderboard row数.
 
     Notes:
-        body_fileはloaderでbody root配下へ制限される。Raw body bytesは保持しない。
+        body_fileはloaderでbody root配下へ制限される.Raw body bytesは保持しない.
     """
 
     shape_id: GetscoresWireShapeId
@@ -514,23 +521,27 @@ class GetscoresWireShapeFixture:
     leaderboard_row_count: int
 
     def __post_init__(self) -> None:
+        """可変input collectionをimmutable representationへ正規化する.
+
+        Returns:
+            None: `required_headers`をread-only mapping,`absent_headers`をtupleへ置換する.
+        """
         object.__setattr__(self, "required_headers", MappingProxyType(dict(self.required_headers)))
         object.__setattr__(self, "absent_headers", tuple(self.absent_headers))
 
     def read_body_bytes(self) -> bytes:
-        """Canonical Base64 fixtureからexact client body bytesを復元する。
+        """Canonical Base64 fixtureからexact client body bytesを復元する.
 
         Returns:
-            bytes: Repository上のencoding metadataを含まないdecoded response body。
+            bytes: Repository上のencoding metadataを含まないdecoded response body.
 
         Raises:
             GetscoresEvidenceValidationError: Terminal LF, ASCII, whitespace, Base64 canonicality,
-                またはfile readの検証に失敗した場合。
+                またはfile readの検証に失敗した場合.
 
         Notes:
-            Errorにはshape idとerror codeだけを含め, encoded payloadを出力しない。
+            Errorにはshape idとerror codeだけを含め, encoded payloadを出力しない.
         """
-
         body, error_code = _decode_body_fixture(self.body_file, self.body_encoding)
         if body is None:
             raise GetscoresEvidenceValidationError(
@@ -548,27 +559,21 @@ class GetscoresWireShapeFixture:
 
 @dataclass(frozen=True, slots=True)
 class GetscoresBranchCase:
-    """Getscores request profileと期待wire shapeの対応を保持する。
+    """Getscores request profileと期待wire shapeの対応を保持する.
 
-    Args:
-        case_id (str): Branch caseのsafe identifier。
-        identity_profile (GetscoresIdentityProfile): Beatmap identityのclosed profile。
-        request_selector (GetscoresRequestSelector): Stable request selector。
-        expected_domain_category (LeaderboardCategory | None): 期待domain category。
-        seed_profile (GetscoresSeedProfile): Synthetic seedのclosed profile。
-        mutation_profiles (tuple[GetscoresMutationProfile, ...]): Request mutation群。
-        expected_shape_id (GetscoresWireShapeId): 対応するwire shape。
-        expected_warning_categories (tuple[GetscoresParseWarning, ...]): Warning集合。
-        evidence_status (GetscoresEvidenceStatus): Evidenceの確度。
-
-    Returns:
-        None: Dataclass初期化のため戻り値はない。
-
-    Raises:
-        なし。
+    Attributes:
+        case_id (str): Branch caseのsafe identifier.
+        identity_profile (GetscoresIdentityProfile): Beatmap identityのclosed profile.
+        request_selector (GetscoresRequestSelector): Stable request selector.
+        expected_domain_category (LeaderboardCategory | None): 期待domain category.
+        seed_profile (GetscoresSeedProfile): Synthetic seedのclosed profile.
+        mutation_profiles (tuple[GetscoresMutationProfile, ...]): Request mutation群.
+        expected_shape_id (GetscoresWireShapeId): 対応するwire shape.
+        expected_warning_categories (tuple[GetscoresParseWarning, ...]): Warning集合.
+        evidence_status (GetscoresEvidenceStatus): Evidenceの確度.
 
     Notes:
-        Raw query value, credential, usernameは保持しない。
+        Raw query value, credential, usernameは保持しない.
     """
 
     case_id: str
@@ -582,6 +587,11 @@ class GetscoresBranchCase:
     evidence_status: GetscoresEvidenceStatus
 
     def __post_init__(self) -> None:
+        """Collection fieldをimmutable tupleへ正規化する.
+
+        Returns:
+            None: Mutation profileとwarning categoryのinput sequenceをtupleへ置換する.
+        """
         object.__setattr__(self, "mutation_profiles", tuple(self.mutation_profiles))
         object.__setattr__(
             self, "expected_warning_categories", tuple(self.expected_warning_categories)
@@ -590,22 +600,19 @@ class GetscoresBranchCase:
 
 @dataclass(frozen=True, slots=True)
 class EndpointStatusEvidence:
-    """1 endpointにおけるcanonical statusのwire evidenceを保持する。
+    """1 endpointにおけるcanonical statusのwire evidenceを保持する.
 
-    Args:
-        representation (StatusRepresentation): Wire representation種別。
-        wire_status (int | None): Numeric wire status。非wire表現ではNone。
-        evidence_status (EndpointEvidenceState): 根拠の確定状態。
-        evidence_sources (tuple[GetscoresEvidenceSource, ...]): Safeな参照名。
-
-    Returns:
-        None: Dataclass初期化のため戻り値はない。
+    Attributes:
+        representation (StatusRepresentation): Wire representation種別.
+        wire_status (int | None): Numeric wire status.非wire表現ではNone.
+        evidence_status (EndpointEvidenceState): 根拠の確定状態.
+        evidence_sources (tuple[GetscoresEvidenceSource, ...]): Safeな参照名.
 
     Raises:
-        ValueError: Evidence sourceがsafe symbolic referenceでない場合。
+        ValueError: Evidence sourceがsafe symbolic referenceでない場合.
 
     Notes:
-        未確認表現の数値を推測して保持しない。
+        未確認表現の数値を推測して保持しない.
     """
 
     representation: StatusRepresentation
@@ -614,6 +621,14 @@ class EndpointStatusEvidence:
     evidence_sources: tuple[GetscoresEvidenceSource, ...]
 
     def __post_init__(self) -> None:
+        """Evidence sourceを安全なsymbolic reference型へ正規化する.
+
+        Returns:
+            None: 各sourceをGetscoresEvidenceSourceへ変換したtupleを設定する.
+
+        Raises:
+            ValueError: Sourceが安全なsymbolic reference形式でない場合.
+        """
         object.__setattr__(
             self,
             "evidence_sources",
@@ -623,21 +638,15 @@ class EndpointStatusEvidence:
 
 @dataclass(frozen=True, slots=True)
 class StableBeatmapStatusCrosswalkEntry:
-    """canonical BeatmapRankStatusとendpoint別status evidenceを保持する。
+    """canonical BeatmapRankStatusとendpoint別status evidenceを保持する.
 
-    Args:
-        canonical_status (BeatmapRankStatus): Athena canonical status。
-        getscores (EndpointStatusEvidence): Getscores endpointのstatus evidence。
-        beatmap_info (EndpointStatusEvidence): Beatmap info endpointのstatus evidence。
-
-    Returns:
-        None: Dataclass初期化のため戻り値はない。
-
-    Raises:
-        なし。
+    Attributes:
+        canonical_status (BeatmapRankStatus): Athena canonical status.
+        getscores (EndpointStatusEvidence): Getscores endpointのstatus evidence.
+        beatmap_info (EndpointStatusEvidence): Beatmap info endpointのstatus evidence.
 
     Notes:
-        endpoint固有mapperを共有するruntime lookup sourceにはしない。
+        endpoint固有mapperを共有するruntime lookup sourceにはしない.
     """
 
     canonical_status: BeatmapRankStatus
@@ -647,21 +656,15 @@ class StableBeatmapStatusCrosswalkEntry:
 
 @dataclass(frozen=True, slots=True)
 class GetscoresCompletionEvidence:
-    """Getscores completion evidenceをimmutable bundleとして保持する。
+    """Getscores completion evidenceをimmutable bundleとして保持する.
 
-    Args:
-        response_shapes (tuple[GetscoresWireShapeFixture, ...]): Wire shape metadata。
-        branch_cases (tuple[GetscoresBranchCase, ...]): Selectionとshapeの対応表。
-        status_crosswalk (tuple[StableBeatmapStatusCrosswalkEntry, ...]): Status対応表。
-
-    Returns:
-        None: Dataclass初期化のため戻り値はない。
-
-    Raises:
-        なし。
+    Attributes:
+        response_shapes (tuple[GetscoresWireShapeFixture, ...]): Wire shape metadata.
+        branch_cases (tuple[GetscoresBranchCase, ...]): Selectionとshapeの対応表.
+        status_crosswalk (tuple[StableBeatmapStatusCrosswalkEntry, ...]): Status対応表.
 
     Notes:
-        Raw JSON, raw query, credential, internal provenanceは保持しない。
+        Raw JSON, raw query, credential, internal provenanceは保持しない.
     """
 
     response_shapes: tuple[GetscoresWireShapeFixture, ...]
@@ -669,6 +672,11 @@ class GetscoresCompletionEvidence:
     status_crosswalk: tuple[StableBeatmapStatusCrosswalkEntry, ...]
 
     def __post_init__(self) -> None:
+        """Evidence collectionをimmutable tupleへ正規化する.
+
+        Returns:
+            None: Shapes,branches,crosswalkのinput sequenceをtupleへ置換する.
+        """
         object.__setattr__(self, "response_shapes", tuple(self.response_shapes))
         object.__setattr__(self, "branch_cases", tuple(self.branch_cases))
         object.__setattr__(self, "status_crosswalk", tuple(self.status_crosswalk))
@@ -678,22 +686,21 @@ def load_getscores_completion_evidence(
     manifest_root: Path,
     body_root: Path,
 ) -> GetscoresCompletionEvidence:
-    """Getscores completion manifestを安全にtyped bundleへ変換する。
+    """Getscores completion manifestを安全にtyped bundleへ変換する.
 
     Args:
-        manifest_root (Path): 3つのversioned manifestを含むdirectory。
-        body_root (Path): Exact response body fixtureのroot directory。
+        manifest_root (Path): 3つのversioned manifestを含むdirectory.
+        body_root (Path): Exact response body fixtureのroot directory.
 
     Returns:
-        GetscoresCompletionEvidence: Immutableなtyped evidence bundle。
+        GetscoresCompletionEvidence: Immutableなtyped evidence bundle.
 
     Raises:
-        GetscoresEvidenceValidationError: Schema, 型, 参照, secret policy, path safetyの失敗。
+        GetscoresEvidenceValidationError: Schema, 型, 参照, secret policy, path safetyの失敗.
 
     Notes:
-        Errorにはfile名, entry位置, field名, error codeだけを含め, raw valueを出さない。
+        Errorにはfile名, entry位置, field名, error codeだけを含め, raw valueを出さない.
     """
-
     try:
         root = manifest_root.resolve(strict=True)
         resolved_body_root = body_root.resolve(strict=True)
@@ -740,21 +747,17 @@ def load_getscores_completion_evidence(
 def validate_getscores_completion_evidence(
     evidence: GetscoresCompletionEvidence,
 ) -> tuple[SurfaceResult, ...]:
-    """Loaded evidence bundleの内部不変条件を検証する。
+    """Loaded evidence bundleの内部不変条件を検証する.
 
     Args:
-        evidence (GetscoresCompletionEvidence): Typed loaderが生成したbundle。
+        evidence (GetscoresCompletionEvidence): Typed loaderが生成したbundle.
 
     Returns:
-        tuple[SurfaceResult, ...]: Shapes, branch cases, status crosswalkの検証結果。
-
-    Raises:
-        なし。
+        tuple[SurfaceResult, ...]: Shapes, branch cases, status crosswalkの検証結果.
 
     Notes:
-        診断へraw valueを含めない。失敗はSurfaceResultとして返す。
+        診断へraw valueを含めない.失敗はSurfaceResultとして返す.
     """
-
     shape_errors = _validate_bundle_shapes(evidence)
     branch_errors = _validate_bundle_branches(evidence)
     crosswalk_errors = _validate_bundle_crosswalk(evidence)
@@ -771,6 +774,20 @@ def _read_manifest(
     collection_key: str,
     errors: list[str],
 ) -> Mapping[str, object]:
+    """1つのversioned JSON manifestを安全に読み込む.
+
+    Args:
+        path (Path): 読み込むmanifest path.
+        expected_schema (str): 許可するschema identifier.
+        collection_key (str): Listとして要求するtop-level collection field名.
+        errors (list[str]): 発見したsafe validation error codeの追記先.
+
+    Returns:
+        Mapping[str, object]: 読込済みdocument.読込またはroot検証に失敗した場合は空mapping.
+
+    Notes:
+        Raw JSON値とfilesystem pathをerror messageへ含めず,callerが全manifestのerrorを集約する.
+    """
     filename = path.name
     raw: object = None
     load_failed = False
@@ -828,6 +845,19 @@ def _parse_shapes(
     body_root: Path,
     errors: list[str],
 ) -> tuple[GetscoresWireShapeFixture, ...]:
+    """Response shape manifestのentryをtyped fixtureへ変換する.
+
+    Args:
+        document (Mapping[str, object]): Schema検査後のresponse shape document.
+        body_root (Path): Body fixtureを許可するroot directory.
+        errors (list[str]): 発見したsafe validation error codeの追記先.
+
+    Returns:
+        tuple[GetscoresWireShapeFixture, ...]: 受理できたshape entryのtuple.
+
+    Notes:
+        不正entryはerrorを追記して除外し,raw body pathやJSON値は診断に含めない.
+    """
     entries = _entry_mappings(
         document.get("shapes"),
         _RESPONSE_SHAPES_FILE,
@@ -921,6 +951,18 @@ def _parse_branches(
     document: Mapping[str, object],
     errors: list[str],
 ) -> tuple[GetscoresBranchCase, ...]:
+    """Branch case manifestのentryをtyped caseへ変換する.
+
+    Args:
+        document (Mapping[str, object]): Schema検査後のbranch case document.
+        errors (list[str]): 発見したsafe validation error codeの追記先.
+
+    Returns:
+        tuple[GetscoresBranchCase, ...]: 受理できたbranch caseのtuple.
+
+    Notes:
+        Unknown profileやduplicate caseはerrorへ集約し,raw request valueを保持しない.
+    """
     entries = _entry_mappings(document.get("cases"), _BRANCH_CASES_FILE, errors)
     branches: list[GetscoresBranchCase] = []
     seen: set[str] = set()
@@ -1021,6 +1063,18 @@ def _parse_crosswalk(
     document: Mapping[str, object],
     errors: list[str],
 ) -> tuple[StableBeatmapStatusCrosswalkEntry, ...]:
+    """Status crosswalk manifestのentryをtyped crosswalkへ変換する.
+
+    Args:
+        document (Mapping[str, object]): Schema検査後のstatus crosswalk document.
+        errors (list[str]): 発見したsafe validation error codeの追記先.
+
+    Returns:
+        tuple[StableBeatmapStatusCrosswalkEntry, ...]: 受理できたstatus crosswalk entryのtuple.
+
+    Notes:
+        Endpoint evidenceが不正なentryは除外し,全status coverageは後段validatorが確認する.
+    """
     entries = _entry_mappings(document.get("entries"), _STATUS_CROSSWALK_FILE, errors)
     crosswalk: list[StableBeatmapStatusCrosswalkEntry] = []
     seen: set[BeatmapRankStatus] = set()
@@ -1078,6 +1132,21 @@ def _parse_endpoint_status(
     field_name: str,
     errors: list[str],
 ) -> EndpointStatusEvidence | None:
+    """Nested endpoint status objectをtyped evidenceへ変換する.
+
+    Args:
+        value (object): Manifest内のendpoint status candidate.
+        filename (str): Error codeに使うmanifest file名.
+        location (int): Error codeに使うentry index.
+        field_name (str): `getscores`または`beatmap_info`のfield名.
+        errors (list[str]): 発見したsafe validation error codeの追記先.
+
+    Returns:
+        EndpointStatusEvidence | None: 受理したendpoint evidence.不正な場合はNone.
+
+    Notes:
+        `wire_status`とrepresentation/evidence stateの整合性はloaderと後段validatorで確認する.
+    """
     if not isinstance(value, Mapping):
         errors.append(_error(filename, location, field_name, "invalid_mapping"))
         return None
@@ -1122,6 +1191,17 @@ def _parse_endpoint_status(
 
 
 def _validate_bundle_shapes(evidence: GetscoresCompletionEvidence) -> tuple[str, ...]:
+    """Response shape bundleのmetadataとbody grammarを検証する.
+
+    Args:
+        evidence (GetscoresCompletionEvidence): Typed completion evidence bundle.
+
+    Returns:
+        tuple[str, ...]: 重複,fixture,header,body grammarのsafe error code.
+
+    Notes:
+        全5shapeの存在とbody ownerの一意性を確認し,raw bodyを返さない.
+    """
     errors: list[str] = []
     seen: set[GetscoresWireShapeId] = set()
     seen_body_files: set[Path] = set()
@@ -1164,6 +1244,18 @@ def _decode_body_fixture(
     body_file: Path,
     body_encoding: object,
 ) -> tuple[bytes | None, str]:
+    """指定encodingのbody fixtureをdecoded bytesへ変換する.
+
+    Args:
+        body_file (Path): 読み込むencoded body fixture.
+        body_encoding (object): Manifestが指定したencoding candidate.
+
+    Returns:
+        tuple[bytes | None, str]: Decoded bytesまたはNoneと,safe error code.
+
+    Notes:
+        File readやdecodeの失敗を例外として伝播せず,raw payloadを含まないerror codeへ変換する.
+    """
     if body_encoding is not GetscoresBodyEncoding.BASE64:
         return None, "unsupported_body_encoding"
     try:
@@ -1174,6 +1266,17 @@ def _decode_body_fixture(
 
 
 def _decode_canonical_base64_text(encoded: bytes) -> tuple[bytes | None, str]:
+    """CanonicalなBase64 textを厳密にdecoded bytesへ変換する.
+
+    Args:
+        encoded (bytes): Terminal LFを含むBase64 encoded fixture内容.
+
+    Returns:
+        tuple[bytes | None, str]: Canonical payloadのdecoded bytesまたはNoneとsafe error code.
+
+    Notes:
+        ASCII,whitespace,padding,再encodingの一致を確認し,encoded payloadを返さない.
+    """
     if not encoded:
         return b"", ""
     if encoded == b"\n":
@@ -1193,6 +1296,14 @@ def _decode_canonical_base64_text(encoded: bytes) -> tuple[bytes | None, str]:
 
 
 def _canonical_base64_format_error(encoded: bytes) -> str | None:
+    """Base64 fixture textのterminal LFと文字種を検証する.
+
+    Args:
+        encoded (bytes): 検証するBase64 fixture内容.
+
+    Returns:
+        str | None: Format不正時のsafe error code.Canonical形式ならNone.
+    """
     if not encoded.endswith(b"\n") or encoded.endswith(b"\n\n"):
         return "invalid_base64_terminal_lf"
 
@@ -1209,6 +1320,16 @@ def _wire_shape_metadata_errors(
     index: int,
     body: bytes,
 ) -> tuple[str, ...]:
+    """Wire shape metadataがcanonical HTTP contractと一致するか検証する.
+
+    Args:
+        shape (GetscoresWireShapeFixture): 検証するtyped wire shape.
+        index (int): Error codeに使うshape entry index.
+        body (bytes): Decoded済みresponse body.
+
+    Returns:
+        tuple[str, ...]: HTTP status,header,terminal LF,row metadataのsafe error code.
+    """
     errors: list[str] = []
     expected_status = 401 if shape.shape_id is GetscoresWireShapeId.AUTH_FAILURE else 200
     if shape.http_status != expected_status:
@@ -1278,6 +1399,16 @@ def _wire_shape_body_errors(
     index: int,
     body: bytes,
 ) -> tuple[str, ...]:
+    """Wire shape bodyがshort responseまたはheader grammarと一致するか検証する.
+
+    Args:
+        shape (GetscoresWireShapeFixture): 検証するtyped wire shape.
+        index (int): Error codeに使うshape entry index.
+        body (bytes): Decoded済みresponse body.
+
+    Returns:
+        tuple[str, ...]: Terminal newline,short body,header grammarのsafe error code.
+    """
     errors: list[str] = []
     actual_terminal_lf_count = len(body) - len(body.rstrip(b"\n"))
     if actual_terminal_lf_count != shape.terminal_lf_count:
@@ -1311,6 +1442,19 @@ def _header_shape_body_errors(
     index: int,
     body: bytes,
 ) -> tuple[str, ...]:
+    """Header形式のgetscores bodyをUTF-8とline grammarで検証する.
+
+    Args:
+        shape (GetscoresWireShapeFixture): Header形式であるwire shape.
+        index (int): Error codeに使うshape entry index.
+        body (bytes): Decoded済みresponse body.
+
+    Returns:
+        tuple[str, ...]: UTF-8,line break,forbidden content,header grammarのsafe error code.
+
+    Notes:
+        Body内のraw valueをdiagnosticへ含めない.
+    """
     errors: list[str] = []
     try:
         _ = body.decode("utf-8")
@@ -1356,6 +1500,16 @@ def _header_prelude_errors(
     index: int,
     lines: list[bytes],
 ) -> tuple[str, ...]:
+    """Getscores header先頭4行の固定grammarを検証する.
+
+    Args:
+        shape (GetscoresWireShapeFixture): Leaderboard row数を持つwire shape.
+        index (int): Error codeに使うshape entry index.
+        lines (list[bytes]): LFで分割したheader body行.
+
+    Returns:
+        tuple[str, ...]: Header row,metadata,display titleのsafe error code.
+    """
     errors: list[str] = []
     header_fields = lines[0].split(b"|")
     if (
@@ -1386,6 +1540,16 @@ def _header_score_section_errors(
     index: int,
     lines: list[bytes],
 ) -> tuple[str, ...]:
+    """Getscores header内のPersonal Bestとleaderboard rowを検証する.
+
+    Args:
+        shape (GetscoresWireShapeFixture): Personal Bestとrow数の期待値を持つshape.
+        index (int): Error codeに使うshape entry index.
+        lines (list[bytes]): LFで分割したheader body行.
+
+    Returns:
+        tuple[str, ...]: Personal Bestとleaderboard rowのsafe error code.
+    """
     errors: list[str] = []
     personal_best_row = lines[4]
     if shape.personal_best_present:
@@ -1414,6 +1578,14 @@ def _header_score_section_errors(
 
 
 def _is_valid_score_row(row: bytes) -> bool:
+    """1行のstable getscores score rowが固定field grammarを満たすか判定する.
+
+    Args:
+        row (bytes): Pipe区切りのscore row bytes.
+
+    Returns:
+        bool: 16field,必須player名,numeric field,flag fieldがすべて正しければTrue.
+    """
     fields = row.split(b"|")
     if len(fields) != _SCORE_ROW_FIELD_COUNT or not fields[1]:
         return False
@@ -1426,10 +1598,26 @@ def _is_valid_score_row(row: bytes) -> bool:
 
 
 def _is_ascii_non_negative_integer(value: bytes) -> bool:
+    """Bytes値がASCIIの非負10進整数か判定する.
+
+    Args:
+        value (bytes): 検証するbytes列.
+
+    Returns:
+        bool: 空でなくASCIIかつ全byteが10進digitならTrue.
+    """
     return bool(value) and value.isascii() and value.isdigit()
 
 
 def _validate_bundle_branches(evidence: GetscoresCompletionEvidence) -> tuple[str, ...]:
+    """Branch case bundleのcoverageとsemantic invariantsを検証する.
+
+    Args:
+        evidence (GetscoresCompletionEvidence): Typed completion evidence bundle.
+
+    Returns:
+        tuple[str, ...]: Case ID,profile coverage,mutation/warning contractのsafe error code.
+    """
     shape_ids = {shape.shape_id for shape in evidence.response_shapes}
     errors: list[str] = []
     seen: set[str] = set()
@@ -1474,6 +1662,16 @@ def _branch_case_semantic_errors(
     index: int,
     shape_ids: set[GetscoresWireShapeId],
 ) -> tuple[str, ...]:
+    """1件のbranch caseがselector,warning,evidence規約を満たすか検証する.
+
+    Args:
+        case (GetscoresBranchCase): 検証するtyped branch case.
+        index (int): Error codeに使うbranch entry index.
+        shape_ids (set[GetscoresWireShapeId]): Bundle内で許可するwire shape ID.
+
+    Returns:
+        tuple[str, ...]: Shape参照,category,mutation/warning,evidence stateのsafe error code.
+    """
     errors: list[str] = []
     if case.expected_shape_id not in shape_ids:
         errors.append(_error(_BRANCH_CASES_FILE, index, "expected_shape_id", "unknown_shape_id"))
@@ -1538,12 +1736,29 @@ def _branch_case_semantic_errors(
 
 
 def _expected_domain_category(case: GetscoresBranchCase) -> LeaderboardCategory | None:
+    """Branch caseのidentityとselectorから期待domain categoryを導出する.
+
+    Args:
+        case (GetscoresBranchCase): Categoryを検証するtyped branch case.
+
+    Returns:
+        LeaderboardCategory | None: Identityがcategory不可用ならNone,それ以外はselector対応
+            category.
+    """
     if case.identity_profile in _CATEGORY_UNAVAILABLE_IDENTITY_PROFILES:
         return None
     return _EXPECTED_CATEGORY_BY_SELECTOR[case.request_selector]
 
 
 def _validate_bundle_crosswalk(evidence: GetscoresCompletionEvidence) -> tuple[str, ...]:
+    """Status crosswalk bundleのendpoint contractとcoverageを検証する.
+
+    Args:
+        evidence (GetscoresCompletionEvidence): Typed completion evidence bundle.
+
+    Returns:
+        tuple[str, ...]: Duplicate status,official fixture,canonical contractのsafe error code.
+    """
     errors: list[str] = []
     seen: set[BeatmapRankStatus] = set()
     for index, entry in enumerate(evidence.status_crosswalk):
@@ -1561,6 +1776,14 @@ def _validate_bundle_crosswalk(evidence: GetscoresCompletionEvidence) -> tuple[s
 def _crosswalk_semantic_errors(
     entries: Sequence[StableBeatmapStatusCrosswalkEntry],
 ) -> tuple[str, ...]:
+    """Crosswalk各entryのendpoint evidence semanticを検証する.
+
+    Args:
+        entries (Sequence[StableBeatmapStatusCrosswalkEntry]): 検証するstatus crosswalk entry群.
+
+    Returns:
+        tuple[str, ...]: Endpoint representation,wire status,evidence sourceのsafe error code.
+    """
     errors: list[str] = []
     for index, entry in enumerate(entries):
         for endpoint_name, endpoint in (
@@ -1574,6 +1797,14 @@ def _crosswalk_semantic_errors(
 def _canonical_crosswalk_errors(
     entries: Sequence[StableBeatmapStatusCrosswalkEntry],
 ) -> tuple[str, ...]:
+    """CrosswalkがAthenaで確定したcanonical endpoint contractと一致するか検証する.
+
+    Args:
+        entries (Sequence[StableBeatmapStatusCrosswalkEntry]): 検証するstatus crosswalk entry群.
+
+    Returns:
+        tuple[str, ...]: Canonical status coverageとendpoint contract差分のsafe error code.
+    """
     errors: list[str] = []
     if {entry.canonical_status for entry in entries} != set(BeatmapRankStatus):
         errors.append(
@@ -1617,6 +1848,19 @@ def _canonical_crosswalk_errors(
 def _canonical_getscores_contract(
     status: BeatmapRankStatus,
 ) -> tuple[StatusRepresentation, int | None, EndpointEvidenceState, tuple[str, ...]] | None:
+    """Canonical BeatmapRankStatusに対応するgetscores evidence contractを返す.
+
+    Args:
+        status (BeatmapRankStatus): Crosswalkへ期待するcanonical beatmap status.
+
+    Returns:
+        tuple[StatusRepresentation, int | None, EndpointEvidenceState, tuple[str, ...]] | None:
+            Representation,wire status,evidence state,safe source群.未定義statusではNone.
+
+    Notes:
+        APPROVEDはreference implementationとAthena testの組合せ,UNKNOWNはAthena deterministic
+        evidenceを用いる.
+    """
     status_contract = _CANONICAL_GETSCORES_STATUS.get(status)
     if status_contract is None:
         return None
@@ -1658,6 +1902,15 @@ def _canonical_beatmap_info_errors(
     index: int,
     entry: StableBeatmapStatusCrosswalkEntry,
 ) -> tuple[str, ...]:
+    """Crosswalk内のbeatmap info evidenceがcanonical contractと一致するか検証する.
+
+    Args:
+        index (int): Error codeに使うcrosswalk entry index.
+        entry (StableBeatmapStatusCrosswalkEntry): 検証するtyped crosswalk entry.
+
+    Returns:
+        tuple[str, ...]: Contractが異なる場合のsafe error code.一致時は空tuple.
+    """
     if entry.canonical_status is BeatmapRankStatus.RANKED:
         expected_contract = (
             StatusRepresentation.WIRE,
@@ -1696,6 +1949,16 @@ def _endpoint_semantic_errors(
     endpoint_name: str,
     endpoint: EndpointStatusEvidence,
 ) -> tuple[str, ...]:
+    """1つのendpoint status evidenceのrepresentationと根拠を検証する.
+
+    Args:
+        index (int): Error codeに使うcrosswalk entry index.
+        endpoint_name (str): `getscores`または`beatmap_info`のendpoint名.
+        endpoint (EndpointStatusEvidence): 検証するtyped endpoint evidence.
+
+    Returns:
+        tuple[str, ...]: Evidence source,unconfirmed state,wire statusのsafe error code.
+    """
     errors: list[str] = []
     if (
         endpoint.evidence_status is not EndpointEvidenceState.UNCONFIRMED
@@ -1774,6 +2037,19 @@ def _official_getscores_fixture_errors(
     endpoint_name: str,
     endpoint: EndpointStatusEvidence,
 ) -> tuple[str, ...]:
+    """Official getscores fixtureがendpoint wire contractを裏付けるか検証する.
+
+    Args:
+        index (int): Error codeに使うcrosswalk entry index.
+        endpoint_name (str): 検証するendpoint名.
+        endpoint (EndpointStatusEvidence): Official fixture evidenceを持つendpoint evidence.
+
+    Returns:
+        tuple[str, ...]: Fixture read,parse,wire contract不一致のsafe error code.
+
+    Notes:
+        Official fixture evidence以外では何も検証せず空tupleを返す.
+    """
     if (
         endpoint_name != "getscores"
         or endpoint.evidence_status is not EndpointEvidenceState.OFFICIAL_FIXTURE
@@ -1832,6 +2108,16 @@ def _official_getscores_fixture_contract(
     response_kind: GetscoresResponseKind,
     response: GetscoresResponse,
 ) -> tuple[StatusRepresentation, int | None] | None:
+    """Parsed official fixtureから比較可能なgetscores status contractを導出する.
+
+    Args:
+        response_kind (GetscoresResponseKind): Parsed responseのkind.
+        response (GetscoresResponse): Parsed response本体.
+
+    Returns:
+        tuple[StatusRepresentation, int | None] | None: Unavailableまたはheader wire contract.
+            比較不能なresponse kindまたはheader欠落時はNone.
+    """
     if response_kind is GetscoresResponseKind.NOT_SUBMITTED:
         return (StatusRepresentation.UNAVAILABLE, None)
     if response_kind is not GetscoresResponseKind.HEADER:
@@ -1843,6 +2129,18 @@ def _official_getscores_fixture_contract(
 
 
 def _surface_result(label: str, errors: Sequence[str]) -> SurfaceResult:
+    """Validation error群をmandatory getscores evidence結果へ投影する.
+
+    Args:
+        label (str): `response shapes`などのcompletion evidence分類.
+        errors (Sequence[str]): Raw valueを含まないvalidation error code群.
+
+    Returns:
+        SurfaceResult: ErrorがあればFAIL,なければPASSのmandatory golden fixture結果.
+
+    Notes:
+        診断にはerror code本文を含めず,件数だけを公開する.
+    """
     if errors:
         message = f"getscores {label} validation failed: {len(errors)} error(s)"
         status = VerificationStatus.FAIL
@@ -1864,6 +2162,19 @@ def _entry_mappings(
     filename: str,
     errors: list[str],
 ) -> tuple[tuple[int, Mapping[str, object]], ...]:
+    """Manifest collectionからobject entryと元indexを抽出する.
+
+    Args:
+        value (object): Manifest collection candidate.
+        filename (str): Error codeに使うmanifest file名.
+        errors (list[str]): Non-object entryのsafe error codeの追記先.
+
+    Returns:
+        tuple[tuple[int, Mapping[str, object]], ...]: 元のarray indexとobject entryのtuple.
+
+    Notes:
+        非sequenceは空tupleにし,entry indexは不正entryを除外しても詰めない.
+    """
     if not _is_sequence(value):
         return ()
     entries: list[tuple[int, Mapping[str, object]]] = []
@@ -1881,6 +2192,17 @@ def _unknown_entry_fields(
     filename: str,
     location: int,
 ) -> tuple[str, ...]:
+    """Manifest entryの許可されないfieldをsafe error codeへ変換する.
+
+    Args:
+        entry (Mapping[str, object]): 検証するmanifest entry.
+        allowed (frozenset[str]): 許可するfield名集合.
+        filename (str): Error codeに使うmanifest file名.
+        location (int): Error codeに使うentry index.
+
+    Returns:
+        tuple[str, ...]: Unknown fieldごとのsafe error code.
+    """
     return tuple(
         _error(filename, location, key if _safe_key(key) else "field", "unknown_entry_field")
         for key in entry
@@ -1894,6 +2216,17 @@ def _missing_required_field_errors(
     filename: str,
     location: int,
 ) -> tuple[str, ...]:
+    """Manifest entryから欠落した必須fieldをsafe error codeへ変換する.
+
+    Args:
+        entry (Mapping[str, object]): 検証するmanifest entry.
+        required (frozenset[str]): 必須field名集合.
+        filename (str): Error codeに使うmanifest file名.
+        location (int): Error codeに使うentry index.
+
+    Returns:
+        tuple[str, ...]: 欠落fieldごとのsafe error codeをfield名順で返す.
+    """
     return tuple(
         _error(filename, location, field_name, "missing_required_field")
         for field_name in sorted(required)
@@ -1902,6 +2235,19 @@ def _missing_required_field_errors(
 
 
 def _forbidden_errors(value: object, filename: str, location: str | int) -> tuple[str, ...]:
+    """Manifest valueを再帰走査してsecretまたはinternal fieldを検出する.
+
+    Args:
+        value (object): 検査するmanifest documentまたはentry.
+        filename (str): Error codeに使うmanifest file名.
+        location (str | int): Error codeに使うdocument位置またはentry index.
+
+    Returns:
+        tuple[str, ...]: Forbidden keyと過剰nestingのsafe error codeを重複なく返す.
+
+    Notes:
+        Raw valueではなくkey分類だけをerror codeに残し,nesting深さは上限64に制限する.
+    """
     errors: list[str] = []
     pending: list[tuple[object, int]] = [(value, 0)]
     while pending:
@@ -1941,6 +2287,18 @@ def _forbidden_errors(value: object, filename: str, location: str | int) -> tupl
 
 
 def _safe_body_path(value: object, body_root: Path) -> tuple[Path | None, str]:
+    """Manifestのbody file名をbody root内の安全なpathへ解決する.
+
+    Args:
+        value (object): Manifestが指定したbody file candidate.
+        body_root (Path): Fixtureを許可するresolved root directory.
+
+    Returns:
+        tuple[Path | None, str]: 安全で存在するpathまたはNoneとsafe error code.
+
+    Notes:
+        Absolute path,parent traversal,root外への解決,未存在fileを拒否する.
+    """
     if not isinstance(value, str) or not value:
         return None, "invalid_body_path"
     try:
@@ -1961,6 +2319,15 @@ def _safe_body_path(value: object, body_root: Path) -> tuple[Path | None, str]:
 
 
 def _enum_member[EnumT: Enum](enum_type: type[EnumT], value: object) -> EnumT | None:
+    """文字列candidateを指定enum memberへ安全に変換する.
+
+    Args:
+        enum_type (type[EnumT]): 変換先のenum型.
+        value (object): Manifestから得たcandidate value.
+
+    Returns:
+        EnumT | None: 既知memberならその値.文字列以外またはunknown valueならNone.
+    """
     if not isinstance(value, str):
         return None
     try:
@@ -1977,6 +2344,19 @@ def _enum_tuple[EnumT: Enum](
     field_name: str,
     errors: list[str],
 ) -> tuple[EnumT, ...] | None:
+    """Manifestのenum listをtyped tupleへ安全に変換する.
+
+    Args:
+        enum_type (type[EnumT]): List memberの変換先enum型.
+        value (object): Manifestから得たlist candidate.
+        filename (str): Error codeに使うmanifest file名.
+        location (int): Error codeに使うentry index.
+        field_name (str): 検証するfield名.
+        errors (list[str]): Invalid listまたはmemberのsafe error codeの追記先.
+
+    Returns:
+        tuple[EnumT, ...] | None: 全memberが有効ならtyped tuple.そうでなければNone.
+    """
     if not _is_sequence(value):
         errors.append(_error(filename, location, field_name, "invalid_enum_list"))
         return None
@@ -1995,6 +2375,14 @@ def _enum_tuple[EnumT: Enum](
 
 
 def _string_mapping(value: object) -> Mapping[str, str] | None:
+    """Object candidateを文字列key/valueだけのmappingへ変換する.
+
+    Args:
+        value (object): Manifestから得たmapping candidate.
+
+    Returns:
+        Mapping[str, str] | None: 全key/valueが文字列なら新しいmapping.そうでなければNone.
+    """
     if not isinstance(value, Mapping):
         return None
     mapping = cast("Mapping[object, object]", value)
@@ -2007,6 +2395,14 @@ def _string_mapping(value: object) -> Mapping[str, str] | None:
 
 
 def _string_tuple_value(value: object) -> tuple[str, ...] | None:
+    """Sequence candidateを文字列だけのtupleへ変換する.
+
+    Args:
+        value (object): Manifestから得たsequence candidate.
+
+    Returns:
+        tuple[str, ...] | None: 全要素が文字列ならtuple.そうでなければNone.
+    """
     if not _is_sequence(value):
         return None
     items = cast("Sequence[object]", value)
@@ -2018,6 +2414,15 @@ def _string_tuple_value(value: object) -> tuple[str, ...] | None:
 def _evidence_source_tuple(
     value: object,
 ) -> tuple[GetscoresEvidenceSource, ...] | None:
+    """String sequenceを安全なGetscoresEvidenceSource tupleへ変換する.
+
+    Args:
+        value (object): Manifestから得たevidence source list candidate.
+
+    Returns:
+        tuple[GetscoresEvidenceSource, ...] | None: 全sourceが安全ならtyped tuple.
+            そうでなければNone.
+    """
     strings = _string_tuple_value(value)
     if strings is None:
         return None
@@ -2028,6 +2433,14 @@ def _evidence_source_tuple(
 
 
 def _is_safe_evidence_source(value: str) -> bool:
+    """Evidence sourceが許可prefixとsafe payload規約を満たすか判定する.
+
+    Args:
+        value (str): 検証するsymbolic evidence source.
+
+    Returns:
+        bool: 長さ,禁止文字,prefix,path segment,payload patternがすべて有効ならTrue.
+    """
     if not value or len(value) > _MAX_EVIDENCE_SOURCE_LENGTH:
         return False
     if any(character in value for character in "\x00\r\n=&?%"):
@@ -2045,12 +2458,28 @@ def _is_safe_evidence_source(value: str) -> bool:
 
 
 def _int_value(value: object) -> int | None:
+    """boolを除く整数candidateを返す.
+
+    Args:
+        value (object): Manifestから得たcandidate value.
+
+    Returns:
+        int | None: Boolではない整数ならその値.そうでなければNone.
+    """
     if isinstance(value, int) and not isinstance(value, bool):
         return value
     return None
 
 
 def _non_negative_int(value: object) -> int | None:
+    """非負の整数candidateを返す.
+
+    Args:
+        value (object): Manifestから得たcandidate value.
+
+    Returns:
+        int | None: Boolではない0以上の整数ならその値.そうでなければNone.
+    """
     number = _int_value(value)
     if number is None or number < 0:
         return None
@@ -2058,25 +2487,68 @@ def _non_negative_int(value: object) -> int | None:
 
 
 def _strict_bool(value: object) -> bool | None:
+    """bool型そのものだけを受理して返す.
+
+    Args:
+        value (object): Manifestから得たcandidate value.
+
+    Returns:
+        bool | None: Bool型ならその値.そうでなければNone.
+    """
     if isinstance(value, bool):
         return value
     return None
 
 
 def _is_sequence(value: object) -> bool:
+    """文字列系を除くcollections.abc.Sequenceか判定する.
+
+    Args:
+        value (object): 検証するcandidate value.
+
+    Returns:
+        bool: Sequenceでありstr,bytes,bytearrayのいずれでもなければTrue.
+    """
     return isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray)
 
 
 def _safe_key(value: str) -> bool:
+    """Manifest field名がsafe identifier規約を満たすか判定する.
+
+    Args:
+        value (str): 検証するfield名.
+
+    Returns:
+        bool: 小文字英数字で始まり,英数字,`_`,`.`,`-`だけで構成されればTrue.
+    """
     return bool(_SAFE_IDENTIFIER.fullmatch(value))
 
 
 def _error(filename: str, location: str | int, field_name: str, code: str) -> str:
+    """Raw valueを含まない一貫したvalidation error codeを生成する.
+
+    Args:
+        filename (str): Manifest file名.
+        location (str | int): Document位置またはentry index.
+        field_name (str): Safeに正規化するfield名.
+        code (str): Error種別を示す固定code.
+
+    Returns:
+        str: `filename:entry[location]:field:code`形式のsafe error code.
+    """
     safe_field = field_name if _safe_key(field_name.replace(".", "_")) else "field"
     return f"{filename}:entry[{location}]:{safe_field}:{code}"
 
 
 def _sorted_errors(errors: Sequence[str]) -> tuple[str, ...]:
+    """Validation error codeを重複なく字句順へ正規化する.
+
+    Args:
+        errors (Sequence[str]): 正規化前のsafe error code群.
+
+    Returns:
+        tuple[str, ...]: 重複を除去して昇順に並べたerror code.
+    """
     return tuple(sorted(set(errors)))
 
 

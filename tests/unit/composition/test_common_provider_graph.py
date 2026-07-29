@@ -1,4 +1,4 @@
-"""Dishka provider graph tests for shared and app-only provider groups."""
+"""共有 provider group と app 専用 provider group の Dishka graph を検証する."""
 
 from __future__ import annotations
 
@@ -170,6 +170,11 @@ from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHand
 
 
 def _runtime_state_overrides() -> TestProviderSet:
+    """外部 state backend を使わない provider graph 用 override を作る.
+
+    Returns:
+        TestProviderSet: APP scope の in-memory state dependency を置換する provider set.
+    """
     return TestProviderSet(
         replace_value(PacketQueue, InMemoryPacketQueue(), scope=Scope.APP),
         replace_value(ChannelStateStore, InMemoryChannelStateStore(), scope=Scope.APP),
@@ -179,11 +184,24 @@ def _runtime_state_overrides() -> TestProviderSet:
 
 
 async def _close_common_dependencies(container: AsyncContainer) -> None:
+    """Provider graph test が取得した container を必ず閉じる.
+
+    Args:
+        container (AsyncContainer): test 後に資源を解放する Dishka container.
+
+    Returns:
+        None: container を閉じ, 呼び出し側へ値を返さない.
+    """
     await container.close()
 
 
 @pytest.mark.asyncio
 async def test_app_provider_graph_resolves_shared_infrastructure_dependencies() -> None:
+    """App graph が共有 infrastructure と登録済み job task を解決する契約を検証する.
+
+    Returns:
+        None: 共有 dependency の型と broker task 登録を検証して完了する.
+    """
     config = make_app_config(environment="development")
     container = make_app_container(config, overrides=(_runtime_state_overrides(),))
 
@@ -219,6 +237,11 @@ async def test_app_provider_graph_resolves_shared_infrastructure_dependencies() 
 
 @pytest.mark.asyncio
 async def test_app_provider_graph_resolves_query_repositories() -> None:
+    """開発用 app graph が SQLAlchemy query repository を解決する契約を検証する.
+
+    Returns:
+        None: 各 query port の具体 repository 型を検証して完了する.
+    """
     config = make_app_config(environment="development")
     container = make_app_container(config, overrides=(_runtime_state_overrides(),))
 
@@ -267,6 +290,11 @@ async def test_app_provider_graph_resolves_query_repositories() -> None:
 
 @pytest.mark.asyncio
 async def test_app_provider_graph_resolves_shared_provider_groups() -> None:
+    """App graph が共有 provider group の service と use case を解決する契約を検証する.
+
+    Returns:
+        None: 期待する各 dependency が自身の concrete type であることを検証して完了する.
+    """
     config = make_app_config(environment="development")
     container = make_app_container(config, overrides=(_runtime_state_overrides(),))
 
@@ -306,6 +334,11 @@ async def test_app_provider_graph_resolves_shared_provider_groups() -> None:
 
 @pytest.mark.asyncio
 async def test_app_provider_graph_resolves_app_only_provider_groups() -> None:
+    """Test runtime override の app graph が app 専用 provider group を解決する契約を検証する.
+
+    Returns:
+        None: identity, chat, stable transport を含む dependency 型を検証して完了する.
+    """
     config = make_app_config(environment="test")
     container = make_app_container(config, overrides=(make_in_memory_runtime_provider_set(),))
 
@@ -363,6 +396,11 @@ async def test_app_provider_graph_resolves_app_only_provider_groups() -> None:
 
 @pytest.mark.asyncio
 async def test_app_provider_graph_resolves_stable_workflows_with_warmup_dependency() -> None:
+    """App graph が beatmap warmup を含む stable workflow 依存を解決する契約を検証する.
+
+    Returns:
+        None: warmup, getscores, status, score submission の型を検証して完了する.
+    """
     config = make_app_config(environment="test")
     container = make_app_container(config, overrides=(make_in_memory_runtime_provider_set(),))
 
@@ -381,6 +419,11 @@ async def test_app_provider_graph_resolves_stable_workflows_with_warmup_dependen
 
 @pytest.mark.asyncio
 async def test_app_provider_graph_configures_score_submit_chart_urls() -> None:
+    """Domain を設定した app graph が stable score response の chart URL を構成する契約を検証する.
+
+    Returns:
+        None: response body に beatmap と user の chart URL が含まれることを検証して完了する.
+    """
     config = make_app_config(environment="test", domain="example.com")
     container = make_app_container(config, overrides=(make_in_memory_runtime_provider_set(),))
 
@@ -405,6 +448,13 @@ async def test_app_provider_graph_configures_score_submit_chart_urls() -> None:
 
 @pytest.mark.asyncio
 async def test_app_provider_graph_resolves_getscores_and_friend_query_dependencies() -> None:
+    """In-memory app graphがgetscoresとfriend eligibility queryを同じstateで解決する.
+
+    この契約を検証する.
+
+    Returns:
+        None: leaderboard repository, handler, 登録後の eligible user id を検証して完了する.
+    """
     config = make_app_config(environment="test")
     container = make_app_container(config, overrides=(make_in_memory_runtime_provider_set(),))
 
@@ -426,6 +476,11 @@ async def test_app_provider_graph_resolves_getscores_and_friend_query_dependenci
 
 @pytest.mark.asyncio
 async def test_worker_provider_graph_uses_shared_dependencies_without_app_only_groups() -> None:
+    """Worker graph が共有 dependency を解決し app 専用 Bancho endpoint を拒否する契約を検証する.
+
+    Returns:
+        None: worker dependency の型と app 専用 dependency の NoFactoryError を検証して完了する.
+    """
     config = make_app_config(environment="production")
     container = make_worker_container(config, overrides=(_runtime_state_overrides(),))
 

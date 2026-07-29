@@ -1,3 +1,5 @@
+"""共通 test factory の既定値と override 契約を検証する."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -14,6 +16,11 @@ from osu_server.domain.identity.users import User
 
 
 def test_make_channel_creates_with_defaults() -> None:
+    """Channel factory が利用可能な既定値を持つ Channel を返す契約を検証する.
+
+    Returns:
+        None: 既定 Channel の型と主要属性を検証して完了する.
+    """
     channel = make_channel()
     assert isinstance(channel, Channel)
     assert channel.id == 1
@@ -25,6 +32,11 @@ def test_make_channel_creates_with_defaults() -> None:
 
 
 def test_make_channel_allows_overrides() -> None:
+    """Channel factory が指定された各 override を保持する契約を検証する.
+
+    Returns:
+        None: 指定値を持つ Channel を検証して完了する.
+    """
     custom_time = datetime.now(UTC)
     channel = make_channel(
         id=42,
@@ -49,6 +61,11 @@ def test_make_channel_allows_overrides() -> None:
 
 
 def test_make_channel_role_override() -> None:
+    """Channel role override factory が権限を含む指定値を保持する契約を検証する.
+
+    Returns:
+        None: 作成された override の型と権限値を検証して完了する.
+    """
     override = make_channel_role_override(
         channel_id=10,
         role_id=20,
@@ -63,6 +80,11 @@ def test_make_channel_role_override() -> None:
 
 
 def test_make_user_creates_with_defaults() -> None:
+    """User factory がログイン可能な既定 user を返す契約を検証する.
+
+    Returns:
+        None: 既定 user の型と識別属性を検証して完了する.
+    """
     user = make_user()
     assert isinstance(user, User)
     assert user.id == 1
@@ -72,6 +94,11 @@ def test_make_user_creates_with_defaults() -> None:
 
 
 def test_make_user_allows_overrides() -> None:
+    """User factory が指定された identity と日時の override を保持する契約を検証する.
+
+    Returns:
+        None: 指定値を持つ user を検証して完了する.
+    """
     custom_time = datetime.now(UTC)
     user = make_user(
         id=99,
@@ -94,6 +121,11 @@ def test_make_user_allows_overrides() -> None:
 
 
 def test_make_app_config_creates_with_defaults() -> None:
+    """App config factory が開発用の有効な既定設定を返す契約を検証する.
+
+    Returns:
+        None: URL 型と beatmap 設定を検証して完了する.
+    """
     config = make_app_config()
     assert isinstance(config, AppConfig)
     assert isinstance(config.database_url, PostgresDsn)
@@ -106,6 +138,11 @@ def test_make_app_config_creates_with_defaults() -> None:
 
 
 def test_make_app_config_allows_overrides() -> None:
+    """App config factory が実行環境と endpoint の override を保持する契約を検証する.
+
+    Returns:
+        None: 指定した設定属性を検証して完了する.
+    """
     config = make_app_config(
         database_url="postgresql+asyncpg://prod_db:pass@host/prod",
         valkey_url="redis://valkey_host:6379/1",

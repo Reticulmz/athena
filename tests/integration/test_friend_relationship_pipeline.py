@@ -1,3 +1,9 @@
+"""friend relationshipとlogin rosterの統合契約を検証する.
+
+stable C2S friend操作をin-memory persistenceへ接続する.
+login responseのFRIENDS_LISTとonline presenceへの反映を確認する.
+"""
+
 from __future__ import annotations
 
 import struct
@@ -59,6 +65,16 @@ _HEADER = struct.Struct("<HBI")
 
 @dataclass(slots=True)
 class FriendPipeline:
+    """friend integration testで共有する構成済みcomponentを保持する.
+
+    Attributes:
+        dispatcher (PacketDispatcher): friend関連C2S packetをhandlerへ配送するdispatcher.
+        login_response_builder (LoginResponseBuilder): login packet streamを構築するworkflow.
+        session_store (InMemorySessionStore): online利用者の接続状態を保持するstore.
+        owner (User): friend relationshipを所有するtest利用者.
+        target (User): ownerがfriend追加または削除するtest利用者.
+    """
+
     dispatcher: PacketDispatcher
     login_response_builder: LoginResponseBuilder
     session_store: InMemorySessionStore
@@ -67,6 +83,14 @@ class FriendPipeline:
 
 
 async def _setup_pipeline() -> FriendPipeline:
+    """Friend handlerとlogin response builderを持つin-memory pipelineを構築する.
+
+    Returns:
+        FriendPipeline: ownerとtargetとfriend C2S handlerを登録済みの構成.
+
+    Notes:
+        BanchoBotはfriend候補として扱えるsystem userとして事前同期する.
+    """
     command_state = InMemoryCommandRepositoryState()
     uow_factory = InMemoryUnitOfWorkFactory(command_state)
     user_repo = InMemoryUserCommandRepository(command_state)
@@ -113,6 +137,14 @@ async def _setup_pipeline() -> FriendPipeline:
 
 
 def _login_response(user: User) -> LoginResponse:
+    """指定利用者のlogin responseをテスト用に構築する.
+
+    Args:
+        user (User): loginを完了したものとして扱う利用者.
+
+    Returns:
+        LoginResponse: normalかつverified権限と固定session dataを持つresponse.
+    """
     privileges = Privileges.NORMAL | Privileges.VERIFIED
     return LoginResponse(
         token="test-token",
@@ -135,6 +167,17 @@ def _login_response(user: User) -> LoginResponse:
 
 
 def _friend_ids_from_login_stream(stream: bytes) -> frozenset[int]:
+    """Login packet streamからFRIENDS_LISTの利用者ID集合を抽出する.
+
+    Args:
+        stream (bytes): LoginResponseBuilderが構築したS2C packet stream.
+
+    Returns:
+        frozenset[int]: FRIENDS_LIST packetに含まれるfriend利用者IDの重複なし集合.
+
+    Raises:
+        AssertionError: streamにFRIENDS_LIST packetが含まれない場合.
+    """
     offset = 0
     while offset < len(stream):
         packet_id, _compressed, payload_size = cast(
@@ -152,11 +195,30 @@ def _friend_ids_from_login_stream(stream: bytes) -> frozenset[int]:
 
 
 async def _build_friend_ids(pipeline: FriendPipeline) -> frozenset[int]:
+    """ownerのlogin responseからfriend利用者ID集合を取得する.
+
+    Args:
+        pipeline (FriendPipeline): ownerとlogin response builderを持つtest構成.
+
+    Returns:
+        frozenset[int]: ownerのFRIENDS_LISTに含まれるfriend利用者ID集合.
+
+    Raises:
+        AssertionError: login packet streamにFRIENDS_LISTが存在しない場合.
+    """
     stream = await pipeline.login_response_builder.build(_login_response(pipeline.owner))
     return _friend_ids_from_login_stream(stream)
 
 
 async def test_stable_add_remove_friend_updates_login_friends_list() -> None:
+    """Stable ADD_FRIENDとREMOVE_FRIENDが次のlogin FRIENDS_LISTへ反映されることを検証する.
+
+    ownerからtargetへのfriend関係を追加してから削除する.
+    観測結果としてlogin streamのfriend ID集合は空からtargetのみを経て再び空になる.
+
+    Returns:
+        None: C2S mutationとlogin projectionの整合を検証して終了する.
+    """
     pipeline = await _setup_pipeline()
 
     assert await _build_friend_ids(pipeline) == frozenset()
@@ -179,6 +241,14 @@ async def test_stable_add_remove_friend_updates_login_friends_list() -> None:
 
 
 async def test_login_friends_list_includes_offline_and_explicit_banchobot_only() -> None:
+    """Login FRIENDS_LISTがoffline friendと明示追加したBanchoBotだけを含むことを検証する.
+
+    targetからownerへの片方向friendを先に追加してownerのlogin結果を確認する.
+    次にownerからtargetとBanchoBotを追加し観測結果として両者だけがfriend集合に含まれる.
+
+    Returns:
+        None: relationship方向とsystem userのfriend projectionを検証して終了する.
+    """
     pipeline = await _setup_pipeline()
 
     await pipeline.dispatcher.dispatch(
@@ -206,6 +276,14 @@ async def test_login_friends_list_includes_offline_and_explicit_banchobot_only()
 
 
 async def test_login_presence_includes_active_online_user_sessions() -> None:
+    """Login responseがactive sessionを持つ利用者のpresenceとroster IDを含むことを検証する.
+
+    targetのsessionを作成してownerのlogin responseを構築する.
+    観測結果としてtargetのUSER_PRESENCEとBanchoBotと両利用者のbundleがstreamに含まれる.
+
+    Returns:
+        None: online sessionからlogin rosterを構築する契約を検証して終了する.
+    """
     pipeline = await _setup_pipeline()
     privileges = Privileges.NORMAL | Privileges.VERIFIED
     await pipeline.session_store.create(

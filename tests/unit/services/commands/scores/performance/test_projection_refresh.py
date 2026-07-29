@@ -1,4 +1,4 @@
-"""Performance best projection refresh/rebuild use-case tests。"""
+"""performance best projectionのrefresh/rebuild contractを検証するtest module."""
 
 from __future__ import annotations
 
@@ -55,6 +55,14 @@ _RECALCULATOR_VERSION = "4.1.0"
 
 @pytest.mark.asyncio
 async def test_refresh_upserts_eligible_score_with_completed_current_pp() -> None:
+    """Eligible scoreのcompleted current PPをperformance bestへupsertするrefresh契約を検証する.
+
+    ranked vanilla scoreとcompleted calculationを保存してrefreshし scoreとcalculationとPPを保持した
+    projectionが保存されることを確認する.
+
+    Returns:
+        None: refresh outcomeと返却projectionと永続化されたbest rowを検証して完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     score_id = await _persist_score(factory, _score(accuracy=0.9876, score=987_654))
     calculation_id = await _complete_current_performance(
@@ -89,6 +97,14 @@ async def test_refresh_upserts_eligible_score_with_completed_current_pp() -> Non
 
 @pytest.mark.asyncio
 async def test_refresh_skips_pending_performance_without_projection_mutation() -> None:
+    """Pending performanceを持つscoreがprojectionを変更せずskipされるrefresh契約を検証する.
+
+    queued calculationを関連付けたeligible scoreをrefreshする.
+    current PP不足のoutcomeとprojection未作成を確認する.
+
+    Returns:
+        None: missing current PP outcomeとqueued calculationとbest row不在を検証して完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     score_id = await _persist_score(factory, _score())
     calculation_id = await _create_pending_performance(factory, score_id=score_id)
@@ -110,6 +126,14 @@ async def test_refresh_skips_pending_performance_without_projection_mutation() -
 
 @pytest.mark.asyncio
 async def test_refresh_skips_unavailable_performance_without_projection_mutation() -> None:
+    """Unavailable performanceを持つscoreがprojectionを変更せずskipされるrefresh契約を検証する.
+
+    unavailable calculationを関連付けたeligible scoreをrefreshする.
+    unavailable outcomeとprojection未作成を確認する.
+
+    Returns:
+        None: unavailable outcomeとreasonとbest row不在を検証して完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     score_id = await _persist_score(factory, _score())
     calculation_id = await _create_unavailable_performance(factory, score_id=score_id)
@@ -131,6 +155,15 @@ async def test_refresh_skips_unavailable_performance_without_projection_mutation
 
 @pytest.mark.asyncio
 async def test_refresh_rebuilds_user_slice_when_current_pp_disappears() -> None:
+    """Current PP消失時にrefreshがuser sliceとcurrent statsを再構築する契約を検証する.
+
+    2つの既存projectionの一方をunavailable replacementへ置き換えてrefreshし 失効したbest rowを
+    削除し残ったscoreからcurrent statsを再計算することを確認する.
+
+    Returns:
+        None: unavailable outcomeと保持されるprojection, 削除されるprojection, statsを
+            検証して完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     kept_score_id = await _persist_score(
         factory,
@@ -202,6 +235,14 @@ async def test_refresh_rebuilds_user_slice_when_current_pp_disappears() -> None:
 
 @pytest.mark.asyncio
 async def test_refresh_non_best_score_does_not_rebuild_current_stats() -> None:
+    """non-best scoreのrefreshが既存current statsを再構築しない契約を検証する.
+
+    より高い既存best rowと固定current statsを保存してから低いPPのscoreをrefreshする.
+    best rowを維持してseeded statsを変更しないことを確認する.
+
+    Returns:
+        None: refresh outcomeと維持されるbest rowと変更されないcurrent statsを検証して完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     best_score_id = await _persist_score(
         factory,
@@ -257,6 +298,14 @@ async def test_refresh_non_best_score_does_not_rebuild_current_stats() -> None:
 
 @pytest.mark.asyncio
 async def test_refresh_skips_relax_play_before_reading_performance() -> None:
+    """Relax playがperformanceを参照する前にskipされるrefresh契約を検証する.
+
+    relax modを持つscoreをcalculationなしでrefreshする.
+    playstyle out of scopeのskip reasonとprojection未作成を確認する.
+
+    Returns:
+        None: ineligible score outcomeとskip reasonとbest row不在を検証して完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     score_id = await _persist_score(
         factory,
@@ -274,6 +323,15 @@ async def test_refresh_skips_relax_play_before_reading_performance() -> None:
 
 @pytest.mark.asyncio
 async def test_refresh_skips_leaderboard_ineligible_score() -> None:
+    """leaderboard対象外scoreがcompleted performanceを持ってもskipされるrefresh契約を検証する.
+
+    leaderboard eligibilityをfalseにしたscoreへcompleted calculationを保存してrefreshする.
+    projectionを作らずcalculationを維持することを確認する.
+
+    Returns:
+        None: ineligible score outcome, skip reason, completed calculation, best row不在を
+            検証して完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     score_id = await _persist_score(
         factory,
@@ -302,6 +360,15 @@ async def test_refresh_skips_leaderboard_ineligible_score() -> None:
 
 @pytest.mark.asyncio
 async def test_rebuild_user_slice_converges_after_recalculation_unavailable_outcome() -> None:
+    """User slice rebuildがunavailable recalculation後のbest projectionへ収束する契約を検証する.
+
+    同一userのcompleted calculation群とunavailable replacementを保存してrebuildする.
+    highest completed PPだけを投影して失効したbeatmap rowを削除することを確認する.
+
+    Returns:
+        None: rebuild countと保持されるhighest projection, 削除されるstale projectionを
+            検証して完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     low_score_id = await _persist_score(
         factory,
@@ -366,6 +433,14 @@ async def test_rebuild_user_slice_converges_after_recalculation_unavailable_outc
 
 @pytest.mark.asyncio
 async def test_rebuild_beatmap_slice_replaces_each_user_scope_and_keeps_other_beatmaps() -> None:
+    """Beatmap slice rebuildが全user scopeを置換し他beatmapのprojectionを維持する契約を検証する.
+
+    指定beatmapの2 user scoreと別beatmapの既存projectionを保存してrebuildし 対象2 scopeを投影して
+    非対象beatmap rowを残すことを確認する.
+
+    Returns:
+        None: rebuild countと対象user scopeのprojectionと維持される別beatmap rowを検証して完了する.
+    """
     factory = InMemoryUnitOfWorkFactory()
     first_score_id = await _persist_score(
         factory,
@@ -425,6 +500,15 @@ async def test_rebuild_beatmap_slice_replaces_each_user_scope_and_keeps_other_be
 
 
 async def _persist_score(factory: UnitOfWorkFactory, score: Score) -> int:
+    """scoreと対応するbeatmapset snapshotをin-memory persistenceへ保存する.
+
+    Args:
+        factory (UnitOfWorkFactory): scoreとbeatmap metadataを保存するunit of work factory.
+        score (Score): snapshotとともに永続化するtest score.
+
+    Returns:
+        int: 保存後に割り当てられたscore ID.
+    """
     async with factory() as uow:
         await uow.beatmaps.save_beatmapset_snapshot(_beatmapset_for_score(score))
         created = await uow.scores.create(score)
@@ -435,6 +519,17 @@ async def _persist_score(factory: UnitOfWorkFactory, score: Score) -> int:
 
 
 def _beatmapset_for_score(score: Score) -> BeatmapSet:
+    """scoreのsubmission metadataに一致するbeatmapset snapshotを組み立てる.
+
+    Args:
+        score (Score): beatmap IDとsubmission statusを提供するtest score.
+
+    Returns:
+        BeatmapSet: scoreのbeatmapを1件含むfresh metadata snapshot.
+
+    Raises:
+        AssertionError: scoreにsubmission時のbeatmap statusがない場合.
+    """
     official_status = score.beatmap_status_at_submission
     assert official_status is not None
     beatmap = Beatmap(
@@ -484,6 +579,16 @@ async def _create_pending_performance(
     score_id: int,
     calculator_version: str = _CALCULATOR_VERSION,
 ) -> int:
+    """score用のqueued performance calculationを用意して識別子を返す.
+
+    Args:
+        factory (UnitOfWorkFactory): calculationを保存するunit of work factory.
+        score_id (int): calculationを関連付けるscoreの識別子.
+        calculator_version (str): calculationへ保存するcalculator version.
+
+    Returns:
+        int: queued calculationの永続化済み識別子.
+    """
     async with factory() as uow:
         result = await uow.score_performance.create_or_reuse_calculation(
             CreateScorePerformanceCalculation(
@@ -507,6 +612,17 @@ async def _complete_current_performance(
     pp: Decimal,
     calculator_version: str = _CALCULATOR_VERSION,
 ) -> int:
+    """score用calculationをcompleted current performanceとして確定する.
+
+    Args:
+        factory (UnitOfWorkFactory): calculation stateを保存するunit of work factory.
+        score_id (int): completed calculationを関連付けるscoreの識別子.
+        pp (Decimal): completion resultへ設定するperformance point値.
+        calculator_version (str): calculationとcompletion resultへ保存するcalculator version.
+
+    Returns:
+        int: completed current calculationの識別子.
+    """
     calculation_id = await _create_pending_performance(
         factory,
         score_id=score_id,
@@ -539,6 +655,16 @@ async def _create_unavailable_performance(
     score_id: int,
     calculator_version: str = _CALCULATOR_VERSION,
 ) -> int:
+    """score用calculationをunavailable performanceとして確定する.
+
+    Args:
+        factory (UnitOfWorkFactory): calculation stateを保存するunit of work factory.
+        score_id (int): unavailable calculationを関連付けるscoreの識別子.
+        calculator_version (str): calculationとunavailable resultへ保存するcalculator version.
+
+    Returns:
+        int: unavailable calculationの識別子.
+    """
     calculation_id = await _create_pending_performance(
         factory,
         score_id=score_id,
@@ -569,6 +695,15 @@ async def _replace_current_performance_as_unavailable(
     *,
     score_id: int,
 ) -> int:
+    """旧calculator provenanceのcurrent performanceをunavailable replacementへ置き換える.
+
+    Args:
+        factory (UnitOfWorkFactory): replacement calculationを保存するunit of work factory.
+        score_id (int): stale current calculationを持つscoreの識別子.
+
+    Returns:
+        int: recalculator versionで作成したunavailable replacementの識別子.
+    """
     return await _create_unavailable_performance(
         factory,
         score_id=score_id,
@@ -580,6 +715,15 @@ async def _seed_projection(
     factory: UnitOfWorkFactory,
     row: UpsertBeatmapPerformanceBest,
 ) -> None:
+    """既存performance best projectionをtest fixtureとして保存する.
+
+    Args:
+        factory (UnitOfWorkFactory): projectionを保存するunit of work factory.
+        row (UpsertBeatmapPerformanceBest): 保存するbeatmap performance best row.
+
+    Returns:
+        None: projectionをupsertしてcommitした後に値を返さず完了する.
+    """
     async with factory() as uow:
         _ = await uow.beatmap_performance_bests.upsert_if_better(row)
         await uow.commit()
@@ -590,6 +734,15 @@ async def _seed_current_stats(
     *,
     pp: Decimal,
 ) -> None:
+    """固定user scopeのcurrent stats projectionをtest fixtureとして保存する.
+
+    Args:
+        factory (UnitOfWorkFactory): current statsを保存するunit of work factory.
+        pp (Decimal): fixtureへ設定するperformance point値.
+
+    Returns:
+        None: current statsを置換してcommitした後に値を返さず完了する.
+    """
     async with factory() as uow:
         _ = await uow.current_user_stats.replace(
             UserStatsProjection(
@@ -619,6 +772,24 @@ def _score(
     beatmap_status: BeatmapRankStatus = BeatmapRankStatus.RANKED,
     leaderboard_eligible: bool = True,
 ) -> Score:
+    """Projection refresh条件を制御できる未永続化scoreを組み立てる.
+
+    Args:
+        user_id (int): scoreを所有するuserの識別子.
+        beatmap_id (int): scoreを関連付けるbeatmapの識別子.
+        ruleset (Ruleset): scoreに設定するruleset.
+        playstyle (Playstyle): scoreに設定するplaystyle.
+        mods (ModCombination | None): scoreに設定するmod. Noneの場合はmodなしを使う.
+        score (int): score valueとして保存する値.
+        accuracy (float): scoreに設定するaccuracy.
+        submitted_at (datetime): score submission時刻.
+        passed (bool): scoreをpassedとして扱うか.
+        beatmap_status (BeatmapRankStatus): submission時のbeatmap status.
+        leaderboard_eligible (bool): scoreをleaderboard対象として扱うか.
+
+    Returns:
+        Score: 指定条件とdefault vanilla metadataを持つ未永続化score.
+    """
     return Score(
         id=None,
         user_id=user_id,
@@ -652,6 +823,15 @@ def _scope(
     user_id: int = 1000,
     beatmap_id: int = 1,
 ) -> BeatmapPerformanceBestScope:
+    """指定userとbeatmap用のvanilla performance best scopeを組み立てる.
+
+    Args:
+        user_id (int): scopeに含めるuserの識別子.
+        beatmap_id (int): scopeに含めるbeatmapの識別子.
+
+    Returns:
+        BeatmapPerformanceBestScope: OSU rulesetとVANILLA playstyleを固定したscope.
+    """
     return BeatmapPerformanceBestScope(
         user_id=user_id,
         beatmap_id=beatmap_id,
@@ -668,6 +848,18 @@ def _upsert(
     pp: Decimal,
     submitted_at: datetime,
 ) -> UpsertBeatmapPerformanceBest:
+    """Performance best projectionをseedするupsert commandを組み立てる.
+
+    Args:
+        scope (BeatmapPerformanceBestScope): projectionを保存するuserとbeatmapのscope.
+        score_id (int): projectionが参照するscoreの識別子.
+        calculation_id (int): projectionが参照するperformance calculationの識別子.
+        pp (Decimal): projectionへ保存するperformance point値.
+        submitted_at (datetime): score submission時刻.
+
+    Returns:
+        UpsertBeatmapPerformanceBest: 固定accuracyとscore valueを含むprojection upsert command.
+    """
     return UpsertBeatmapPerformanceBest(
         scope=scope,
         score_id=score_id,

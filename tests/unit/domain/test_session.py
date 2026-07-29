@@ -1,3 +1,5 @@
+"""SessionDataのserializationとdataclass contractを検証するmodule."""
+
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -8,10 +10,27 @@ SAMPLE_PRIVILEGES = 131  # NORMAL | VERIFIED | UNRESTRICTED
 
 
 class TestSessionData:
+    """Active sessionに保存するSessionDataの表現契約を検証する."""
+
     def test_slots(self) -> None:
+        """SessionDataがslotsを持つvalue objectであることを検証する.
+
+        SessionData型を参照して__slots__ attributeの有無を調べ,
+        slot定義が公開されていることを確認する.
+
+        Returns:
+            None: slotsの存在を検証して完了し,呼び出し側へ値を返さない.
+        """
         assert hasattr(SessionData, "__slots__")
 
     def test_creation(self) -> None:
+        """SessionDataがconstructor inputと既定role_idsを保持することを検証する.
+
+        role_idsを省略してsession dataを生成し,主要fieldと空tupleの既定値を確認する.
+
+        Returns:
+            None: 生成結果を検証して完了し,呼び出し側へ値を返さない.
+        """
         sd = SessionData(
             user_id=1,
             username="TestPlayer",
@@ -30,6 +49,14 @@ class TestSessionData:
         assert sd.role_ids == ()
 
     def test_asdict_roundtrip(self) -> None:
+        """asdictの出力からSessionDataを復元してfield値を保つことを検証する.
+
+        全fieldを持つsession dataをdataclass辞書へ変換してconstructorへ渡し,復元後の各値が元と
+        一致する観測結果を確認する.
+
+        Returns:
+            None: serialization roundtripを検証して完了し,呼び出し側へ値を返さない.
+        """
         sd = SessionData(
             user_id=42,
             username="Player",
@@ -56,6 +83,14 @@ class TestSessionData:
         assert restored.role_ids == sd.role_ids
 
     def test_all_fields_in_dict(self) -> None:
+        """asdictがSessionDataの全persistent fieldを出力することを検証する.
+
+        最小値を持つinstanceを辞書化し,key集合がsession serialization contractと一致する
+        観測結果を確認する.
+
+        Returns:
+            None: serialization field集合を検証して完了し,呼び出し側へ値を返さない.
+        """
         sd = SessionData(
             user_id=1,
             username="P",

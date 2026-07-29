@@ -1,4 +1,7 @@
-"""Transport endpoint adapters for the root ASGI application."""
+"""root ASGI application用のtransport endpoint adapterを提供する.
+
+routeからapp stateに保存されたhandlerを取得し,stable transportのrequest処理へ委譲する.
+"""
 
 from __future__ import annotations
 
@@ -16,51 +19,89 @@ if TYPE_CHECKING:
 
 
 class _ReplayDownloadAppState(Protocol):
+    """replay download endpointが要求するapplication stateを表す.
+
+    Attributes:
+        replay_download_handler (ReplayDownloadHandler): replay download requestを処理する
+            DI解決済みhandler.
+    """
+
     replay_download_handler: ReplayDownloadHandler
 
 
 class _ReplayDownloadApp(Protocol):
+    """replay download endpointが要求するapplication interfaceを表す.
+
+    Attributes:
+        state (_ReplayDownloadAppState): replay download handlerを保持するapplication state.
+    """
+
     state: _ReplayDownloadAppState
 
 
 async def bancho_endpoint(request: Request) -> Response:
-    """Delegate to BanchoEndpoint resolved from DI."""
+    """DIで解決済みのBanchoEndpointへrequestを委譲する.
+
+    Args:
+        request (Request): Bancho host routeへ届いたStarlette request.
+
+    Returns:
+        Response: BanchoEndpointが生成したHTTP response.
+    """
     handler: BanchoEndpoint = request.app.state.bancho_endpoint  # pyright: ignore[reportAny]
     return await handler(request)
 
 
 async def registration_endpoint(request: Request) -> Response:
-    """Delegate to RegistrationHandler resolved from DI."""
+    """DIで解決済みのRegistrationHandlerへrequestを委譲する.
+
+    Args:
+        request (Request): registration routeへ届いたStarlette request.
+
+    Returns:
+        Response: RegistrationHandlerが生成したHTTP response.
+    """
     handler: RegistrationHandler = request.app.state.registration_handler  # pyright: ignore[reportAny]
     return await handler(request)
 
 
 async def getscores_endpoint(request: Request) -> Response:
-    """Delegate to GetscoresHandler resolved from DI."""
+    """DIで解決済みのGetscoresHandlerへrequestを委譲する.
+
+    Args:
+        request (Request): legacy getscores routeへ届いたStarlette request.
+
+    Returns:
+        Response: GetscoresHandlerが生成したHTTP response.
+    """
     handler: GetscoresHandler = request.app.state.getscores_handler  # pyright: ignore[reportAny]
     return await handler(request)
 
 
 async def score_submit_endpoint(request: Request) -> Response:
-    """Delegate to ScoreSubmitHandler resolved from DI."""
+    """DIで解決済みのScoreSubmitHandlerへrequestを委譲する.
+
+    Args:
+        request (Request): legacy score submission routeへ届いたStarlette request.
+
+    Returns:
+        Response: ScoreSubmitHandlerが生成したHTTP response.
+    """
     handler: ScoreSubmitHandler = request.app.state.score_submit_handler  # pyright: ignore[reportAny]
     return await handler(request)
 
 
 async def replay_download_endpoint(request: Request) -> Response:
-    """DI で解決した ReplayDownloadHandler に委譲する.
+    """DIで解決済みのReplayDownloadHandlerへrequestを委譲する.
 
-    引数:
-        request: Starlette request.
+    Args:
+        request (Request): legacy replay download routeへ届いたStarlette request.
 
-    戻り値:
-        Replay download の HTTP response.
+    Returns:
+        Response: ReplayDownloadHandlerが生成したHTTP response.
 
-    例外:
-        Handler の想定外例外をそのまま送出する.
-
-    制約:
-        Handler は `request.app.state.replay_download_handler` から解決する.
+    Notes:
+        handlerは`request.app.state.replay_download_handler`に設定済みであることを前提とする.
     """
     app = cast("_ReplayDownloadApp", request.app)
     handler = app.state.replay_download_handler

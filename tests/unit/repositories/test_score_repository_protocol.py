@@ -1,4 +1,4 @@
-"""Test ScoreCommandRepository Protocol compliance."""
+"""ScoreCommandRepository Protocolの型契約を検証するtests."""
 
 from datetime import UTC, datetime
 
@@ -13,24 +13,75 @@ from osu_server.repositories.interfaces.commands.scores import (
 
 
 class ConcreteScoreRepository:
-    """Minimal concrete implementation for protocol compliance testing."""
+    """ScoreCommandRepository Protocolを満たす最小のtyped fakeを提供する.
+
+    各methodはrepository interfaceの入出力型だけを固定し, 永続化状態を持たない.
+    """
 
     async def create(self, score: Score) -> Score:
+        """受け取ったScoreをcreate結果として返す.
+
+        Args:
+            score (Score): interfaceの戻り値型を検証するscore.
+
+        Returns:
+            Score: 入力と同じscore.
+        """
         return score
 
     async def exists_by_online_checksum(self, _checksum: str) -> bool:
+        """Checksum存在確認のbool戻り値を提供する.
+
+        Args:
+            _checksum (str): interfaceに渡されるonline checksum.
+
+        Returns:
+            bool: fakeが常に返す不存在結果.
+        """
         return False
 
     async def get_by_online_checksum(self, _checksum: str) -> Score | None:
+        """Checksum lookupのoptional Score戻り値を提供する.
+
+        Args:
+            _checksum (str): interfaceに渡されるonline checksum.
+
+        Returns:
+            Score | None: fakeが常に返す未発見結果.
+        """
         return None
 
     async def get_by_id(self, _score_id: int) -> Score | None:
+        """ID lookupのoptional Score戻り値を提供する.
+
+        Args:
+            _score_id (int): interfaceに渡されるscore ID.
+
+        Returns:
+            Score | None: fakeが常に返す未発見結果.
+        """
         return None
 
     async def increment_replay_view_count(self, _score_id: int) -> bool:
+        """Replay view count更新のbool戻り値を提供する.
+
+        Args:
+            _score_id (int): interfaceに渡されるscore ID.
+
+        Returns:
+            bool: fakeが常に返す更新失敗結果.
+        """
         return False
 
     async def count_submissions_for_beatmap(self, _beatmap_id: int) -> BeatmapSubmissionCounts:
+        """beatmap提出数の空集計を提供する.
+
+        Args:
+            _beatmap_id (int): interfaceに渡されるbeatmap ID.
+
+        Returns:
+            BeatmapSubmissionCounts: play数とpass数が0の集計.
+        """
         return BeatmapSubmissionCounts(play_count=0, pass_count=0)
 
     async def list_current_stats_scores_for_user(
@@ -40,6 +91,16 @@ class ConcreteScoreRepository:
         ruleset: Ruleset,
         playstyle: Playstyle,
     ) -> tuple[Score, ...]:
+        """CurrentUserStats対象scoreの空listingを提供する.
+
+        Args:
+            user_id (int): scoreを絞り込むuser ID.
+            ruleset (Ruleset): scoreを絞り込むruleset.
+            playstyle (Playstyle): scoreを絞り込むplaystyle.
+
+        Returns:
+            tuple[Score, ...]: fakeが常に返す空のscore listing.
+        """
         _ = user_id
         _ = ruleset
         _ = playstyle
@@ -49,6 +110,14 @@ class ConcreteScoreRepository:
         self,
         user_id: int,
     ) -> tuple[Score, ...]:
+        """user単位leaderboard rebuild候補の空listingを提供する.
+
+        Args:
+            user_id (int): rebuild候補を絞り込むuser ID.
+
+        Returns:
+            tuple[Score, ...]: fakeが常に返す空のcandidate listing.
+        """
         _ = user_id
         return ()
 
@@ -56,19 +125,40 @@ class ConcreteScoreRepository:
         self,
         beatmap_ids: tuple[int, ...],
     ) -> tuple[Score, ...]:
+        """beatmap群単位leaderboard rebuild候補の空listingを提供する.
+
+        Args:
+            beatmap_ids (tuple[int, ...]): rebuild候補を絞り込むbeatmap ID群.
+
+        Returns:
+            tuple[Score, ...]: fakeが常に返す空のcandidate listing.
+        """
         _ = beatmap_ids
         return ()
 
 
 def test_score_repository_protocol_compliance() -> None:
-    """Verify ConcreteScoreRepository implements ScoreCommandRepository."""
+    """Typed fakeがScoreCommandRepository runtime Protocolに適合することを検証する.
+
+    最小implementationを生成し, runtime_checkable Protocolのisinstance判定が真になることを確認する.
+
+    Returns:
+        None: Protocol適合性を検証して完了し, 呼び出し側へ値を返さない.
+    """
     repo = ConcreteScoreRepository()
     assert isinstance(repo, ScoreCommandRepository)
 
 
 @pytest.mark.asyncio
 async def test_create_returns_score_with_id() -> None:
-    """create() should return a Score with generated id."""
+    """Create contractがScore型の結果を返すことを検証する.
+
+    保存前Scoreをtyped fakeへ渡し,
+    ID生成の有無ではなくinterfaceで約束するScore型が返ることを確認する.
+
+    Returns:
+        None: create結果の型を検証して完了し, 呼び出し側へ値を返さない.
+    """
     repo = ConcreteScoreRepository()
     score = Score(
         id=None,
@@ -100,7 +190,13 @@ async def test_create_returns_score_with_id() -> None:
 
 @pytest.mark.asyncio
 async def test_exists_by_online_checksum_returns_bool() -> None:
-    """exists_by_online_checksum() should return bool."""
+    """checksum存在確認contractがboolを返すことを検証する.
+
+    任意checksumでtyped fakeを呼び出し, 存在状態がbool型として観測できることを確認する.
+
+    Returns:
+        None: exists結果の型を検証して完了し, 呼び出し側へ値を返さない.
+    """
     repo = ConcreteScoreRepository()
     result = await repo.exists_by_online_checksum("test_checksum")
     assert isinstance(result, bool)
@@ -108,7 +204,13 @@ async def test_exists_by_online_checksum_returns_bool() -> None:
 
 @pytest.mark.asyncio
 async def test_get_by_id_returns_optional_score() -> None:
-    """get_by_id() should return Score | None."""
+    """ID lookup contractがScoreまたはNoneを返すことを検証する.
+
+    任意IDでtyped fakeを呼び出し, 未発見を表すNoneがoptional Score型の範囲にあることを確認する.
+
+    Returns:
+        None: ID lookup結果の型を検証して完了し, 呼び出し側へ値を返さない.
+    """
     repo = ConcreteScoreRepository()
     result = await repo.get_by_id(1)
     assert result is None or isinstance(result, Score)
@@ -116,7 +218,14 @@ async def test_get_by_id_returns_optional_score() -> None:
 
 @pytest.mark.asyncio
 async def test_get_by_online_checksum_returns_optional_score() -> None:
-    """get_by_online_checksum() should return Score | None."""
+    """Checksum lookup contractがScoreまたはNoneを返すことを検証する.
+
+    任意checksumでtyped fakeを呼び出し,
+    未発見を表すNoneがoptional Score型の範囲にあることを確認する.
+
+    Returns:
+        None: checksum lookup結果の型を検証して完了し, 呼び出し側へ値を返さない.
+    """
     repo = ConcreteScoreRepository()
     result = await repo.get_by_online_checksum("test_checksum")
     assert result is None or isinstance(result, Score)

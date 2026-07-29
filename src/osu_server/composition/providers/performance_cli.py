@@ -1,4 +1,8 @@
-"""CLI-adjacent providers for PP recalculation commands."""
+"""PP recalculation CLI専用のperformance providerを定義する.
+
+このmoduleはapp/worker graphのcalculator実装と分離し, installed packageのidentityを
+batch作成commandへ渡すCLI compositionを所有する.
+"""
 
 from __future__ import annotations
 
@@ -39,12 +43,21 @@ _DISHKA_RUNTIME_HINTS = (
 
 @final
 class PerformanceCliProviderSet(Provider):
-    """Providers for the PP recalculation CLI boundary."""
+    """PP recalculation CLI boundaryの依存を提供する.
+
+    Attributes:
+        scope (Scope): CLI containerの生存期間と一致するDishka scope.
+    """
 
     scope = Scope.APP
 
     @provide
     def performance_runtime_settings(self) -> PerformanceRuntimeSettings:
+        """CLI batch作成に使うdefault performance runtime設定を提供する.
+
+        Returns:
+            PerformanceRuntimeSettings: formula profileとbatch制約のdefault設定.
+        """
         return PerformanceRuntimeSettings()
 
     @provide
@@ -52,10 +65,23 @@ class PerformanceCliProviderSet(Provider):
         self,
         settings: PerformanceRuntimeSettings,
     ) -> FormulaProfilePolicy:
+        """CLIで選択するplaystyle別formula profile policyを提供する.
+
+        Args:
+            settings (PerformanceRuntimeSettings): playstyle別formula profile設定を持つruntime値.
+
+        Returns:
+            FormulaProfilePolicy: recalculation batchに適用するformula profileを選ぶpolicy.
+        """
         return FormulaProfilePolicy(settings.formula_profiles_by_playstyle)
 
     @provide
     def performance_calculator_identity(self) -> PerformanceCalculatorIdentity:
+        """Installed rosu-pp-py packageを表すcalculator identityを提供する.
+
+        Returns:
+            PerformanceCalculatorIdentity: batch metadataへrecordするinstalled calculator identity.
+        """
         return InstalledPackagePerformanceCalculatorIdentity()
 
     @provide
@@ -63,6 +89,14 @@ class PerformanceCliProviderSet(Provider):
         self,
         broker: AsyncBroker,
     ) -> PerformanceRecalculationBatchWorkerWake:
+        """CLI作成batchをworkerへenqueueするwake adapterを提供する.
+
+        Args:
+            broker (AsyncBroker): performance recalculation jobが登録済みのTaskiq broker.
+
+        Returns:
+            PerformanceRecalculationBatchWorkerWake: batch processing jobを起動するport実装.
+        """
         return TaskiqPerformanceRecalculationBatchWorkerWake(broker)
 
     @provide
@@ -74,6 +108,22 @@ class PerformanceCliProviderSet(Provider):
         worker_wake: PerformanceRecalculationBatchWorkerWake,
         formula_profile_policy: FormulaProfilePolicy,
     ) -> CreatePerformanceRecalculationBatchUseCase:
+        """CLIからrecalculation batchを作るcommand use caseを提供する.
+
+        Args:
+            repository (ScorePerformanceQueryRepository): recalculation対象scoreを読むquery
+                repository.
+            unit_of_work_factory (UnitOfWorkFactory): batchとscore stateを更新する
+                transaction factory.
+            calculator_identity (PerformanceCalculatorIdentity): batch metadataへrecordする
+                calculator identity.
+            worker_wake (PerformanceRecalculationBatchWorkerWake): batch workerをenqueueするport.
+            formula_profile_policy (FormulaProfilePolicy): batchに適用するformula profileを
+                選ぶpolicy.
+
+        Returns:
+            CreatePerformanceRecalculationBatchUseCase: CLI commandが実行するbatch作成use case.
+        """
         return CreatePerformanceRecalculationBatchUseCase(
             query_repository=repository,
             unit_of_work_factory=unit_of_work_factory,

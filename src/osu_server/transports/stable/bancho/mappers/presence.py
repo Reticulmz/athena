@@ -1,4 +1,4 @@
-"""Stable bancho online presence packet mapping."""
+"""Online session と system bot を Stable Bancho presence packet へ変換する."""
 
 from __future__ import annotations
 
@@ -24,7 +24,14 @@ _STABLE_DEFAULT_RANK = 0
 
 
 def online_session_presence_packet(session: OnlineSessionSnapshot) -> bytes:
-    """Build stable USER_PRESENCE for an active online session snapshot."""
+    """指定した online session snapshot の default mode USER_PRESENCE packet を構築する.
+
+    Args:
+        session (OnlineSessionSnapshot): presence に変換する active session snapshot.
+
+    Returns:
+        bytes: default stable mode を持つ USER_PRESENCE packet.
+    """
     authorization_output = map_stable_bancho_authorization(Privileges(session.privileges))
     return user_presence(
         user_id=session.user_id,
@@ -44,21 +51,18 @@ def online_session_presence_packet_for_mode(
     *,
     play_mode: int,
 ) -> bytes:
-    """指定 play mode で active session の USER_PRESENCE を構築する。
+    """指定 stable mode の online session USER_PRESENCE packet を構築する.
 
-    引数:
-        session: online presence に載せる active session snapshot。
-        play_mode: 対象 user の current stable mode wire 値。
+    Args:
+        session (OnlineSessionSnapshot): presence に変換する active session snapshot.
+        play_mode (int): 対象 user の current stable mode wire 値.
 
-    戻り値:
-        Bancho S2C USER_PRESENCE packet bytes。
+    Returns:
+        bytes: play_mode を含む USER_PRESENCE packet.
 
-    例外:
-        独自例外は送出しない。
-
-    制約:
-        Stable client は USER_PRESENCE の mode bit と USER_STATS.mode を使って
-        roster を mode filter するため、対象 user の current mode を載せる。
+    Notes:
+        stable client は USER_PRESENCE と USER_STATS の mode で roster を filter するため,
+        request 元ではなく対象 user の current mode を指定する.
     """
     authorization_output = map_stable_bancho_authorization(Privileges(session.privileges))
     return user_presence(
@@ -79,21 +83,18 @@ def bot_presence_packet(
     *,
     play_mode: int = _STABLE_DEFAULT_MODE,
 ) -> bytes:
-    """Stable USER_PRESENCE for server bot identity を構築する。
+    """指定した system bot identity の USER_PRESENCE packet を構築する.
 
-    引数:
-        bot_identity: packet に載せる system user identity。未指定時は BanchoBot。
-        play_mode: Bot を表示する stable mode wire 値。
+    Args:
+        bot_identity (SystemUserIdentity | None): system bot. None なら BanchoBot.
+        play_mode (int): bot を表示する stable mode wire 値.
 
-    戻り値:
-        Bancho S2C USER_PRESENCE packet bytes。
+    Returns:
+        bytes: system bot を表す USER_PRESENCE packet.
 
-    例外:
-        wire type の範囲外値は既存 packet builder の pack error として送出する。
-
-    制約:
-        Stable protocol は user を複数 mode に同時所属させられないため、呼び出し元が
-        request context に合った単一 mode を指定する。未指定時は既存通り osu!。
+    Notes:
+        stable protocol では user を複数 mode に同時所属させられない.
+        呼び出し側は request context に合う単一 mode を指定する. 省略時は osu! mode を使う.
     """
     bot = bot_identity or BANCHO_BOT_IDENTITY
     return user_presence(

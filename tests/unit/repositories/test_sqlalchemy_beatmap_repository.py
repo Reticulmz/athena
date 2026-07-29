@@ -1,3 +1,9 @@
+"""SQLAlchemy beatmap command repositoryの永続化契約を検証するunit test.
+
+Modelとdomain値の変換, snapshot保存, fetch状態遷移, file attachmentの扱いを
+in-memory session fakeで確認する.
+"""
+
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
@@ -49,6 +55,14 @@ _CHECKSUM = "0123456789abcdef0123456789abcdef"
 
 
 class FakeResult:
+    """SQLAlchemy execute結果で使う最小のResult fake.
+
+    Attributes:
+        _value (object | None): scalar_one_or_none()が返す値.
+        _values (list[object]): scalars().all()が返す値列.
+        _row (tuple[object, object] | None): one_or_none()が返すrow.
+    """
+
     _value: object | None
     _values: list[object]
     _row: tuple[object, object] | None
@@ -59,24 +73,65 @@ class FakeResult:
         values: list[object] | None = None,
         row: tuple[object, object] | None = None,
     ) -> None:
+        """Scalar値, 値列, またはrowを返すResult fakeを初期化する.
+
+        Args:
+            value (object | None): scalar_one_or_none()で返す値. 未指定時はNone.
+            values (list[object] | None): all()で返す値列. 未指定時は空列.
+            row (tuple[object, object] | None): one_or_none()で返すrow. 未指定時はNone.
+        """
         self._value = value
         self._values = values or []
         self._row = row
 
     def scalar_one_or_none(self) -> object | None:
+        """設定済みのscalar値を返す.
+
+        Returns:
+            object | None: scalar query結果. 値がない場合はNone.
+        """
         return self._value
 
     def one_or_none(self) -> tuple[object, object] | None:
+        """設定済みの単一rowを返す.
+
+        Returns:
+            tuple[object, object] | None: query結果のrow. rowがない場合はNone.
+        """
         return self._row
 
     def scalars(self) -> FakeResult:
+        """値列を返すscalar resultとして自身を返す.
+
+        Returns:
+            FakeResult: all()を続けて呼べる自身.
+        """
         return self
 
     def all(self) -> list[object]:
+        """設定済みの値列を返す.
+
+        Returns:
+            list[object]: scalar query結果として設定した値列.
+        """
         return self._values
 
 
 class FakeSession(AbstractAsyncContextManager["FakeSession"]):
+    """SQLAlchemy AsyncSessionのrepository利用分を記録するfake.
+
+    Attributes:
+        get_results (dict[tuple[type[object], int], object]): get()呼び出しに対応する値.
+        execute_results (list[FakeResult]): execute()呼び出し順に返すResult fake列.
+        flush_error (IntegrityError | None): flush()時に送出する任意の整合性error.
+        added (list[object]): add()へ渡されたmodel列.
+        merged (list[object]): merge()へ渡されたmodel列.
+        refreshed (list[object]): refresh()したmodel列.
+        executed (list[Executable]): execute()へ渡されたSQLAlchemy statement列.
+        get_calls (list[tuple[type[object], int, bool]]): get()のmodel, identity, refresh指定.
+        flushes (int): 成功したflush()の呼び出し回数.
+    """
+
     def __init__(
         self,
         *,
@@ -84,6 +139,15 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         execute_results: list[FakeResult] | None = None,
         flush_error: IntegrityError | None = None,
     ) -> None:
+        """Repository assertionに必要なsession応答と記録列を初期化する.
+
+        Args:
+            get_results (dict[tuple[type[object], int], object] | None): get()の固定結果.
+                未指定時は空の対応表を使う.
+            execute_results (list[FakeResult] | None): execute()が順に返す結果列.
+                未指定時は空列を使う.
+            flush_error (IntegrityError | None): flush()で送出するerror. 未指定時は送出しない.
+        """
         self.get_results: dict[tuple[type[object], int], object] = get_results or {}
         self.execute_results: list[FakeResult] = execute_results or []
         self.flush_error: IntegrityError | None = flush_error
@@ -96,6 +160,11 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
 
     @override
     async def __aenter__(self) -> FakeSession:
+        """Async context内で使用する自身を返す.
+
+        Returns:
+            FakeSession: repositoryが使用する同一session fake.
+        """
         return self
 
     @override
@@ -105,6 +174,16 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        """Async context終了時に例外情報を消費する.
+
+        Args:
+            exc_type (type[BaseException] | None): 発生した例外の型. 例外がない場合はNone.
+            exc (BaseException | None): 発生した例外. 例外がない場合はNone.
+            traceback (TracebackType | None): 発生箇所のtraceback. 例外がない場合はNone.
+
+        Returns:
+            None: rollback等を行わず例外情報だけを破棄する.
+        """
         _ = exc_type
         _ = exc
         _ = traceback
@@ -116,28 +195,78 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         *,
         populate_existing: bool = False,
     ) -> object | None:
+        """Model型とidentityに対応する固定結果を取得する.
+
+        Args:
+            model_type (type[object]): 取得対象のSQLAlchemy model型.
+            identity (int): 取得対象の永続化識別子.
+            populate_existing (bool): identity mapを再読込するか. 既定値はFalse.
+
+        Returns:
+            object | None: 対応表に設定されたmodel. 未設定時はNone.
+        """
         self.get_calls.append((model_type, identity, populate_existing))
         return self.get_results.get((model_type, identity))
 
     async def execute(self, statement: Executable) -> FakeResult:
+        """SQLAlchemy statementを記録して次の固定結果を返す.
+
+        Args:
+            statement (Executable): repositoryが実行するSQLAlchemy statement.
+
+        Returns:
+            FakeResult: 設定済み結果列の先頭. 結果がなければ空のResult fake.
+        """
         self.executed.append(statement)
         if not self.execute_results:
             return FakeResult()
         return self.execute_results.pop(0)
 
     async def merge(self, instance: object) -> object:
+        """Merge対象modelを記録して同じinstanceを返す.
+
+        Args:
+            instance (object): mergeするSQLAlchemy model相当の値.
+
+        Returns:
+            object: 記録した入力instance.
+        """
         self.merged.append(instance)
         return instance
 
     def add(self, instance: object) -> None:
+        """追加対象modelを記録する.
+
+        Args:
+            instance (object): sessionへ追加するSQLAlchemy model相当の値.
+
+        Returns:
+            None: 追加対象を記録して値を返さない.
+        """
         self.added.append(instance)
 
     async def flush(self) -> None:
+        """設定済みerrorを送出するか成功回数を記録する.
+
+        Returns:
+            None: 成功時にflush回数を増やして値を返さない.
+
+        Raises:
+            IntegrityError: flush_errorが設定されている場合.
+        """
         if self.flush_error is not None:
             raise self.flush_error
         self.flushes += 1
 
     async def refresh(self, instance: object) -> None:
+        """新規attachmentまたはfetch stateへ永続化済み属性を設定する.
+
+        Args:
+            instance (object): refreshするSQLAlchemy model相当の値.
+
+        Returns:
+            None: 対応modelの識別子と時刻を設定して記録する.
+        """
         if isinstance(instance, BeatmapFileAttachmentModel):
             instance.id = 1
             instance.created_at = _NOW
@@ -148,6 +277,14 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
 
 
 def _repo(session: FakeSession) -> SQLAlchemyBeatmapCommandRepository:
+    """FakeSessionを使うSQLAlchemy beatmap command repositoryを構築する.
+
+    Args:
+        session (FakeSession): AsyncSessionとして扱うrepository用session fake.
+
+    Returns:
+        SQLAlchemyBeatmapCommandRepository: assertion対象のrepository.
+    """
     return SQLAlchemyBeatmapCommandRepository(cast("AsyncSession", cast("object", session)))
 
 
@@ -162,6 +299,21 @@ def _beatmap_model(
     play_count: int = 0,
     pass_count: int = 0,
 ) -> BeatmapModel:
+    """指定属性を持つ永続化済みbeatmap modelを作成する.
+
+    Args:
+        id (int): beatmap永続化識別子.
+        checksum_md5 (str): beatmapのMD5 checksum.
+        official_status (str): upstreamから取得したrank status値.
+        local_status_override (str | None): 管理者によるlocal status上書き. 未設定時はNone.
+        local_status_override_changed_at (datetime | None): local上書きの更新時刻. 未設定時はNone.
+        official_last_updated_at (datetime | None): upstream metadata更新時刻. 未設定時はNone.
+        play_count (int): 保存済みplay count.
+        pass_count (int): 保存済みpass count.
+
+    Returns:
+        BeatmapModel: repositoryの変換と保存を検証するmodel.
+    """
     return BeatmapModel(
         id=id,
         beatmapset_id=1_000,
@@ -191,6 +343,11 @@ def _beatmap_model(
 
 
 def _beatmapset_model() -> BeatmapSetModel:
+    """固定metadataを持つ永続化済みbeatmapset modelを作成する.
+
+    Returns:
+        BeatmapSetModel: beatmapset取得とsnapshot保存に使うmodel.
+    """
     return BeatmapSetModel(
         id=1_000,
         artist="Camellia",
@@ -207,6 +364,11 @@ def _beatmapset_model() -> BeatmapSetModel:
 
 
 def _attachment_model() -> BeatmapFileAttachmentModel:
+    """利用可能なosu file attachment modelを作成する.
+
+    Returns:
+        BeatmapFileAttachmentModel: checksum検証済みblob attachmentを表すmodel.
+    """
     return BeatmapFileAttachmentModel(
         id=1,
         beatmap_id=2_000,
@@ -222,6 +384,14 @@ def _attachment_model() -> BeatmapFileAttachmentModel:
 
 
 def _fetch_state_model(status: str = "pending_fetch") -> BeatmapFetchStateModel:
+    """指定状態を持つbeatmap metadata fetch state modelを作成する.
+
+    Args:
+        status (str): fetch lifecycleとして保存する状態値. 既定値はpending_fetch.
+
+    Returns:
+        BeatmapFetchStateModel: metadata fetchの時刻とattempt countを持つmodel.
+    """
     return BeatmapFetchStateModel(
         id=1,
         target_type="metadata:beatmap",
@@ -242,6 +412,17 @@ def _beatmap_domain(
     local_status_override_changed_at: datetime | None = None,
     official_last_updated_at: datetime | None = None,
 ) -> Beatmap:
+    """Repository入力として使うranked beatmap domain値を作成する.
+
+    Args:
+        official_status (BeatmapRankStatus): upstreamが示すrank status.
+        local_status_override (LocalBeatmapStatus | None): 管理者によるlocal status上書き.
+        local_status_override_changed_at (datetime | None): local上書きの更新時刻.
+        official_last_updated_at (datetime | None): upstream metadataの更新時刻.
+
+    Returns:
+        Beatmap: snapshot保存とstatus更新を検証するdomain beatmap.
+    """
     return Beatmap(
         id=2_000,
         beatmapset_id=1_000,
@@ -272,6 +453,14 @@ def _beatmap_domain(
 
 
 def _beatmapset_domain(beatmap: Beatmap) -> BeatmapSet:
+    """指定beatmapを含むdomain beatmapsetを作成する.
+
+    Args:
+        beatmap (Beatmap): beatmapsetへ含めるdomain beatmap.
+
+    Returns:
+        BeatmapSet: snapshot保存に使用する1件のbeatmapを持つbeatmapset.
+    """
     return BeatmapSet(
         id=1_000,
         artist="Camellia",
@@ -289,6 +478,11 @@ def _beatmapset_domain(beatmap: Beatmap) -> BeatmapSet:
 
 
 def _attachment_domain() -> BeatmapFileAttachment:
+    """Blobに紐付くdomain osu file attachmentを作成する.
+
+    Returns:
+        BeatmapFileAttachment: attachment保存と取得を検証するdomain値.
+    """
     return BeatmapFileAttachment(
         beatmap_id=2_000,
         blob_id=55,
@@ -302,10 +496,26 @@ def _attachment_domain() -> BeatmapFileAttachment:
 
 
 def test_sqlalchemy_beatmap_repository_satisfies_contract() -> None:
+    """Repository実装がBeatmapCommandRepository contractを満たすことを検証する.
+
+    Returns:
+        None: interface実装のisinstance assertionを行って値を返さない.
+
+    Raises:
+        AssertionError: repositoryがcommand repository contractを実装しない場合.
+    """
     assert isinstance(_repo(FakeSession()), BeatmapCommandRepository)
 
 
 async def test_get_beatmap_maps_model_and_current_attachment_to_domain() -> None:
+    """Beatmap modelとcurrent attachmentがdomain値へ変換されることを検証する.
+
+    Returns:
+        None: beatmap識別子, file状態, attachmentのassertionを行って値を返さない.
+
+    Raises:
+        AssertionError: modelまたはattachmentのdomain変換結果が期待と異なる場合.
+    """
     session = FakeSession(
         get_results={(BeatmapModel, 2_000): _beatmap_model()},
         execute_results=[FakeResult(_attachment_model())],
@@ -320,6 +530,14 @@ async def test_get_beatmap_maps_model_and_current_attachment_to_domain() -> None
 
 
 async def test_get_beatmapset_loads_child_beatmaps() -> None:
+    """Beatmapset取得がchild beatmapを含むdomain値を返すことを検証する.
+
+    Returns:
+        None: beatmapset識別子とchild checksumのassertionを行って値を返さない.
+
+    Raises:
+        AssertionError: beatmapsetまたはchild beatmapの変換結果が期待と異なる場合.
+    """
     session = FakeSession(
         get_results={(BeatmapSetModel, 1_000): _beatmapset_model()},
         execute_results=[FakeResult(values=[_beatmap_model()]), FakeResult()],
@@ -334,6 +552,14 @@ async def test_get_beatmapset_loads_child_beatmaps() -> None:
 
 
 async def test_save_snapshot_preserves_existing_local_override() -> None:
+    """Snapshot保存が既存local status overrideを保持することを検証する.
+
+    Returns:
+        None: merged modelのofficial statusとlocal overrideをassertして値を返さない.
+
+    Raises:
+        AssertionError: local overrideまたは更新時刻が上書きされる場合.
+    """
     override_changed_at = datetime(2026, 6, 29, 12, 34, 56, tzinfo=UTC)
     existing = _beatmap_model(
         local_status_override="ranked",
@@ -354,6 +580,14 @@ async def test_save_snapshot_preserves_existing_local_override() -> None:
 
 
 async def test_save_snapshot_preserves_existing_last_updated_when_source_omits_it() -> None:
+    """Snapshot sourceが時刻を省略した場合に既存upstream更新時刻を保持することを検証する.
+
+    Returns:
+        None: merged modelのofficial_last_updated_atをassertして値を返さない.
+
+    Raises:
+        AssertionError: source未指定時に既存更新時刻が失われる場合.
+    """
     official_last_updated_at = datetime(2026, 6, 29, 12, 34, 56, tzinfo=UTC)
     existing = _beatmap_model(official_last_updated_at=official_last_updated_at)
     session = FakeSession(get_results={(BeatmapModel, 2_000): existing})
@@ -366,6 +600,14 @@ async def test_save_snapshot_preserves_existing_last_updated_when_source_omits_i
 
 
 async def test_save_snapshot_preserves_existing_submission_counts() -> None:
+    """Snapshot保存が既存play countとpass countを保持することを検証する.
+
+    Returns:
+        None: merged modelのsubmission countをassertして値を返さない.
+
+    Raises:
+        AssertionError: snapshot保存で既存submission countが上書きされる場合.
+    """
     existing = _beatmap_model(play_count=9, pass_count=7)
     session = FakeSession(get_results={(BeatmapModel, 2_000): existing})
 
@@ -378,6 +620,14 @@ async def test_save_snapshot_preserves_existing_submission_counts() -> None:
 
 
 async def test_save_snapshot_rejects_existing_checksum_conflict_before_flush() -> None:
+    """異なるbeatmap識別子のchecksum競合をflush前に拒否することを検証する.
+
+    Returns:
+        None: DuplicateBeatmapChecksumErrorの値とflush未実行をassertして値を返さない.
+
+    Raises:
+        AssertionError: 競合errorの内容またはflush回数が期待と異なる場合.
+    """
     conflicting_model = _beatmap_model(id=999, checksum_md5=_CHECKSUM)
     session = FakeSession(
         execute_results=[FakeResult(conflicting_model)],
@@ -392,6 +642,14 @@ async def test_save_snapshot_rejects_existing_checksum_conflict_before_flush() -
 
 
 async def test_attach_osu_file_returns_existing_duplicate_attachment() -> None:
+    """同一attachmentの保存要求が既存domain attachmentを返すことを検証する.
+
+    Returns:
+        None: attachment再利用と新規addおよびflush未実行をassertして値を返さない.
+
+    Raises:
+        AssertionError: duplicate attachmentで新規永続化が行われる場合.
+    """
     session = FakeSession(
         get_results={(BeatmapModel, 2_000): _beatmap_model()},
         execute_results=[FakeResult(_attachment_model())],
@@ -405,6 +663,14 @@ async def test_attach_osu_file_returns_existing_duplicate_attachment() -> None:
 
 
 async def test_fetch_pending_marker_is_idempotent_until_completed() -> None:
+    """Pending fetch markerが完了前はidempotentに拒否または再取得されることを検証する.
+
+    Returns:
+        None: pending状態のFalseと再試行時のTrueをassertして値を返さない.
+
+    Raises:
+        AssertionError: pending markerの再試行可能性またはflush回数が期待と異なる場合.
+    """
     target = BeatmapFetchTarget.metadata_by_beatmap_id(2_000)
     pending_session = FakeSession(execute_results=[FakeResult()])
 
@@ -418,7 +684,7 @@ async def test_fetch_pending_marker_is_idempotent_until_completed() -> None:
 
 
 async def test_string_fetch_target_kind_is_normalized_for_query_and_write() -> None:
-    """runtime string target_typeをqueryとwriteの両方でtyped kindへ正規化する.
+    """Runtime string target_typeをqueryとwriteの両方でtyped kindへ正規化する.
 
     Returns:
         None: lookup, pending upsert, completed insertが正規化値を使用したことを示す.
@@ -445,6 +711,14 @@ async def test_string_fetch_target_kind_is_normalized_for_query_and_write() -> N
 
 
 async def test_fetch_pending_marker_uses_atomic_conflict_update() -> None:
+    """Pending fetch markerがatomic upsertとRETURNINGを使うことを検証する.
+
+    Returns:
+        None: PostgreSQL statementのON CONFLICTと更新条件をassertして値を返さない.
+
+    Raises:
+        AssertionError: upsert statementまたはsession副作用が期待と異なる場合.
+    """
     target = BeatmapFetchTarget.metadata_by_checksum(_CHECKSUM)
     session = FakeSession(execute_results=[FakeResult(1)])
 
@@ -463,6 +737,14 @@ async def test_fetch_pending_marker_uses_atomic_conflict_update() -> None:
 
 
 async def test_fetch_pending_marker_refreshes_identity_map_after_upsert() -> None:
+    """Pending fetch upsert後にidentity mapを再読込することを検証する.
+
+    Returns:
+        None: populate_existingを指定したget()呼び出しをassertして値を返さない.
+
+    Raises:
+        AssertionError: upsert後のfetch stateがidentity mapから再読込されない場合.
+    """
     target = BeatmapFetchTarget.metadata_by_checksum(_CHECKSUM)
     session = FakeSession(
         get_results={(BeatmapFetchStateModel, 1): _fetch_state_model()},
@@ -475,6 +757,14 @@ async def test_fetch_pending_marker_refreshes_identity_map_after_upsert() -> Non
 
 
 async def test_get_beatmap_by_checksum_resolves_model_and_attachment() -> None:
+    """Checksum検索がbeatmap modelとattachmentをdomain値へ変換することを検証する.
+
+    Returns:
+        None: beatmap識別子, checksum, file状態, attachmentをassertして値を返さない.
+
+    Raises:
+        AssertionError: checksum検索のdomain変換結果が期待と異なる場合.
+    """
     session = FakeSession(
         execute_results=[
             FakeResult(_beatmap_model()),
@@ -492,6 +782,14 @@ async def test_get_beatmap_by_checksum_resolves_model_and_attachment() -> None:
 
 
 async def test_get_beatmap_by_checksum_returns_none_when_not_found() -> None:
+    """存在しないchecksum検索がNoneを返すことを検証する.
+
+    Returns:
+        None: query結果がNoneであることをassertして値を返さない.
+
+    Raises:
+        AssertionError: 未登録checksumにbeatmapが返される場合.
+    """
     session = FakeSession(execute_results=[FakeResult()])
 
     result = await _repo(session).get_beatmap_by_checksum("nonexistentchecksum00000000000000")
@@ -500,6 +798,14 @@ async def test_get_beatmap_by_checksum_returns_none_when_not_found() -> None:
 
 
 async def test_set_local_status_override_updates_model_and_returns_domain() -> None:
+    """Local status override設定がmodelとdomain戻り値へ反映されることを検証する.
+
+    Returns:
+        None: override値, 更新時刻, official statusをassertして値を返さない.
+
+    Raises:
+        AssertionError: override設定後のmodelまたはdomain値が期待と異なる場合.
+    """
     model = _beatmap_model(official_status="pending", local_status_override=None)
     session = FakeSession(
         get_results={(BeatmapModel, 2_000): model},
@@ -517,6 +823,14 @@ async def test_set_local_status_override_updates_model_and_returns_domain() -> N
 
 
 async def test_set_local_status_override_clears_override_with_none() -> None:
+    """None指定が既存local status overrideと更新時刻を消去することを検証する.
+
+    Returns:
+        None: modelとdomain戻り値のoverride関連属性をassertして値を返さない.
+
+    Raises:
+        AssertionError: None指定後にlocal overrideまたは更新時刻が残る場合.
+    """
     model = _beatmap_model(local_status_override="ranked")
     session = FakeSession(
         get_results={(BeatmapModel, 2_000): model},
@@ -533,6 +847,14 @@ async def test_set_local_status_override_clears_override_with_none() -> None:
 
 
 async def test_set_local_status_override_raises_not_found() -> None:
+    """存在しないbeatmapへのlocal status override設定がerrorになることを検証する.
+
+    Returns:
+        None: BeatmapNotFoundErrorが送出されることをassertして値を返さない.
+
+    Raises:
+        AssertionError: 未登録beatmapの更新でBeatmapNotFoundErrorが送出されない場合.
+    """
     session = FakeSession()
 
     with pytest.raises(BeatmapNotFoundError):
@@ -540,6 +862,14 @@ async def test_set_local_status_override_raises_not_found() -> None:
 
 
 async def test_increment_submission_counts_uses_atomic_update_returning() -> None:
+    """Submission count増分がatomic updateとRETURNINGを使うことを検証する.
+
+    Returns:
+        None: 更新後countとPostgreSQL statementの構造をassertして値を返さない.
+
+    Raises:
+        AssertionError: count増分, SQL更新式, またはRETURNING句が期待と異なる場合.
+    """
     session = FakeSession(execute_results=[FakeResult(row=(3, 2))])
 
     result = await _repo(session).increment_submission_counts(2_000, passed=True)
@@ -558,6 +888,14 @@ async def test_increment_submission_counts_uses_atomic_update_returning() -> Non
 
 
 async def test_increment_submission_counts_raises_when_beatmap_missing() -> None:
+    """存在しないbeatmapのsubmission count増分がerrorになることを検証する.
+
+    Returns:
+        None: BeatmapNotFoundErrorが送出されることをassertして値を返さない.
+
+    Raises:
+        AssertionError: 未登録beatmapの増分でBeatmapNotFoundErrorが送出されない場合.
+    """
     session = FakeSession(execute_results=[FakeResult(row=None)])
 
     with pytest.raises(BeatmapNotFoundError):
@@ -565,6 +903,14 @@ async def test_increment_submission_counts_raises_when_beatmap_missing() -> None
 
 
 async def test_mark_fetch_succeeded_transitions_state_to_fresh() -> None:
+    """Fetch成功がpending stateをfreshへ遷移させることを検証する.
+
+    Returns:
+        None: lifecycle状態, error, 時刻, flush回数をassertして値を返さない.
+
+    Raises:
+        AssertionError: fetch成功後のstate遷移または永続化が期待と異なる場合.
+    """
     target = BeatmapFetchTarget.metadata_by_beatmap_id(2_000)
     model = _fetch_state_model(status="pending_fetch")
     session = FakeSession(execute_results=[FakeResult(model)])
@@ -579,6 +925,14 @@ async def test_mark_fetch_succeeded_transitions_state_to_fresh() -> None:
 
 
 async def test_mark_fetch_failed_records_error_and_transitions_state() -> None:
+    """Fetch失敗がerrorを記録してfailed stateへ遷移させることを検証する.
+
+    Returns:
+        None: lifecycle状態, error reason, 時刻, flush回数をassertして値を返さない.
+
+    Raises:
+        AssertionError: fetch失敗後のstate遷移またはerror記録が期待と異なる場合.
+    """
     target = BeatmapFetchTarget.file_by_beatmap_id(2_000)
     model = _fetch_state_model(status="pending_fetch")
     session = FakeSession(execute_results=[FakeResult(model)])
@@ -593,6 +947,14 @@ async def test_mark_fetch_failed_records_error_and_transitions_state() -> None:
 
 
 async def test_attach_osu_file_inserts_new_attachment() -> None:
+    """新規osu file attachmentがadd, flush, refreshされることを検証する.
+
+    Returns:
+        None: domain戻り値と新規attachment modelの属性をassertして値を返さない.
+
+    Raises:
+        AssertionError: 新規attachmentの保存結果またはsession副作用が期待と異なる場合.
+    """
     session = FakeSession(
         get_results={(BeatmapModel, 2_000): _beatmap_model()},
         execute_results=[FakeResult()],
@@ -610,6 +972,14 @@ async def test_attach_osu_file_inserts_new_attachment() -> None:
 
 
 async def test_save_new_beatmapset_snapshot_merges_set_and_beatmaps() -> None:
+    """新規beatmapset snapshotがsetとchild beatmapをmergeすることを検証する.
+
+    Returns:
+        None: merged set, child beatmap, flush回数をassertして値を返さない.
+
+    Raises:
+        AssertionError: snapshot保存でsetまたはchild beatmapがmergeされない場合.
+    """
     session = FakeSession()
 
     await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))

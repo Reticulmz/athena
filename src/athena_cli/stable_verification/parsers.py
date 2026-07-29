@@ -1,3 +1,5 @@
+"""Stable getscoresとscore submitのtext responseを構造化するparserを提供する."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -19,6 +21,14 @@ _GETSCORES_SCORE_ROW_BOOLEAN_FIELD_INDICES = (10, 15)
 
 
 class GetscoresResponseKind(StrEnum):
+    """Getscores response bodyのwire shapeを表す.
+
+    Attributes:
+        NOT_SUBMITTED (str): Scoreが未送信である短縮response.
+        UPDATE_AVAILABLE (str): Client updateを要求する短縮response.
+        HEADER (str): Leaderboard headerとscore rowを持つresponse.
+    """
+
     NOT_SUBMITTED = "not_submitted"
     UPDATE_AVAILABLE = "update_available"
     HEADER = "header"
@@ -26,6 +36,16 @@ class GetscoresResponseKind(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class ScoreSubmitBeatmapMetadata:
+    """Score submit completed responseのbeatmap metadataを表す.
+
+    Attributes:
+        beatmap_id (int): `beatmapId` fieldのbeatmap ID.
+        beatmapset_id (int): `beatmapSetId` fieldのbeatmapset ID.
+        beatmap_playcount (int): `beatmapPlaycount` fieldの再生回数.
+        beatmap_passcount (int): `beatmapPasscount` fieldの完走回数.
+        approved_date (str): `approvedDate` fieldの原文値.
+    """
+
     beatmap_id: int
     beatmapset_id: int
     beatmap_playcount: int
@@ -35,6 +55,15 @@ class ScoreSubmitBeatmapMetadata:
 
 @dataclass(frozen=True, slots=True)
 class ScoreSubmitChart:
+    """Score submit completed responseのchart sectionを表す.
+
+    Attributes:
+        chart_id (str): `chartId` fieldのsection識別子.
+        chart_url (str): `chartUrl` fieldの参照URL.
+        chart_name (str): `chartName` fieldの表示名.
+        fields (Mapping[str, str]): Sectionに含まれるすべてのkey-value field.
+    """
+
     chart_id: str
     chart_url: str
     chart_name: str
@@ -43,23 +72,58 @@ class ScoreSubmitChart:
 
 @dataclass(frozen=True, slots=True)
 class ScoreSubmitResponse:
+    """正常完了したscore submit responseを表す.
+
+    Attributes:
+        beatmap_metadata (ScoreSubmitBeatmapMetadata): Beatmap metadata section.
+        beatmap_chart (ScoreSubmitChart): Beatmap ranking chart section.
+        overall_chart (ScoreSubmitChart): Overall ranking chart section.
+    """
+
     beatmap_metadata: ScoreSubmitBeatmapMetadata
     beatmap_chart: ScoreSubmitChart
     overall_chart: ScoreSubmitChart
 
     @property
     def achievement_notification(self) -> str | None:
+        """`achievements-new` fieldの通知内容を返す.
+
+        Returns:
+            str | None: Overall chartに含まれるachievement通知.fieldがなければNone.
+        """
         return self.overall_chart.fields.get("achievements-new")
 
 
 @dataclass(frozen=True, slots=True)
 class ScoreSubmitResponseParseResult:
+    """Score submit responseのparse成功または失敗を表す.
+
+    Attributes:
+        response (ScoreSubmitResponse | None): 成功時の構造化response.失敗時はNone.
+        error (str | None): 失敗時のreport-safeな理由.成功時はNone.
+    """
+
     response: ScoreSubmitResponse | None = None
     error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class GetscoresHeader:
+    """Getscores headerとleaderboard rowを表す.
+
+    Attributes:
+        status (int): Header先頭fieldのstatus値.
+        failed (bool): Headerの`failed` fieldを変換した値.
+        beatmap_id (int): 対象beatmap ID.
+        beatmapset_id (int): 対象beatmapset ID.
+        score_count (int): Personal Bestを除くleaderboard row数.
+        offset (int): Leaderboardのoffset値.
+        display_line (str): Client表示用のbeatmap text line.
+        rating (int): Headerに含まれるrating値.
+        personal_best_row (str | None): Personal Best row.存在しない場合はNone.
+        score_rows (tuple[str, ...]): Personal Bestを除くleaderboard score row.
+    """
+
     status: int
     failed: bool
     beatmap_id: int
@@ -73,22 +137,53 @@ class GetscoresHeader:
 
     @property
     def empty_leaderboard(self) -> bool:
+        """Leaderboardにscore rowが存在しないかを返す.
+
+        Returns:
+            bool: `score_count`が0でscore rowも空の場合はTrue.
+        """
         return self.score_count == 0 and not self.score_rows
 
 
 @dataclass(frozen=True, slots=True)
 class GetscoresResponse:
+    """Getscores responseのkindと任意headerを表す.
+
+    Attributes:
+        kind (GetscoresResponseKind): Response bodyのwire shape.
+        header (GetscoresHeader | None): Header responseの解析結果.短縮responseではNone.
+    """
+
     kind: GetscoresResponseKind
     header: GetscoresHeader | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class GetscoresResponseParseResult:
+    """Getscores responseのparse成功または失敗を表す.
+
+    Attributes:
+        response (GetscoresResponse | None): 成功時の構造化response.失敗時はNone.
+        error (str | None): 失敗時のreport-safeな理由.成功時はNone.
+    """
+
     response: GetscoresResponse | None = None
     error: str | None = None
 
 
 def parse_score_submit_response(body: bytes) -> ScoreSubmitResponseParseResult:
+    """Score submit completed responseをwire grammarに従って構造化する.
+
+    Args:
+        body (bytes): Stable score submit endpointから受け取ったresponse body.
+
+    Returns:
+        ScoreSubmitResponseParseResult: Metadataと2つのchart sectionを解析した結果.形式不正は
+            `error`へ格納する.
+
+    Notes:
+        正常responseはmetadata lineとbeatmap/overall chart lineの3行である.
+    """
     text_result = _decode_body(body)
     if isinstance(text_result, _ParseError):
         return ScoreSubmitResponseParseResult(error=text_result.message)
@@ -101,6 +196,14 @@ def parse_score_submit_response(body: bytes) -> ScoreSubmitResponseParseResult:
 
 
 def _parse_score_submit_lines(lines: list[str]) -> ScoreSubmitResponseParseResult:
+    """3行へ分割済みのscore submit responseを構造化する.
+
+    Args:
+        lines (list[str]): Metadata lineと2つのchart lineを順番に持つ3行のresponse.
+
+    Returns:
+        ScoreSubmitResponseParseResult: 全sectionの解析結果.field不正は`error`へ格納する.
+    """
     metadata_fields = _parse_key_value_line(lines[0])
     if isinstance(metadata_fields, _ParseError):
         return ScoreSubmitResponseParseResult(error=metadata_fields.message)
@@ -127,21 +230,18 @@ def _parse_score_submit_lines(lines: list[str]) -> ScoreSubmitResponseParseResul
 
 
 def parse_getscores_response(body: bytes) -> GetscoresResponseParseResult:
-    """Getscores response bodyをwire grammarまで検証して構造化する。
+    """Getscores response bodyをwire grammarまで検証して構造化する.
 
     Args:
-        body (bytes): Stable getscores endpointから受け取ったresponse body。
+        body (bytes): Stable getscores endpointから受け取ったresponse body.
 
     Returns:
-        GetscoresResponseParseResult: Short responseまたはheader / score rowを検証した結果。
-
-    Raises:
-        None: Decodeまたはwire grammarの不正はresult.errorへ変換する。
+        GetscoresResponseParseResult: Short responseまたはheader / score rowを検証した結果.形式
+            不正は`error`へ格納する.
 
     Notes:
-        Headerのscore_countはPersonal Bestを含めず、leaderboard row数と一致する必要がある。
+        Headerの`score_count`はPersonal Bestを含めずleaderboard row数と一致する必要がある.
     """
-
     text_result = _decode_body(body)
     if isinstance(text_result, _ParseError):
         return GetscoresResponseParseResult(error=text_result.message)
@@ -171,10 +271,24 @@ def parse_getscores_response(body: bytes) -> GetscoresResponseParseResult:
 
 @dataclass(frozen=True, slots=True)
 class _ParseError:
+    """Parser内部でwire grammarの不正を伝える値を表す.
+
+    Attributes:
+        message (str): Report-safeなparse失敗理由.
+    """
+
     message: str
 
 
 def _decode_body(body: bytes) -> str | _ParseError:
+    """Response bodyをUTF-8 textへ復号する.
+
+    Args:
+        body (bytes): 復号するresponse body.
+
+    Returns:
+        str | _ParseError: 成功時のUTF-8 text.復号不能時は理由を持つparse error.
+    """
     try:
         return body.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -182,6 +296,15 @@ def _decode_body(body: bytes) -> str | _ParseError:
 
 
 def _parse_key_value_line(line: str) -> Mapping[str, str] | _ParseError:
+    """`key:value` fieldを`|`区切りで持つlineをmappingへ変換する.
+
+    Args:
+        line (str): Score submit metadataまたはchart sectionのwire line.
+
+    Returns:
+        Mapping[str, str] | _ParseError: 重複しないfield mapping.delimiterまたはkey不正時は
+            parse error.
+    """
     fields: dict[str, str] = {}
     for part in line.split("|"):
         if ":" not in part:
@@ -197,6 +320,14 @@ def _parse_key_value_line(line: str) -> Mapping[str, str] | _ParseError:
 
 
 def _parse_chart_line(line: str) -> ScoreSubmitChart | _ParseError:
+    """Score submit chart lineを必須field付きのchartへ変換する.
+
+    Args:
+        line (str): `chartId`,`chartUrl`,`chartName`を含むchart wire line.
+
+    Returns:
+        ScoreSubmitChart | _ParseError: 必須chart fieldを持つchart.field不足時はparse error.
+    """
     fields = _parse_key_value_line(line)
     if isinstance(fields, _ParseError):
         return fields
@@ -218,6 +349,15 @@ def _parse_chart_line(line: str) -> ScoreSubmitChart | _ParseError:
 def _parse_score_submit_metadata(
     fields: Mapping[str, str],
 ) -> ScoreSubmitBeatmapMetadata | _ParseError:
+    """Score submit metadata fieldを型付きbeatmap metadataへ変換する.
+
+    Args:
+        fields (Mapping[str, str]): Metadata lineから抽出したkey-value field.
+
+    Returns:
+        ScoreSubmitBeatmapMetadata | _ParseError: 必須fieldを整数へ変換したmetadata.
+            Field不足または数値不正時はparse error.
+    """
     required = (
         "beatmapId",
         "beatmapSetId",
@@ -255,6 +395,15 @@ def _parse_score_submit_metadata(
 
 
 def _parse_getscores_header(lines: list[str]) -> GetscoresHeader | _ParseError:
+    """Getscores headerとscore rowを検証して構造化する.
+
+    Args:
+        lines (list[str]): Short response以外のgetscores bodyを行単位で分割した値.
+
+    Returns:
+        GetscoresHeader | _ParseError: HeaderとPersonal Best/leaderboard row.field数または
+            wire grammar不正時はparse error.
+    """
     parts = lines[0].split("|")
     if len(parts) < _GETSCORES_MIN_HEADER_FIELDS:
         return _ParseError("getscores header has too few fields")
@@ -303,6 +452,14 @@ def _parse_getscores_header(lines: list[str]) -> GetscoresHeader | _ParseError:
 
 
 def _personal_best_row(lines: list[str]) -> str | None:
+    """Getscores responseからPersonal Best rowを取り出す.
+
+    Args:
+        lines (list[str]): Getscores bodyを行単位で分割した値.
+
+    Returns:
+        str | None: 5行目のPersonal Best row.行がないか空文字列ならNone.
+    """
     if (
         len(lines) <= _GETSCORES_PERSONAL_BEST_LINE_INDEX
         or not lines[_GETSCORES_PERSONAL_BEST_LINE_INDEX]
@@ -317,6 +474,16 @@ def _score_rows_error(
     personal_best_row: str | None,
     score_rows: tuple[str, ...],
 ) -> _ParseError | None:
+    """Leaderboard row数と各rowのwire grammarを検証する.
+
+    Args:
+        score_count (int): Headerが宣言するleaderboard row数.
+        personal_best_row (str | None): 任意のPersonal Best row.
+        score_rows (tuple[str, ...]): Personal Bestを除くleaderboard row.
+
+    Returns:
+        _ParseError | None: 不整合時のparse error.すべて有効ならNone.
+    """
     if score_count != len(score_rows):
         return _ParseError("getscores header score_count does not match score rows")
     if personal_best_row is not None and not _is_valid_getscores_score_row(personal_best_row):
@@ -327,6 +494,14 @@ def _score_rows_error(
 
 
 def _is_valid_getscores_score_row(row: str) -> bool:
+    """Getscores score rowが定義済みfield grammarを満たすか判定する.
+
+    Args:
+        row (str): `|`区切りのscore row.
+
+    Returns:
+        bool: Field数,必須username,数値field,boolean fieldがすべて有効ならTrue.
+    """
     fields = row.split("|")
     if len(fields) != _GETSCORES_SCORE_ROW_FIELD_COUNT or not fields[1]:
         return False
@@ -339,10 +514,26 @@ def _is_valid_getscores_score_row(row: str) -> bool:
 
 
 def _is_ascii_decimal_integer(value: str) -> bool:
+    """文字列がASCII decimal integerかを判定する.
+
+    Args:
+        value (str): 判定する文字列.
+
+    Returns:
+        bool: 空文字列でなくASCII decimal digitだけで構成される場合はTrue.
+    """
     return bool(value) and value.isascii() and value.isdecimal()
 
 
 def _first_parse_error(*values: int | bool | _ParseError) -> _ParseError | None:
+    """値列に含まれる最初のparse errorを返す.
+
+    Args:
+        *values (int | bool | _ParseError): 変換結果またはparse errorの列.
+
+    Returns:
+        _ParseError | None: 最初に見つかったparse error.存在しない場合はNone.
+    """
     for value in values:
         if isinstance(value, _ParseError):
             return value
@@ -351,6 +542,15 @@ def _first_parse_error(*values: int | bool | _ParseError) -> _ParseError | None:
 
 
 def _parse_int(value: str, field_name: str) -> int | _ParseError:
+    """Wire fieldを整数へ変換する.
+
+    Args:
+        value (str): 変換するwire fieldの文字列値.
+        field_name (str): 失敗診断へ含めるfield名.
+
+    Returns:
+        int | _ParseError: 変換済み整数.整数でない場合はparse error.
+    """
     try:
         return int(value)
     except ValueError:
@@ -358,6 +558,15 @@ def _parse_int(value: str, field_name: str) -> int | _ParseError:
 
 
 def _parse_stable_bool(value: str, field_name: str) -> bool | _ParseError:
+    """Stable wireの`true`または`false`をboolへ変換する.
+
+    Args:
+        value (str): 変換するwire fieldの文字列値.
+        field_name (str): 失敗診断へ含めるfield名.
+
+    Returns:
+        bool | _ParseError: `true`または`false`の変換結果.それ以外はparse error.
+    """
     match value:
         case "true":
             return True

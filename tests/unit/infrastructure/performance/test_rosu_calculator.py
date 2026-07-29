@@ -1,4 +1,4 @@
-"""Tests for rosu-pp-py performance calculation adapter."""
+"""rosu-pp-py performance calculation adapterの契約を検証するmodule."""
 
 from __future__ import annotations
 
@@ -57,6 +57,11 @@ SliderTickRate:1
 
 
 def test_calculator_uses_package_version_metadata() -> None:
+    """calculatorを生成しpackage metadata由来の名称とversionを検証する.
+
+    Returns:
+        None: calculator identityを検証して値を返さず完了する.
+    """
     calculator = RosuPerformanceCalculator()
 
     assert calculator.calculator_name() == "rosu-pp-py"
@@ -64,6 +69,11 @@ def test_calculator_uses_package_version_metadata() -> None:
 
 
 def test_rosu_pp_py_import_stays_inside_adapter() -> None:
+    """Source treeを走査しrosu_pp_py importがadapterだけにあることを検証する.
+
+    Returns:
+        None: import元pathを検証して値を返さず完了する.
+    """
     importers = [
         path.relative_to(_PROJECT_ROOT)
         for path in (_PROJECT_ROOT / "src" / "osu_server").rglob("*.py")
@@ -74,6 +84,11 @@ def test_rosu_pp_py_import_stays_inside_adapter() -> None:
 
 
 def test_calculator_returns_pp_and_stars_from_score_and_osu_bytes() -> None:
+    """有効scoreとosu bytesを計算し正のPPとstar ratingを検証する.
+
+    Returns:
+        None: completed resultを検証して値を返さず完了する.
+    """
     calculator = RosuPerformanceCalculator()
 
     result = calculator.calculate(
@@ -87,6 +102,11 @@ def test_calculator_returns_pp_and_stars_from_score_and_osu_bytes() -> None:
 
 
 def test_calculator_accepts_existing_percent_accuracy_for_legacy_rows() -> None:
+    """ratioとpercent accuracyを計算し同じPPとstar ratingを検証する.
+
+    Returns:
+        None: legacy accuracy互換結果を検証して値を返さず完了する.
+    """
     calculator = RosuPerformanceCalculator()
     ratio_score = _score(accuracy=1.0)
     percent_score = replace(ratio_score, accuracy=100.0)
@@ -105,6 +125,11 @@ def test_calculator_accepts_existing_percent_accuracy_for_legacy_rows() -> None:
 
 
 def test_calculator_does_not_require_replay_bytes() -> None:
+    """Replay bytesなしのinputを計算しcompleted resultを返すことを検証する.
+
+    Returns:
+        None: input境界と計算結果を検証して値を返さず完了する.
+    """
     input_data = PerformanceCalculatorInput(score=_score(), osu_file_bytes=_OSU_FILE)
 
     assert not hasattr(input_data, "replay_bytes")
@@ -114,6 +139,11 @@ def test_calculator_does_not_require_replay_bytes() -> None:
 
 
 def test_calculator_input_boundary_excludes_replay_file_data() -> None:
+    """PerformanceCalculatorInput fieldからreplay file dataが除外されることを検証する.
+
+    Returns:
+        None: input dataclass field一覧を検証して値を返さず完了する.
+    """
     assert [field.name for field in fields(PerformanceCalculatorInput)] == [
         "score",
         "osu_file_bytes",
@@ -121,6 +151,11 @@ def test_calculator_input_boundary_excludes_replay_file_data() -> None:
 
 
 def test_calculator_returns_unavailable_for_empty_or_unparseable_map() -> None:
+    """不正osu bytesを計算しBEATMAP_PARSE_FAILED unavailableを返すことを検証する.
+
+    Returns:
+        None: parse failure結果を検証して値を返さず完了する.
+    """
     result = RosuPerformanceCalculator().calculate(
         PerformanceCalculatorInput(score=_score(), osu_file_bytes=b"not an osu file")
     )
@@ -131,6 +166,11 @@ def test_calculator_returns_unavailable_for_empty_or_unparseable_map() -> None:
 
 
 def test_calculator_returns_unavailable_for_invalid_score_input() -> None:
+    """不正accuracyのscoreを計算しCALCULATOR_INPUT_INVALIDを返すことを検証する.
+
+    Returns:
+        None: invalid input結果を検証して値を返さず完了する.
+    """
     result = RosuPerformanceCalculator().calculate(
         PerformanceCalculatorInput(
             score=replace(_score(), accuracy=-0.1),
@@ -143,6 +183,14 @@ def test_calculator_returns_unavailable_for_invalid_score_input() -> None:
 
 
 def _score(*, accuracy: float = 1.0) -> Score:
+    """Performance calculation用の有効なScoreを構築する.
+
+    Args:
+        accuracy (float): scoreへ設定するratioまたはpercent accuracy.
+
+    Returns:
+        Score: 固定beatmap metadataと指定accuracyを持つscore.
+    """
     return Score(
         id=1,
         user_id=100,
@@ -171,6 +219,14 @@ def _score(*, accuracy: float = 1.0) -> Score:
 
 
 def _imports_rosu_pp_py(path: Path) -> bool:
+    """指定source fileがrosu_pp_pyをimportするかを判定する.
+
+    Args:
+        path (Path): AST解析するPython source file.
+
+    Returns:
+        bool: direct importまたはfrom importが存在する場合はTrue.
+    """
     tree = ast.parse(path.read_text())
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):

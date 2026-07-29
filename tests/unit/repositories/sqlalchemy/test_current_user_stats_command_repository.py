@@ -1,4 +1,4 @@
-"""SQLAlchemy current UserStats command repository tests。"""
+"""SQLAlchemy現在ユーザー統計コマンドrepositoryを検証する."""
 
 from __future__ import annotations
 
@@ -24,37 +24,86 @@ if TYPE_CHECKING:
 
 
 class FakeResult:
-    """scalar repository read 用の SQLAlchemy result double。"""
+    """scalar repository読取用のSQLAlchemy result double.
+
+    Attributes:
+        _value (object | None): scalar取得時に返す値.
+    """
 
     def __init__(self, value: object | None = None) -> None:
+        """scalar取得時に返す任意の値を保持する.
+
+        Args:
+            value (object | None): 検索結果として返す値または未検出を表すNone.
+        """
         self._value: object | None = value
 
     def scalar_one_or_none(self) -> object | None:
+        """設定済みの検索結果をscalar値として返す.
+
+        Returns:
+            object | None: 初期化時に設定した値またはNone.
+        """
         return self._value
 
 
 class FakeSession:
-    """statement と transaction 使用を記録する AsyncSession 型の fake。"""
+    """statementとtransaction使用を記録するAsyncSession型fake.
+
+    Attributes:
+        execute_results (list[object | None]): executeの呼び出し順に返す検索結果.
+        statements (list[ClauseElement]): repositoryが実行したSQLAlchemy statement.
+        commit_calls (int): commitの呼び出し回数.
+        rollback_calls (int): rollbackの呼び出し回数.
+    """
 
     def __init__(self, *, execute_results: list[object | None] | None = None) -> None:
+        """execute結果キューを初期化する.
+
+        Args:
+            execute_results (list[object | None] | None): 各executeで順に返す結果の列.
+        """
         self.execute_results: list[object | None] = execute_results or []
         self.statements: list[ClauseElement] = []
         self.commit_calls: int = 0
         self.rollback_calls: int = 0
 
     async def execute(self, statement: ClauseElement) -> FakeResult:
+        """statementを記録し次の設定済み結果を返す.
+
+        Args:
+            statement (ClauseElement): repositoryが発行したSQLAlchemy statement.
+
+        Returns:
+            FakeResult: 次の設定済み検索結果を含むscalar result double.
+        """
         self.statements.append(statement)
         value = self.execute_results.pop(0) if self.execute_results else None
         return FakeResult(value)
 
     async def commit(self) -> None:
+        """commit呼び出し回数を記録する.
+
+        Returns:
+            None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+        """
         self.commit_calls += 1
 
     async def rollback(self) -> None:
+        """rollback呼び出し回数を記録する.
+
+        Returns:
+            None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+        """
         self.rollback_calls += 1
 
 
 async def test_replace_upserts_full_scope_and_updates_timestamp() -> None:
+    """完全スコープupsertが全統計列と更新時刻を更新することを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     projection = _projection(pp=Decimal("123.45"), accuracy=0.9876)
     model = _model(pp=Decimal("123.45"), accuracy=0.9876)
     session = FakeSession(execute_results=[None, model])
@@ -90,6 +139,11 @@ async def test_replace_upserts_full_scope_and_updates_timestamp() -> None:
 
 
 async def test_lock_scope_uses_transaction_advisory_lock() -> None:
+    """スコープロックがtransaction advisory lockを発行することを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     session = FakeSession()
     repo = _repo(session)
 
@@ -102,6 +156,11 @@ async def test_lock_scope_uses_transaction_advisory_lock() -> None:
 
 
 async def test_get_selects_by_full_scope() -> None:
+    """統計取得が完全スコープで絞り込みtransactionを制御しないことを検証する.
+
+    Returns:
+        None: 実行結果を検証または記録して呼び出し側へ値を返さずに完了する.
+    """
     model = _model(pp=Decimal("10"), accuracy=0.95)
     session = FakeSession(execute_results=[model])
     repo = _repo(session)
@@ -118,12 +177,25 @@ async def test_get_selects_by_full_scope() -> None:
 
 
 def _repo(session: FakeSession) -> SQLAlchemyCurrentUserStatsCommandRepository:
+    """Fake sessionを使用する現在ユーザー統計repositoryを生成する.
+
+    Args:
+        session (FakeSession): SQLAlchemy sessionとして扱うテストdouble.
+
+    Returns:
+        SQLAlchemyCurrentUserStatsCommandRepository: 指定sessionを使用する統計コマンドrepository.
+    """
     return SQLAlchemyCurrentUserStatsCommandRepository(
         cast("AsyncSession", cast("object", session))
     )
 
 
 def _scope() -> UserStatsScope:
+    """統計repositoryテストで共有する完全スコープを生成する.
+
+    Returns:
+        UserStatsScope: 固定ユーザーとOSU VANILLAを指す統計スコープ.
+    """
     return UserStatsScope(
         user_id=1000,
         ruleset=Ruleset.OSU,
@@ -136,6 +208,15 @@ def _projection(
     pp: Decimal,
     accuracy: float,
 ) -> UserStatsProjection:
+    """完全な統計projectionを生成する.
+
+    Args:
+        pp (Decimal): projectionに設定するパフォーマンスポイント.
+        accuracy (float): projectionに設定する精度.
+
+    Returns:
+        UserStatsProjection: 固定カウンターと指定値を持つ統計projection.
+    """
     return UserStatsProjection(
         scope=_scope(),
         pp=pp,
@@ -161,6 +242,15 @@ def _model(
     pp: Decimal,
     accuracy: float,
 ) -> CurrentUserStatsModel:
+    """統計repositoryが読取る永続化modelを生成する.
+
+    Args:
+        pp (Decimal): modelに設定するパフォーマンスポイント.
+        accuracy (float): modelに設定する精度.
+
+    Returns:
+        CurrentUserStatsModel: 固定スコープとカウンターを持つ現在統計model.
+    """
     return CurrentUserStatsModel(
         user_id=1000,
         ruleset=Ruleset.OSU.value,
@@ -182,4 +272,12 @@ def _model(
 
 
 def _compiled_sql(statement: ClauseElement) -> str:
+    """PostgreSQL方言でstatementをSQL文字列へコンパイルする.
+
+    Args:
+        statement (ClauseElement): SQL構造を検証するSQLAlchemy statement.
+
+    Returns:
+        str: PostgreSQL構文としてコンパイル済みのSQL文字列.
+    """
     return str(statement.compile(dialect=postgresql.dialect()))

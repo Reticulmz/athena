@@ -1,4 +1,4 @@
-"""Stable legacy replay download query mapper."""
+"""安定版 legacy replay downloadのqueryを変換する."""
 
 from __future__ import annotations
 
@@ -17,20 +17,17 @@ _ALLOWED_QUERY_KEYS = frozenset({"c", "m", "u", "h"})
 
 
 class ReplayDownloadMalformedReason(StrEnum):
-    """Replay download query parse の sanitized fallback reason を表す.
+    """Replay download queryのsanitized fallback reasonを表す.
 
-    Args:
-        なし.
+    Attributes:
+        MISSING_SCORE_ID (ReplayDownloadMalformedReason): score idが未指定である状態.
+        MALFORMED_SCORE_ID (ReplayDownloadMalformedReason): score idを整数へ変換できない状態.
+        MISSING_MODE (ReplayDownloadMalformedReason): rulesetが未指定である状態.
+        MALFORMED_MODE (ReplayDownloadMalformedReason): rulesetを有効値へ変換できない状態.
+        UNKNOWN_FIELD (ReplayDownloadMalformedReason): 許可されないquery fieldを含む状態.
 
-    Returns:
-        Enum class のため戻り値はない.
-
-    Raises:
-        なし.
-
-    Constraints:
-        Raw query value, username, password hash, field value は保持しない.
-        値は provisional fallback classification だけに使う.
+    Notes:
+        raw query値やcredentialは保持せず, provisional fallbackの分類だけに使用する.
     """
 
     MISSING_SCORE_ID = "missing_score_id"
@@ -42,21 +39,15 @@ class ReplayDownloadMalformedReason(StrEnum):
 
 @dataclass(slots=True, frozen=True)
 class ReplayDownloadRequest:
-    """Replay download query から parse 済み request を表す.
+    """Replay download queryから解析したrequestを表す.
 
-    Args:
-        score_id: `c` から parse した score identifier.
-        ruleset: `m` から parse した Stable ruleset.
+    Attributes:
+        score_id (int): c fieldから解析したscore識別子.
+        ruleset (Ruleset): m fieldから解析したstable ruleset.
 
-    Returns:
-        Dataclass のため戻り値はない.
-
-    Raises:
-        なし.
-
-    Constraints:
-        `u` と `h` は auth mapping 専用のため保持しない. Repr には parse
-        後の値も出さず, raw query value の failure output 混入を避ける.
+    Notes:
+        uとhはauth mapping専用のため保持しない. reprからも値を除外し, raw query値を
+        failure outputへ混入させない.
     """
 
     score_id: int = field(repr=False)
@@ -65,23 +56,16 @@ class ReplayDownloadRequest:
 
 @dataclass(slots=True, frozen=True)
 class ReplayDownloadParseResult:
-    """Replay download query parser の sanitized result を表す.
+    """Replay download query parserのsanitized resultを表す.
 
-    Args:
-        request: Parse に成功した typed request.
-        branch: Parse に失敗した場合の provisional fallback branch.
-        reason: Parse に失敗した場合の sanitized reason.
+    Attributes:
+        request (ReplayDownloadRequest | None): 解析に成功したtyped request.
+        branch (ReplayDownloadBranch | None): 失敗時に使用するprovisional fallback branch.
+        reason (ReplayDownloadMalformedReason | None): 失敗時のsanitized reason.
 
-    Returns:
-        Dataclass のため戻り値はない.
-
-    Raises:
-        なし.
-
-    Constraints:
-        Whole query mapping, raw query value, username, password hash は保持しない.
-        `request` は repr から除外し, test failure output に raw query value を
-        残さない.
+    Notes:
+        query全体, raw value, username, password hashは保持しない. requestもreprから除外し,
+        test failure outputへraw query値を残さない.
     """
 
     request: ReplayDownloadRequest | None = field(default=None, repr=False)
@@ -90,39 +74,26 @@ class ReplayDownloadParseResult:
 
 
 class ReplayDownloadQueryParser:
-    """Stable legacy replay download query を typed request に変換する.
+    """Stable legacy replay download queryをtyped requestへ変換する.
 
-    Args:
-        なし.
-
-    Returns:
-        Parser class のため戻り値はない.
-
-    Raises:
-        なし.
-
-    Constraints:
-        `c` と `m` だけを request に parse する. `u` と `h` は auth mapping
-        専用なので保持しない. Missing, malformed, unknown field は target-confirmed
-        behavior ではなく provisional fallback として分類する.
+    Notes:
+        cとmだけをrequestへ解析する. uとhはauth mapping専用なので保持しない. missing,
+        malformed, unknown fieldはtarget-confirmed behaviorではなくprovisional fallbackとして
+        分類する.
     """
 
     def parse(self, query: Mapping[str, str]) -> ReplayDownloadParseResult:
-        """Replay download query を sanitized parse result に変換する.
+        """Replay download queryをsanitized parse resultに変換する.
 
         Args:
-            query: Starlette QueryParams 互換または plain mapping の query values.
+            query (Mapping[str, str]): Starlette QueryParams互換またはplain mappingのquery values.
 
         Returns:
-            Valid request または provisional malformed fallback result.
+            ReplayDownloadParseResult: 有効なrequestまたはprovisional malformed fallback result.
 
-        Raises:
-            なし.
-
-        Constraints:
-            Query mapping 全体, raw query value, `u`, `h` は返さない.
+        Notes:
+            query mapping全体, raw query値, u, hはresultへ返さない.
         """
-
         if any(key not in _ALLOWED_QUERY_KEYS for key in query):
             return _malformed_result(ReplayDownloadMalformedReason.UNKNOWN_FIELD)
 
@@ -140,6 +111,14 @@ class ReplayDownloadQueryParser:
 
 
 def _parse_score_id(raw_score_id: str | None) -> int | ReplayDownloadMalformedReason:
+    """Score idのquery値を整数またはsanitized reasonへ変換する.
+
+    Args:
+        raw_score_id (str | None): c fieldから取得したraw score id.
+
+    Returns:
+        int | ReplayDownloadMalformedReason: 解析したscore id. 未指定または不正値ではreason.
+    """
     if raw_score_id is None:
         return ReplayDownloadMalformedReason.MISSING_SCORE_ID
 
@@ -150,6 +129,14 @@ def _parse_score_id(raw_score_id: str | None) -> int | ReplayDownloadMalformedRe
 
 
 def _parse_ruleset(raw_ruleset: str | None) -> Ruleset | ReplayDownloadMalformedReason:
+    """Rulesetのquery値をRulesetまたはsanitized reasonへ変換する.
+
+    Args:
+        raw_ruleset (str | None): m fieldから取得したraw ruleset.
+
+    Returns:
+        Ruleset | ReplayDownloadMalformedReason: 解析したruleset. 未指定または不正値ではreason.
+    """
     if raw_ruleset is None:
         return ReplayDownloadMalformedReason.MISSING_MODE
 
@@ -160,6 +147,14 @@ def _parse_ruleset(raw_ruleset: str | None) -> Ruleset | ReplayDownloadMalformed
 
 
 def _malformed_result(reason: ReplayDownloadMalformedReason) -> ReplayDownloadParseResult:
+    """Sanitized reasonからprovisional malformed fallback resultを構築する.
+
+    Args:
+        reason (ReplayDownloadMalformedReason): requestを受理できない分類理由.
+
+    Returns:
+        ReplayDownloadParseResult: malformed request用のfallback branchを持つresult.
+    """
     return ReplayDownloadParseResult(
         branch=ReplayDownloadBranch.MALFORMED_REQUEST_PROVISIONAL,
         reason=reason,

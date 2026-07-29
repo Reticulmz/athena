@@ -1,4 +1,7 @@
-"""Session credential authentication query use-case boundary."""
+"""Active sessionを前提にcredentialを確認するquery use-caseを定義するmodule.
+
+stable web legacy authenticationのcredential確認結果をread-only resultとして返す.
+"""
 
 from __future__ import annotations
 
@@ -18,29 +21,71 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 
 class _PasswordVerifier(Protocol):
-    async def verify(self, hashed: str, password: str) -> bool: ...
+    """保存済みhashとcredentialを照合するpassword verifier protocolを表す."""
+
+    async def verify(self, hashed: str, password: str) -> bool:
+        """保存済みhashと入力credentialが一致するかを返す.
+
+        Args:
+            hashed (str): userに保存されたpassword hash.
+            password (str): stable clientが送信したpassword-md5 credential.
+
+        Returns:
+            bool: credentialが保存済みhashと一致する場合はTrue.
+        """
+        ...
 
 
 @dataclass(slots=True, frozen=True)
 class SessionCredentialsQueryInput:
+    """stable web legacy credentialを確認するquery inputを表す.
+
+    Attributes:
+        username (str | None): 確認するusername. 未送信時はNone.
+        password_md5 (str | None): stable clientのpassword-md5 credential. 未送信時はNone.
+    """
+
     username: str | None
     password_md5: str | None
 
 
 @dataclass(slots=True, frozen=True)
 class SessionCredentialsQueryResult:
+    """stable web legacy credential queryの結果を表す.
+
+    Attributes:
+        outcome (LegacyWebAuthResult): 認証済みuser情報または失敗理由を持つ結果.
+    """
+
     outcome: LegacyWebAuthResult
 
 
 class SessionCredentialsQuery(Protocol):
+    """active sessionを前提にstable web legacy credentialを確認するquery protocolを表す."""
+
     async def execute(
         self,
         input_data: SessionCredentialsQueryInput,
-    ) -> SessionCredentialsQueryResult: ...
+    ) -> SessionCredentialsQueryResult:
+        """指定credentialのread-only authentication結果を返す.
+
+        Args:
+            input_data (SessionCredentialsQueryInput): usernameとpassword-md5を持つquery input.
+
+        Returns:
+            SessionCredentialsQueryResult: 認証済みuser情報または失敗理由を持つ結果.
+        """
+        ...
 
 
 class SessionCredentialsQueryUseCase:
-    """Authenticate request credentials against the active session read model."""
+    """active session read modelに対してrequest credentialを確認するquery use-caseを表す.
+
+    Attributes:
+        _user_repository (UserQueryRepository): safe usernameからuserを読むquery repository.
+        _password_service (_PasswordVerifier): 保存済みhashとpassword-md5を照合するverifier.
+        _session_store (UserSessionLookup): user単位のactive sessionを読むvolatile state store.
+    """
 
     _user_repository: UserQueryRepository
     _password_service: _PasswordVerifier
@@ -53,6 +98,13 @@ class SessionCredentialsQueryUseCase:
         password_service: _PasswordVerifier,
         session_store: UserSessionLookup,
     ) -> None:
+        """credential確認に必要なread dependencyを設定する.
+
+        Args:
+            user_repository (UserQueryRepository): safe usernameからuserを読むrepository.
+            password_service (_PasswordVerifier): 保存済みhashとcredentialを照合するverifier.
+            session_store (UserSessionLookup): user単位のactive sessionを読むstore.
+        """
         self._user_repository = user_repository
         self._password_service = password_service
         self._session_store = session_store
@@ -61,6 +113,19 @@ class SessionCredentialsQueryUseCase:
         self,
         input_data: SessionCredentialsQueryInput,
     ) -> SessionCredentialsQueryResult:
+        """credentialとactive sessionを確認してstable web legacy authentication結果を返す.
+
+        Args:
+            input_data (SessionCredentialsQueryInput): usernameとpassword-md5を持つquery input.
+
+        Returns:
+            SessionCredentialsQueryResult: 認証済みuser情報または
+                INVALID_CREDENTIALS/NO_SESSION結果.
+
+        Notes:
+            password-md5のraw値はlogへ記録しない. user未検出とpassword不一致は同じ
+            INVALID_CREDENTIALSとして返し, active sessionがない場合だけNO_SESSIONを返す.
+        """
         if input_data.username is None or input_data.password_md5 is None:
             logger.info(
                 "session_credentials_auth_failed",

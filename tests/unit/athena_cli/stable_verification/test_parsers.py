@@ -1,3 +1,5 @@
+"""Stable score submissionとgetscores response parserを検証する."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,6 +16,15 @@ GETSCORES_FIXTURE_DIR = (
 
 
 def test_parse_score_submit_completed_response_sections() -> None:
+    """Completed score submission responseのmetadataとchart fieldを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: required metadata, chart field, またはachievement通知のparse結果が
+            変化した場合.
+    """
     body = b"\n".join(
         (
             b"beatmapId:654|beatmapSetId:321|beatmapPlaycount:1|beatmapPasscount:1|approvedDate:",
@@ -50,6 +61,14 @@ def test_parse_score_submit_completed_response_sections() -> None:
 
 
 def test_parse_score_submit_malformed_body_returns_parse_failure() -> None:
+    """delimiter不正なscore submission bodyがparse failureになることを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: malformed bodyがresponseとして受理されるかerrorを返さない場合.
+    """
     result = parse_score_submit_response(b"chartId:beatmap|missing-delimiter")
 
     assert result.response is None
@@ -57,6 +76,14 @@ def test_parse_score_submit_malformed_body_returns_parse_failure() -> None:
 
 
 def test_parse_getscores_short_responses() -> None:
+    """Short getscores responseがnot-submittedとupdate-availableに分岐することを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: legacy short responseのkind分類が変化した場合.
+    """
     not_submitted = parse_getscores_response(b"-1|false")
     update_available = parse_getscores_response(b"1|false")
 
@@ -67,6 +94,14 @@ def test_parse_getscores_short_responses() -> None:
 
 
 def test_parse_getscores_header_fixture_as_empty_leaderboard() -> None:
+    """Ranked header fixtureがempty leaderboardとしてparseされることを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: header field, personal best, score row, またはdisplay lineが変化した場合.
+    """
     fixture_body = (GETSCORES_FIXTURE_DIR / "ranked_response.txt").read_bytes()
 
     result = parse_getscores_response(fixture_body)
@@ -87,6 +122,14 @@ def test_parse_getscores_header_fixture_as_empty_leaderboard() -> None:
 
 
 def test_parse_getscores_header_separates_personal_best_from_score_rows() -> None:
+    """Getscores headerがpersonal bestをscore rowから分離することを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: personal bestまたはempty leaderboardの分類が変化した場合.
+    """
     body = (
         b"2|false|75|1|0||\n"
         b"0\n"
@@ -107,6 +150,14 @@ def test_parse_getscores_header_separates_personal_best_from_score_rows() -> Non
 
 
 def test_parse_getscores_malformed_body_returns_parse_failure() -> None:
+    """整数field不正なgetscores bodyがparse failureになることを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: malformed bodyがresponseとして受理されるかerrorを返さない場合.
+    """
     result = parse_getscores_response(b"2|false|missing-int")
 
     assert result.response is None

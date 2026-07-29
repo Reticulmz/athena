@@ -1,3 +1,5 @@
+"""Stable verification catalogのevidenceとgap投影を検証する."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -27,6 +29,14 @@ _GETSCORES_COMPLETION_MANIFEST_REFERENCES = frozenset(
 
 
 def test_catalog_lists_all_required_stable_surfaces() -> None:
+    """catalogが対象のStable surfaceを漏れなく返す契約を検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: 必須surfaceの集合が変化した場合.
+    """
     assert set(list_surfaces()) == {
         StableSurface.REGISTRATION,
         StableSurface.BANCHO_LOGIN,
@@ -39,6 +49,14 @@ def test_catalog_lists_all_required_stable_surfaces() -> None:
 
 
 def test_inventory_distinguishes_implemented_surface_scope() -> None:
+    """inventoryが実装済みsurfaceとscopeを正しく投影することを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: replay download以外の実装状態またはscope分類が変化した場合.
+    """
     inventory = {entry.surface: entry for entry in list_surface_inventory()}
 
     assert set(inventory) == set(list_surfaces())
@@ -52,6 +70,14 @@ def test_inventory_distinguishes_implemented_surface_scope() -> None:
 
 
 def test_catalog_references_existing_stable_evidence_without_replacing_it() -> None:
+    """catalogが既存evidence fileとmandatory/optional分類を維持することを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: evidence参照先またはevidence type/scopeの集合が変化した場合.
+    """
     evidence = list_evidence()
 
     assert evidence
@@ -69,6 +95,14 @@ def test_catalog_references_existing_stable_evidence_without_replacing_it() -> N
 
 
 def test_catalog_keeps_distinct_purposes_for_repeated_surface_evidence() -> None:
+    """同じsurfaceのevidenceが重複しないpurposeを持つことを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: getscores evidenceのpurposeが重複した場合.
+    """
     getscores_evidence = list_evidence(StableSurface.GETSCORES)
 
     assert len(getscores_evidence) >= 2
@@ -76,18 +110,14 @@ def test_catalog_keeps_distinct_purposes_for_repeated_surface_evidence() -> None
 
 
 def test_getscores_catalog_separates_completion_evidence_from_optional_probe() -> None:
-    """Getscoresの実装完了証跡と任意probeを別々に投影することを検証する.
-
-    Args:
-        なし.
+    """Getscoresのcompletion evidenceと任意probeを別々に投影することを検証する.
 
     Returns:
         None: Assertionだけを実行する.
 
     Raises:
-        AssertionError: 実装状態, completion manifest, または任意probeの分類が異なる場合.
+        AssertionError: 実装状態, completion manifest, またはoptional probeの分類が異なる場合.
     """
-
     inventory = {entry.surface: entry for entry in list_surface_inventory()}
     getscores_evidence = list_evidence(StableSurface.GETSCORES)
     completion_evidence = tuple(
@@ -118,10 +148,7 @@ def test_getscores_catalog_separates_completion_evidence_from_optional_probe() -
 
 
 def test_getscores_catalog_reports_required_target_traffic_handoff() -> None:
-    """Getscoresの残存gapをtarget traffic未確認だけとして投影することを検証する.
-
-    Args:
-        なし.
+    """Getscoresの残存gapがtarget traffic未確認だけであることを検証する.
 
     Returns:
         None: Assertionだけを実行する.
@@ -129,7 +156,6 @@ def test_getscores_catalog_reports_required_target_traffic_handoff() -> None:
     Raises:
         AssertionError: stale implementation gap, route分類, またはIssue handoffが異なる場合.
     """
-
     gaps = list_gaps(StableSurface.GETSCORES)
 
     assert len(gaps) == 1
@@ -145,10 +171,7 @@ def test_getscores_catalog_reports_required_target_traffic_handoff() -> None:
 
 
 def test_catalog_keeps_unrelated_known_gaps_unchanged() -> None:
-    """Score submitとreplay downloadの既存known gapを維持することを検証する.
-
-    Args:
-        なし.
+    """Getscores更新が隣接surfaceのknown gapを変更しないことを検証する.
 
     Returns:
         None: Assertionだけを実行する.
@@ -156,7 +179,6 @@ def test_catalog_keeps_unrelated_known_gaps_unchanged() -> None:
     Raises:
         AssertionError: Getscoresのcatalog更新が隣接surfaceのgapを変更した場合.
     """
-
     score_submit_gaps = list_gaps(StableSurface.SCORE_SUBMIT)
     replay_download_gaps = list_gaps(StableSurface.REPLAY_DOWNLOAD)
 
@@ -180,6 +202,14 @@ def test_catalog_keeps_unrelated_known_gaps_unchanged() -> None:
 
 
 def test_catalog_reports_known_compatibility_gaps() -> None:
+    """catalogが既知の互換gapをKNOWN_GAPとして公開することを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: required surfaceのknown gapが欠落するかstatusが変化した場合.
+    """
     gaps = list_gaps()
 
     assert gaps
@@ -192,6 +222,14 @@ def test_catalog_reports_known_compatibility_gaps() -> None:
 
 
 def test_replay_download_catalog_entries_are_known_gap_evidence_surface() -> None:
+    """Replay downloadのcatalog entryがfixture evidenceとknown gapを保つことを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: evidence type, file reference, scope, またはgap statusが変化した場合.
+    """
     evidence = list_evidence(StableSurface.REPLAY_DOWNLOAD)
     gaps = list_gaps(StableSurface.REPLAY_DOWNLOAD)
 

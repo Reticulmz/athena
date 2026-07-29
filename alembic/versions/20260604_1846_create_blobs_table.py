@@ -1,4 +1,4 @@
-"""create blobs table
+"""blob metadata保存用tableを作成するmigration.
 
 Revision ID: 20260604_1846
 Revises: 20260525_2100
@@ -17,6 +17,11 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """content-addressed blob metadataのschemaを作成する.
+
+    Returns:
+        None: sha256の一意性と非負byte sizeを持つblobs tableを作成したことを示す.
+    """
     _ = op.create_table(
         "blobs",
         sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
@@ -37,4 +42,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Blob metadata保存用tableを削除する.
+
+    Returns:
+        None: blobs tableを削除したことを示す.
+    """
     op.drop_table("blobs")

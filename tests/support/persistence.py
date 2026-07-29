@@ -1,4 +1,4 @@
-"""Test helpers for seeding command-side in-memory persistence."""
+"""command-side in-memory persistenceをseedするtest helperを提供する."""
 
 from __future__ import annotations
 
@@ -23,7 +23,15 @@ if TYPE_CHECKING:
 
 
 async def seed_role(app: Starlette, role: Role) -> None:
-    """Seed a role through the command Unit of Work boundary."""
+    """Command Unit of Work boundaryを通じてroleをseedする.
+
+    Args:
+        app (Starlette): in-memory runtime provider付きapplication.
+        role (Role): command stateへ追加するrole.
+
+    Returns:
+        None: roleをcommitし, 呼び出し側へ値を返さずに完了する.
+    """
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
         roles = uow.roles
@@ -33,12 +41,31 @@ async def seed_role(app: Starlette, role: Role) -> None:
 
 
 def seed_role_sync(app: Starlette, role: Role) -> None:
-    """Synchronous wrapper for TestClient-based tests."""
+    """同期TestClient testからroleをseedする.
+
+    Args:
+        app (Starlette): in-memory runtime provider付きapplication.
+        role (Role): command stateへ追加するrole.
+
+    Returns:
+        None: 非同期seedを完了し, 呼び出し側へ値を返さずに完了する.
+
+    Notes:
+        実行中のevent loopを持たない同期testからだけ利用する.
+    """
     asyncio.run(seed_role(app, role))
 
 
 async def seed_user(app: Starlette, user: User) -> User:
-    """Create a user through the command Unit of Work boundary."""
+    """Command Unit of Work boundaryを通じてuserを作成する.
+
+    Args:
+        app (Starlette): in-memory runtime provider付きapplication.
+        user (User): command stateへ保存するuser.
+
+    Returns:
+        User: repositoryが作成してcommitしたuser.
+    """
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
         created = await uow.users.create(user)
@@ -47,7 +74,15 @@ async def seed_user(app: Starlette, user: User) -> User:
 
 
 async def seed_channel(app: Starlette, channel: Channel) -> Channel:
-    """Create a channel through the command Unit of Work boundary."""
+    """Command Unit of Work boundaryを通じてchannelを作成する.
+
+    Args:
+        app (Starlette): in-memory runtime provider付きapplication.
+        channel (Channel): command stateへ保存するchannel.
+
+    Returns:
+        Channel: repositoryが作成してcommitしたchannel.
+    """
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
         created = await uow.channels.create(channel)
@@ -56,7 +91,15 @@ async def seed_channel(app: Starlette, channel: Channel) -> Channel:
 
 
 async def seed_channel_override(app: Starlette, override: ChannelRoleOverride) -> None:
-    """Seed a channel role override for command-side ACL checks."""
+    """command-side ACL check用のchannel role overrideをseedする.
+
+    Args:
+        app (Starlette): in-memory runtime provider付きapplication.
+        override (ChannelRoleOverride): channel command repositoryへ設定するrole override.
+
+    Returns:
+        None: overrideをcommitし, 呼び出し側へ値を返さずに完了する.
+    """
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
         channels = uow.channels
@@ -66,7 +109,15 @@ async def seed_channel_override(app: Starlette, override: ChannelRoleOverride) -
 
 
 async def seed_beatmapset(app: Starlette, beatmapset: BeatmapSet) -> None:
-    """Save a beatmapset snapshot through the command Unit of Work boundary."""
+    """Command Unit of Work boundaryを通じてbeatmapset snapshotを保存する.
+
+    Args:
+        app (Starlette): in-memory runtime provider付きapplication.
+        beatmapset (BeatmapSet): command stateへ保存するbeatmapset snapshot.
+
+    Returns:
+        None: snapshotをcommitし, 呼び出し側へ値を返さずに完了する.
+    """
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
         await uow.beatmaps.save_beatmapset_snapshot(beatmapset)
@@ -77,7 +128,15 @@ async def attach_beatmap_file(
     app: Starlette,
     attachment: BeatmapFileAttachment,
 ) -> BeatmapFileAttachment:
-    """Attach an osu file snapshot through the command Unit of Work boundary."""
+    """Command Unit of Work boundaryを通じてosu file snapshotをattachする.
+
+    Args:
+        app (Starlette): in-memory runtime provider付きapplication.
+        attachment (BeatmapFileAttachment): beatmapへattachするosu file snapshot.
+
+    Returns:
+        BeatmapFileAttachment: repositoryが保存してcommitしたattachment.
+    """
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
         created = await uow.beatmaps.attach_osu_file(attachment)
@@ -93,7 +152,21 @@ async def seed_beatmap_fetch_state(
     *,
     failed_reason: str = "test metadata failure",
 ) -> None:
-    """Seed a beatmap fetch state through the command Unit of Work boundary."""
+    """Command Unit of Work boundaryを通じてbeatmap fetch stateをseedする.
+
+    Args:
+        app (Starlette): in-memory runtime provider付きapplication.
+        target (BeatmapFetchTarget): stateを記録するbeatmap fetch target.
+        status (BeatmapFetchState): seedするpending, failed, またはsucceeded状態.
+        now (datetime): state transitionを記録する時刻.
+        failed_reason (str): failed状態で保存するdiagnostic reason.
+
+    Returns:
+        None: statusに対応するmutationをcommitし, 呼び出し側へ値を返さずに完了する.
+
+    Notes:
+        failed_reasonはstatusがFAILEDの場合だけrepositoryへ渡される.
+    """
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
         if status is BeatmapFetchState.PENDING_FETCH:

@@ -1,3 +1,5 @@
+"""Stable verification reportのtext, JSON, redaction contractを検証する."""
+
 from __future__ import annotations
 
 import json
@@ -17,6 +19,14 @@ from athena_cli.stable_verification.reporting import StableVerificationReporter,
 
 
 def test_render_text_lists_surface_status_evidence_scope_and_diagnostic() -> None:
+    """Text reportがtargetとsurface diagnosticを完全な順序で表示することを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: target, host mismatch, evidence scope, またはdiagnostic textが変化した場合.
+    """
     result = _run_result(
         DiagnosticSummary(
             message="GET /web/osu-osz2-bmsubmit-getid.php status=200 bytes=12",
@@ -37,6 +47,14 @@ def test_render_text_lists_surface_status_evidence_scope_and_diagnostic() -> Non
 
 
 def test_render_json_includes_structured_surface_result() -> None:
+    """JSON reportがtargetとsurface result schemaを保持することを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: JSON payloadのtarget, failed flag, またはresult fieldが変化した場合.
+    """
     result = _run_result(DiagnosticSummary(message="fixture parsed"))
 
     payload = _loads_json_object(StableVerificationReporter().render_json(result))
@@ -59,6 +77,14 @@ def test_render_json_includes_structured_surface_result() -> None:
 
 
 def test_reporter_redacts_secret_values_from_text_and_json() -> None:
+    """textとJSON reportがcredential-likeな値を一切公開しないことを検証する.
+
+    Returns:
+        None: Assertionだけを実行する.
+
+    Raises:
+        AssertionError: secret valueが出力に残るかredaction placeholderが変化した場合.
+    """
     secret_message = " ".join(
         (
             "password" + "=plain",
@@ -120,6 +146,14 @@ def test_reporter_redacts_secret_values_from_text_and_json() -> None:
 
 
 def _run_result(diagnostic: DiagnosticSummary) -> VerificationRunResult:
+    """Reporter testで使う固定の成功verification runを生成する.
+
+    Args:
+        diagnostic (DiagnosticSummary): surface resultへ入れる診断要約.
+
+    Returns:
+        VerificationRunResult: getscoresのmandatory golden fixture結果を含むrun.
+    """
     return VerificationRunResult(
         target=StableTarget(
             base_url="http://127.0.0.1:8000",
@@ -140,6 +174,18 @@ def _run_result(diagnostic: DiagnosticSummary) -> VerificationRunResult:
 
 
 def _loads_json_object(raw: str) -> dict[str, object]:
+    """JSON textをobject mappingとして型検証して返す.
+
+    Args:
+        raw (str): reporterが返したJSON text.
+
+    Returns:
+        dict[str, object]: JSON root objectを表すmapping.
+
+    Raises:
+        json.JSONDecodeError: rawが有効なJSONでない場合.
+        AssertionError: JSON rootがobjectでない場合.
+    """
     value = cast("object", json.loads(raw))
     assert isinstance(value, dict)
 

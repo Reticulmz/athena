@@ -1,3 +1,5 @@
+"""Stable verification surfaceとevidence catalogを提供する."""
+
 from __future__ import annotations
 
 from athena_cli.stable_verification.models import (
@@ -222,14 +224,41 @@ _GAPS: tuple[EvidenceGap, ...] = (
 
 
 def list_surface_inventory() -> tuple[SurfaceInventoryEntry, ...]:
+    """Stable verification対象surfaceの不変inventoryを返す.
+
+    Returns:
+        tuple[SurfaceInventoryEntry, ...]: 実装状態と対象scopeを含む定義順のinventory.
+
+    Notes:
+        返すtupleはmodule内のcatalogを共有する.呼出側はentryを変更せず参照専用で扱う.
+    """
     return _SURFACE_INVENTORY
 
 
 def list_surfaces() -> tuple[StableSurface, ...]:
+    """Stable verification対象のsurfaceをinventory順で返す.
+
+    Returns:
+        tuple[StableSurface, ...]: 実装状態によらずcatalogへ登録されたsurface.
+
+    Notes:
+        runnerはこの順序を,明示的なsurface指定がない場合の実行候補に利用する.
+    """
     return tuple(entry.surface for entry in _SURFACE_INVENTORY)
 
 
 def list_evidence(surface: StableSurface | None = None) -> tuple[EvidenceEntry, ...]:
+    """指定surfaceのverification evidenceを返す.
+
+    Args:
+        surface (StableSurface | None): 絞り込むsurface.Noneの場合は全surfaceのevidenceを返す.
+
+    Returns:
+        tuple[EvidenceEntry, ...]: catalog順のevidence.該当surfaceがない場合は空tuple.
+
+    Notes:
+        Headless probeを含むoptional evidenceも,mandatory evidenceと同じcatalogから返す.
+    """
     if surface is None:
         return _EVIDENCE
 
@@ -237,6 +266,17 @@ def list_evidence(surface: StableSurface | None = None) -> tuple[EvidenceEntry, 
 
 
 def list_gaps(surface: StableSurface | None = None) -> tuple[EvidenceGap, ...]:
+    """指定surfaceの既知verification gapを返す.
+
+    Args:
+        surface (StableSurface | None): 絞り込むsurface.Noneの場合は全既知gapを返す.
+
+    Returns:
+        tuple[EvidenceGap, ...]: catalog順のknown gap.該当surfaceがない場合は空tuple.
+
+    Notes:
+        返すgapは実装状態を変更せず,未確認contractの引継ぎ先を表す.
+    """
     if surface is None:
         return _GAPS
 

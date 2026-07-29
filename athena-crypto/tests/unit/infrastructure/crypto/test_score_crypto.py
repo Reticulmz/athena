@@ -1,4 +1,4 @@
-"""Unit tests for ScoreCrypto (athena_crypto Rust module)."""
+"""athena_crypto の score payload 復号契約を検証する."""
 
 import base64
 
@@ -10,7 +10,11 @@ EXPECTED_PLAINTEXT_LENGTH = 153
 
 
 def test_decrypt_real_payload_strips_pkcs7_padding() -> None:
-    """Real stable score payload decrypts to unpadded score text."""
+    """実際の stable score payload から PKCS#7 padding が除去されることを検証する.
+
+    Returns:
+        None: 復号済み plaintext, checksum, 長さ, 境界文字列が既知の契約と一致することを検証する.
+    """
     iv_b64 = "l5++m1KWx1SO2vg8d1TDCOgnU01NLUUSC9DOlJ5F/HI="
     score_b64 = (
         "k+JrPEaEO6bYw97BJ5IrYhhjBF61T7RjekI2ZETLKwJPdct8wy2mngloX73XoZOUw+Yxc9j3qDDmHFQIven+i"
@@ -32,7 +36,14 @@ def test_decrypt_real_payload_strips_pkcs7_padding() -> None:
 
 
 def test_decrypt_with_osuver_key() -> None:
-    """Test decryption with osuver-based key."""
+    """指定済みの `osuver` を使う key で不正な暗号文の復号失敗を検証する.
+
+    Returns:
+        None: 32 byte の placeholder payload が復号失敗として扱われることを検証する.
+
+    Notes:
+        実クライアント由来の暗号文はこの smoke test では使用しない.
+    """
     # Minimal smoke test: verify function signature and basic operation
     # Real decryption test requires actual encrypted payload from osu! client
     encrypted = b"0" * RIJNDAEL_BLOCK_SIZE  # Placeholder: needs actual encrypted data
@@ -43,7 +54,12 @@ def test_decrypt_with_osuver_key() -> None:
 
 
 def test_decrypt_with_legacy_key() -> None:
-    """Test decryption with legacy key (no osuver)."""
+    """`osuver` に `None` を指定した legacy key で復号失敗を検証する.
+
+    Returns:
+        None: 32 byte の placeholder payload が legacy key でも復号失敗として扱われることを
+            検証する.
+    """
     encrypted = b"0" * RIJNDAEL_BLOCK_SIZE
     iv = b"0" * RIJNDAEL_BLOCK_SIZE
 
@@ -52,7 +68,11 @@ def test_decrypt_with_legacy_key() -> None:
 
 
 def test_decrypt_invalid_iv_size() -> None:
-    """Test decryption with invalid IV size raises error."""
+    """32 byte 以外の IV を指定すると ValueError になることを検証する.
+
+    Returns:
+        None: 不正な IV size が ValueError として拒否されることを検証する.
+    """
     encrypted = b"0" * RIJNDAEL_BLOCK_SIZE
     invalid_iv = b"short"
 

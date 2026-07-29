@@ -1,4 +1,4 @@
-"""SQLAlchemy command-side score submission repository."""
+"""SQLAlchemyでscore submission lifecycleを永続化するrepositoryを提供する."""
 
 from __future__ import annotations
 
@@ -15,12 +15,39 @@ if TYPE_CHECKING:
 
 
 class SQLAlchemyScoreSubmissionCommandRepository:
-    """Submission command repository backed by a UoW-owned SQLAlchemy session."""
+    """Unit of Work所有sessionでscore submissionを操作するrepository.
+
+    Attributes:
+        _session (AsyncSession): command transactionを実行しcommitを所有しないsession.
+    """
 
     def __init__(self, session: AsyncSession) -> None:
+        """Unit of Workから受け取ったSQLAlchemy sessionを保持する.
+
+        Args:
+            session (AsyncSession): score submission操作に使うsession.
+
+        Notes:
+            commitとrollbackは呼び出し側のUnit of Workが所有する.
+        """
         self._session: AsyncSession = session
 
     async def create(self, submission: ScoreSubmission) -> ScoreSubmission:
+        """新しいscore submissionを永続化してdomain modelへ変換する.
+
+        Args:
+            submission (ScoreSubmission): fingerprintと受信時点のstateを持つ新規submission.
+
+        Returns:
+            ScoreSubmission: flushとrefresh後の永続化済みsubmission.
+
+        Raises:
+            ValueError: 同じfingerprintのsubmissionが既に存在する場合.
+            SQLAlchemyError: fingerprint重複以外の永続化処理に失敗した場合.
+
+        Notes:
+            このmethodはUnit of Workをcommitしない.
+        """
         model = ScoreSubmissionModel(
             fingerprint=submission.fingerprint,
             user_id=submission.user_id,
@@ -41,6 +68,17 @@ class SQLAlchemyScoreSubmissionCommandRepository:
         return _submission_to_domain(model)
 
     async def get_by_fingerprint(self, fingerprint: str) -> ScoreSubmission | None:
+        """fingerprintで保存済みscore submissionを取得する.
+
+        Args:
+            fingerprint (str): 取得対象submissionの冪等性識別子.
+
+        Returns:
+            ScoreSubmission | None: 対応するsubmission. 存在しない場合はNone.
+
+        Raises:
+            SQLAlchemyError: select実行に失敗した場合.
+        """
         model = (
             await self._session.execute(
                 select(ScoreSubmissionModel).where(ScoreSubmissionModel.fingerprint == fingerprint)
@@ -54,6 +92,23 @@ class SQLAlchemyScoreSubmissionCommandRepository:
         state: ScoreSubmissionState,
         result_snapshot: dict[str, object] | None = None,
     ) -> None:
+        """保存済みscore submissionのstateとresult snapshotを更新する.
+
+        Args:
+            submission_id (int): 更新対象submissionの永続化識別子.
+            state (ScoreSubmissionState): 保存するlifecycle state.
+            result_snapshot (dict[str, object] | None): stateに対応する結果. 未指定時はNone.
+
+        Returns:
+            None: stateとsnapshotのflush完了を示す.
+
+        Raises:
+            ValueError: 指定idのsubmissionが存在しない場合.
+            SQLAlchemyError: selectまたはflushに失敗した場合.
+
+        Notes:
+            このmethodはUnit of Workをcommitしない.
+        """
         model = await self._session.get(ScoreSubmissionModel, submission_id)
         if model is None:
             msg = f"Submission not found: {submission_id}"
@@ -66,6 +121,17 @@ class SQLAlchemyScoreSubmissionCommandRepository:
 
 
 def _submission_to_domain(model: ScoreSubmissionModel) -> ScoreSubmission:
+    """SQLAlchemy score submission modelをdomain modelへ変換する.
+
+    Args:
+        model (ScoreSubmissionModel): 永続化層から読み出したsubmission row.
+
+    Returns:
+        ScoreSubmission: stateをdomain enumへ復元したscore submission.
+
+    Raises:
+        ValueError: 保存されたstateが既知のScoreSubmissionStateでない場合.
+    """
     return ScoreSubmission(
         id=model.id,
         fingerprint=model.fingerprint,

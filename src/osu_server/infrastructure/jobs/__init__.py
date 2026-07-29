@@ -1,4 +1,4 @@
-"""Taskiq job framework utilities."""
+"""Taskiq job 登録用の utility を公開します."""
 
 from __future__ import annotations
 

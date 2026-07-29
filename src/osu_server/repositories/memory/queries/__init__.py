@@ -1,4 +1,4 @@
-"""In-memory query repository package."""
+"""Committed in-memory state を読む query repository を公開する package."""
 
 from osu_server.repositories.memory.queries.beatmap_leaderboards import (
     InMemoryBeatmapLeaderboardQueryRepository,

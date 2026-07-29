@@ -1,4 +1,4 @@
-"""Beatmap metadata provider services."""
+"""外部APIとcommunity mirrorをビートマップメタデータproviderへ適合させる."""
 
 from __future__ import annotations
 
@@ -31,15 +31,31 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 
 class InMemoryBeatmapMetadataProvider:
-    """Stores provider snapshots in dicts for test environments."""
+    """テスト環境向けにスナップショットをインメモリで検索可能にする.
+
+    Attributes:
+        _by_beatmap_id (dict[int, BeatmapsetSnapshot]): ビートマップIDからスナップショットを引く
+            索引.
+        _by_beatmapset_id (dict[int, BeatmapsetSnapshot]): ビートマップセットIDから
+            スナップショットを引く索引.
+        _checksum_to_beatmap_id (dict[str, int]): MD5チェックサムからビートマップIDを引く索引.
+    """
 
     def __init__(self) -> None:
+        """空の検索索引を初期化する."""
         self._by_beatmap_id: dict[int, BeatmapsetSnapshot] = {}
         self._by_beatmapset_id: dict[int, BeatmapsetSnapshot] = {}
         self._checksum_to_beatmap_id: dict[str, int] = {}
 
     def add_snapshot(self, snapshot: BeatmapsetSnapshot) -> None:
-        """Preload a snapshot so lookups return it."""
+        """スナップショットを全検索索引へ事前登録する.
+
+        Args:
+            snapshot (BeatmapsetSnapshot): ビートマップセットと内包ビートマップを表す登録対象.
+
+        Returns:
+            None: 対応するビートマップセットID,ビートマップID,MD5チェックサムで検索可能にする.
+        """
         self._by_beatmapset_id[snapshot.beatmapset_id] = snapshot
         for bm in snapshot.beatmaps:
             self._by_beatmap_id[bm.beatmap_id] = snapshot
@@ -47,12 +63,37 @@ class InMemoryBeatmapMetadataProvider:
                 self._checksum_to_beatmap_id[bm.checksum_md5] = bm.beatmap_id
 
     async def lookup_by_beatmap_id(self, beatmap_id: int) -> BeatmapsetSnapshot | None:
+        """ビートマップIDに対応する登録済みスナップショットを取得する.
+
+        Args:
+            beatmap_id (int): 検索対象のビートマップID.
+
+        Returns:
+            BeatmapsetSnapshot | None: 登録済みのスナップショット. 該当IDがない場合は ``None``.
+        """
         return self._by_beatmap_id.get(beatmap_id)
 
     async def lookup_by_beatmapset_id(self, beatmapset_id: int) -> BeatmapsetSnapshot | None:
+        """ビートマップセットIDに対応する登録済みスナップショットを取得する.
+
+        Args:
+            beatmapset_id (int): 検索対象のビートマップセットID.
+
+        Returns:
+            BeatmapsetSnapshot | None: 登録済みのスナップショット. 該当IDがない場合は ``None``.
+        """
         return self._by_beatmapset_id.get(beatmapset_id)
 
     async def lookup_by_checksum(self, checksum_md5: str) -> BeatmapsetSnapshot | None:
+        """MD5チェックサムに対応する登録済みスナップショットを取得する.
+
+        Args:
+            checksum_md5 (str): 検索対象のビートマップMD5チェックサム.
+
+        Returns:
+            BeatmapsetSnapshot | None: 登録済みのスナップショット. 該当チェックサムがない場合は
+                ``None``.
+        """
         beatmap_id = self._checksum_to_beatmap_id.get(checksum_md5)
         if beatmap_id is None:
             return None
@@ -60,7 +101,17 @@ class InMemoryBeatmapMetadataProvider:
 
 
 class OsuApiMetadataProviderService:
-    """Official osu! API v2 metadata provider with OAuth authentication."""
+    """OAuth認証付きの公式osu! API v2からメタデータを取得する.
+
+    Attributes:
+        _client_id (str): OAuth client credentialsのclient ID.
+        _client_secret (str): OAuth client credentialsのclient secret.
+        _base_url (str): API v2 endpointの末尾スラッシュを除いたURL.
+        _token_url (str): OAuth token endpointのURL.
+        _http_client (BeatmapHttpClient): HTTP clientを提供するinfrastructure adapter.
+        _access_token (str | None): 有効期限内で再利用するBearer token.
+        _token_expiry (float): cached tokenを再取得するUNIX時刻.
+    """
 
     _client_id: str
     _client_secret: str
@@ -77,6 +128,15 @@ class OsuApiMetadataProviderService:
         base_url: str = "https://osu.ppy.sh/api/v2",
         token_url: str = "https://osu.ppy.sh/oauth/token",
     ) -> None:
+        """公式APIのOAuth credentialsとHTTP adapterを設定する.
+
+        Args:
+            client_id (str): OAuth token発行に使うclient ID.
+            client_secret (str): OAuth token発行に使うclient secret.
+            http_client (BeatmapHttpClient): token取得とAPI requestを実行するHTTP adapter.
+            base_url (str): API v2 endpointのURL. 末尾の ``/`` は保存前に除去する.
+            token_url (str): OAuth token endpointのURL.
+        """
         self._client_id = client_id
         self._client_secret = client_secret
         self._base_url = base_url.rstrip("/")
@@ -86,19 +146,67 @@ class OsuApiMetadataProviderService:
         self._token_expiry: float = 0.0
 
     async def lookup_by_beatmap_id(self, beatmap_id: int) -> BeatmapsetSnapshot | None:
+        """公式APIからビートマップIDに対応するスナップショットを取得する.
+
+        Args:
+            beatmap_id (int): 検索対象のビートマップID.
+
+        Returns:
+            BeatmapsetSnapshot | None: 公式APIが返したスナップショット. HTTP 404 Not Foundの場合は,
+                Athenaでmetadata未登録として扱い ``None`` を返す.
+
+        Raises:
+            BeatmapSourceError: OAuth取得,HTTP request,またはresponse正規化に失敗した場合.
+        """
         return await self._lookup(f"/beatmaps/{beatmap_id}", lookup_key=str(beatmap_id))
 
     async def lookup_by_beatmapset_id(self, beatmapset_id: int) -> BeatmapsetSnapshot | None:
+        """公式APIからビートマップセットIDに対応するスナップショットを取得する.
+
+        Args:
+            beatmapset_id (int): 検索対象のビートマップセットID.
+
+        Returns:
+            BeatmapsetSnapshot | None: 公式APIが返したスナップショット. HTTP 404 Not Foundの場合は,
+                Athenaでmetadata未登録として扱い ``None`` を返す.
+
+        Raises:
+            BeatmapSourceError: OAuth取得,HTTP request,またはresponse正規化に失敗した場合.
+        """
         return await self._lookup(f"/beatmapsets/{beatmapset_id}", lookup_key=str(beatmapset_id))
 
     async def lookup_by_checksum(self, checksum_md5: str) -> BeatmapsetSnapshot | None:
+        """公式APIからMD5チェックサムに対応するスナップショットを取得する.
+
+        Args:
+            checksum_md5 (str): 検索対象のビートマップMD5チェックサム.
+
+        Returns:
+            BeatmapsetSnapshot | None: 公式APIが返したスナップショット. HTTP 404 Not Foundの場合は,
+                Athenaでmetadata未登録として扱い ``None`` を返す.
+
+        Raises:
+            BeatmapSourceError: OAuth取得,HTTP request,またはresponse正規化に失敗した場合.
+        """
         return await self._lookup(
             f"/beatmaps/lookup?checksum={checksum_md5}",
             lookup_key=checksum_md5,
         )
 
     async def _lookup(self, path: str, *, lookup_key: str) -> BeatmapsetSnapshot | None:
+        """OAuth tokenを付けて公式APIのmetadata endpointを照会する.
 
+        Args:
+            path (str): base URLに連結するAPI v2のrelative path.
+            lookup_key (str): エラーと構造化logへ記録する検索値.
+
+        Returns:
+            BeatmapsetSnapshot | None: JSONを変換したスナップショット. HTTP 404 Not Foundの場合は,
+                Athenaでmetadata未登録として扱い ``None`` を返す.
+
+        Raises:
+            BeatmapSourceError: token取得,request,JSON形式,またはHTTP statusが正常でない場合.
+        """
         source_label = "osu_api_v2"
         token = await self._get_token()
         url = f"{self._base_url}{path}"
@@ -182,6 +290,17 @@ class OsuApiMetadataProviderService:
         )
 
     async def _get_token(self) -> str:
+        """有効なOAuth access tokenを返し,必要なら再取得する.
+
+        Returns:
+            str: 公式API requestのBearer認証に使うaccess token.
+
+        Raises:
+            BeatmapSourceError: token endpointのrequest,JSON形式,認証,またはstatusが不正な場合.
+
+        Notes:
+            cached tokenは現在時刻が ``expires_in - 60`` 秒で計算した有効期限より前だけ再利用する.
+        """
         if self._access_token and time.time() < self._token_expiry:
             return self._access_token
 
@@ -287,17 +406,39 @@ class OsuApiMetadataProviderService:
 
 
 def _source_label(base_url: str) -> str:
+    """入力URLから構造化logとerror用のsource labelを作る.
+
+    Args:
+        base_url (str): mirror APIのbase URL.
+
+    Returns:
+        str: hostnameを含む ``mirror[...]`` 形式のlabel. hostnameを取得できない場合は入力URLを使う.
+    """
     hostname = urlparse(base_url).hostname or base_url
     return f"mirror[{hostname}]"
 
 
 def _is_nerinyan_url(base_url: str) -> bool:
+    """URLがNerinyan互換endpointを指すか判定する.
+
+    Args:
+        base_url (str): 判定対象のmirror API base URL.
+
+    Returns:
+        bool: hostnameに大文字小文字を区別せず ``nerinyan`` を含む場合は ``True``.
+    """
     hostname = urlparse(base_url).hostname
     return hostname is not None and "nerinyan" in hostname.lower()
 
 
 class MirrorMetadataProviderService:
-    """Community mirror metadata provider (Nerinyan, Chimu, Kitsu, etc.)."""
+    """community mirrorからメタデータを設定順に取得する.
+
+    Attributes:
+        _base_urls (tuple[str, ...]): 空白と末尾スラッシュを除去した照会順のmirror URL群.
+        _api_version (str): Nerinyan以外のmirror URLへ連結するAPI version.
+        _http_client (BeatmapHttpClient): JSON requestを実行するHTTP adapter.
+    """
 
     _base_urls: tuple[str, ...]
     _api_version: str
@@ -311,11 +452,32 @@ class MirrorMetadataProviderService:
         base_urls: Sequence[str] | None = None,
         api_version: str = "v2",
     ) -> None:
+        """Mirror URL群とHTTP adapterを設定する.
+
+        Args:
+            http_client (BeatmapHttpClient): mirrorへのJSON requestを実行するHTTP adapter.
+            base_url (str | None): 単一の追加mirror URL. ``base_urls`` 指定時は末尾に追加する.
+            base_urls (Sequence[str] | None): 優先順で照会するmirror URL群.
+            api_version (str): Nerinyan以外のmirror URLへ連結するAPI version.
+        """
         self._base_urls = _normalize_base_urls(base_url=base_url, base_urls=base_urls)
         self._api_version = api_version
         self._http_client = http_client
 
     async def lookup_by_beatmap_id(self, beatmap_id: int) -> BeatmapsetSnapshot | None:
+        """Community mirrorからビートマップIDに対応するスナップショットを取得する.
+
+        Args:
+            beatmap_id (int): 検索対象のビートマップID.
+
+        Returns:
+            BeatmapsetSnapshot | None: 最初に成功したmirrorのスナップショット. URL未設定または
+                全mirrorが未検出なら
+                ``None``.
+
+        Raises:
+            BeatmapSourceError: 未検出以外の最後のmirror errorにより全mirrorが失敗した場合.
+        """
         return await self._lookup(
             f"/b/{beatmap_id}",
             lookup_key=str(beatmap_id),
@@ -323,6 +485,19 @@ class MirrorMetadataProviderService:
         )
 
     async def lookup_by_beatmapset_id(self, beatmapset_id: int) -> BeatmapsetSnapshot | None:
+        """Community mirrorからビートマップセットIDに対応するスナップショットを取得する.
+
+        Args:
+            beatmapset_id (int): 検索対象のビートマップセットID.
+
+        Returns:
+            BeatmapsetSnapshot | None: 最初に成功したmirrorのスナップショット. URL未設定または
+                全mirrorが未検出なら
+                ``None``.
+
+        Raises:
+            BeatmapSourceError: 未検出以外の最後のmirror errorにより全mirrorが失敗した場合.
+        """
         return await self._lookup(
             f"/s/{beatmapset_id}",
             lookup_key=str(beatmapset_id),
@@ -330,6 +505,19 @@ class MirrorMetadataProviderService:
         )
 
     async def lookup_by_checksum(self, checksum_md5: str) -> BeatmapsetSnapshot | None:
+        """Community mirrorからMD5チェックサムに対応するスナップショットを取得する.
+
+        Args:
+            checksum_md5 (str): 検索対象のビートマップMD5チェックサム.
+
+        Returns:
+            BeatmapsetSnapshot | None: 最初に成功したmirrorのスナップショット. URL未設定または
+                全mirrorが未検出なら
+                ``None``.
+
+        Raises:
+            BeatmapSourceError: 未検出以外の最後のmirror errorにより全mirrorが失敗した場合.
+        """
         return await self._lookup(
             f"/hash/{checksum_md5}",
             lookup_key=checksum_md5,
@@ -343,6 +531,22 @@ class MirrorMetadataProviderService:
         lookup_key: str,
         nerinyan_params: Mapping[str, str],
     ) -> BeatmapsetSnapshot | None:
+        """設定順にmirror endpointを照会して最初の有効なレスポンスを変換する.
+
+        Args:
+            path (str): Nerinyan以外のmirror URLへ連結するrelative path.
+            lookup_key (str): HTTP adapterと生成するerrorへ渡す検索値.
+            nerinyan_params (Mapping[str, str]): Nerinyan endpointへ渡すquery parameter.
+
+        Returns:
+            BeatmapsetSnapshot | None: 最初に変換できたスナップショット. URL未設定または全sourceが
+                未検出なら
+                ``None``.
+
+        Raises:
+            BeatmapSourceError: 未検出以外の最後のsource error,または不正JSONを全sourceで
+                解決できない場合.
+        """
         if not self._base_urls:
             return None
 
@@ -405,6 +609,15 @@ def _normalize_base_urls(
     base_url: str | None,
     base_urls: Sequence[str] | None,
 ) -> tuple[str, ...]:
+    """単一URLとURL列を照会順を保った正規化済みtupleへ変換する.
+
+    Args:
+        base_url (str | None): ``base_urls`` の後ろへ追加する単一URL.
+        base_urls (Sequence[str] | None): 優先順で受け取るURL列.
+
+    Returns:
+        tuple[str, ...]: 前後空白と末尾 ``/`` を除去し,空文字を除外したURL列.
+    """
     raw_urls: Sequence[str]
     if base_urls is not None:
         raw_urls = base_urls if base_url is None else (*base_urls, base_url)

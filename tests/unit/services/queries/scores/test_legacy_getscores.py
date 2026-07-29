@@ -1,4 +1,4 @@
-"""Unit tests for legacy getscores query use-case."""
+"""Legacy getscores queryのcompatibility契約を検証するunit test群."""
 
 from __future__ import annotations
 
@@ -38,33 +38,80 @@ if TYPE_CHECKING:
 
 
 class BeatmapScoreListingQueryRepositoryStub:
-    """Typed read-only getscores repository test double."""
+    """Beatmap score listing queryを再現するtyped stub.
+
+    Attributes:
+        beatmaps_by_checksum (dict[str, Beatmap]): checksumごとのbeatmap read結果.
+        beatmaps_by_filename (dict[tuple[int, str], Beatmap]): filename lookup結果.
+        beatmapsets_by_id (dict[int, BeatmapSet]): IDごとのbeatmapset read結果.
+        fetch_records (dict[BeatmapFetchTarget, BeatmapFetchRecord]): fetch state.
+    """
 
     def __init__(self) -> None:
+        """空のscore listing read状態を初期化する."""
         self.beatmaps_by_checksum: dict[str, Beatmap] = {}
         self.beatmaps_by_filename: dict[tuple[int, str], Beatmap] = {}
         self.beatmapsets_by_id: dict[int, BeatmapSet] = {}
         self.fetch_records: dict[BeatmapFetchTarget, BeatmapFetchRecord] = {}
 
     async def find_by_checksum(self, checksum_md5: str) -> Beatmap | None:
+        """checksumに対応するbeatmapを返す.
+
+        Args:
+            checksum_md5 (str): 検索対象のMD5 checksum.
+
+        Returns:
+            Beatmap | None: 登録済みのbeatmap. 見つからない場合はNone.
+        """
         return self.beatmaps_by_checksum.get(checksum_md5)
 
     async def find_by_filename_in_beatmapset(
         self, beatmapset_id: int, original_filename: str
     ) -> Beatmap | None:
+        """beatmapset内の元filenameに対応するbeatmapを返す.
+
+        Args:
+            beatmapset_id (int): 検索対象のbeatmapset ID.
+            original_filename (str): beatmapset内で照合する元filename.
+
+        Returns:
+            Beatmap | None: 登録済みのbeatmap. 見つからない場合はNone.
+        """
         return self.beatmaps_by_filename.get((beatmapset_id, original_filename))
 
     async def get_beatmapset(self, beatmapset_id: int) -> BeatmapSet | None:
+        """IDに対応するbeatmapsetを返す.
+
+        Args:
+            beatmapset_id (int): 検索対象のbeatmapset ID.
+
+        Returns:
+            BeatmapSet | None: 登録済みのbeatmapset. 見つからない場合はNone.
+        """
         return self.beatmapsets_by_id.get(beatmapset_id)
 
     async def get_fetch_state(self, target: BeatmapFetchTarget) -> BeatmapFetchRecord | None:
+        """Metadata fetch targetの現在記録を返す.
+
+        Args:
+            target (BeatmapFetchTarget): 照合対象のmetadata取得先.
+
+        Returns:
+            BeatmapFetchRecord | None: 登録済みの取得記録. 存在しない場合はNone.
+        """
         return self.fetch_records.get(target)
 
 
 class EmptyBeatmapLeaderboardQueryRepositoryStub:
-    """Typed empty leaderboard repository test double."""
+    """常に空のleaderboard readを返すtyped stub.
+
+    Attributes:
+        top_row_calls (list[tuple[LeaderboardReadScope, int]]): top row read記録.
+        personal_best_calls (list[tuple[LeaderboardReadScope, int]]): personal best readの呼出記録.
+    """
 
     def __init__(self) -> None:
+        """空のleaderboard read呼出記録を初期化する."""
         self.top_row_calls: list[tuple[LeaderboardReadScope, int]] = []
         self.personal_best_calls: list[tuple[LeaderboardReadScope, int]] = []
 
@@ -74,6 +121,15 @@ class EmptyBeatmapLeaderboardQueryRepositoryStub:
         *,
         limit: int,
     ) -> tuple[BeatmapLeaderboardRow, ...]:
+        """指定scopeのreadを記録して空の順位行を返す.
+
+        Args:
+            scope (LeaderboardReadScope): leaderboardを絞り込む条件.
+            limit (int): 要求された最大行数.
+
+        Returns:
+            tuple[BeatmapLeaderboardRow, ...]: 常に空の順位行列.
+        """
         self.top_row_calls.append((scope, limit))
         return ()
 
@@ -83,11 +139,28 @@ class EmptyBeatmapLeaderboardQueryRepositoryStub:
         *,
         viewer_user_id: int,
     ) -> BeatmapLeaderboardRow | None:
+        """指定viewerのreadを記録してpersonal bestなしを返す.
+
+        Args:
+            scope (LeaderboardReadScope): personal bestを絞り込む条件.
+            viewer_user_id (int): personal bestを取得するviewerのuser ID.
+
+        Returns:
+            BeatmapLeaderboardRow | None: このstubでは常にNone.
+        """
         self.personal_best_calls.append((scope, viewer_user_id))
         return None
 
 
 def _with_leaderboard_selection(request: GetscoresRequest) -> GetscoresRequest:
+    """Stable requestへmapper由来のleaderboard selectionを付与する.
+
+    Args:
+        request (GetscoresRequest): legacy form値を保持するgetscores request.
+
+    Returns:
+        GetscoresRequest: leaderboard selectionを含む新しいrequest.
+    """
     return replace(
         request,
         leaderboard_selection=StableGetscoresLeaderboardMapper().map_request(request),
@@ -96,13 +169,21 @@ def _with_leaderboard_selection(request: GetscoresRequest) -> GetscoresRequest:
 
 @pytest.fixture
 def getscores_repo() -> BeatmapScoreListingQueryRepositoryStub:
-    """Typed getscores query repository stub."""
+    """空のgetscores score listing repository stubを提供する.
+
+    Returns:
+        BeatmapScoreListingQueryRepositoryStub: beatmapとfetch stateを設定できるstub.
+    """
     return BeatmapScoreListingQueryRepositoryStub()
 
 
 @pytest.fixture
 def leaderboard_repo() -> EmptyBeatmapLeaderboardQueryRepositoryStub:
-    """Typed leaderboard query repository stub."""
+    """空結果を返すleaderboard repository stubを提供する.
+
+    Returns:
+        EmptyBeatmapLeaderboardQueryRepositoryStub: read条件を記録し空結果を返すstub.
+    """
     return EmptyBeatmapLeaderboardQueryRepositoryStub()
 
 
@@ -110,12 +191,25 @@ def _query(
     getscores_repo: BeatmapScoreListingQueryRepositoryStub,
     leaderboard_repo: EmptyBeatmapLeaderboardQueryRepositoryStub,
 ) -> BeatmapScoreListingQuery:
+    """Legacy getscores用のscore listing queryを構成する.
+
+    Args:
+        getscores_repo (BeatmapScoreListingQueryRepositoryStub): beatmap情報を返すstub.
+        leaderboard_repo (EmptyBeatmapLeaderboardQueryRepositoryStub): 空のleaderboardを返すstub.
+
+    Returns:
+        BeatmapScoreListingQuery: legacy requestをresolveするquery.
+    """
     return BeatmapScoreListingQuery(BeatmapLeaderboardQuery(getscores_repo, leaderboard_repo))
 
 
 @pytest.fixture
 def sample_beatmap() -> Beatmap:
-    """Sample beatmap for testing."""
+    """Rankedかつfile availableの標準beatmap fixtureを提供する.
+
+    Returns:
+        Beatmap: legacy getscoresがheaderを作成できるosu! modeのbeatmap.
+    """
     return Beatmap(
         id=123,
         beatmapset_id=456,
@@ -145,7 +239,11 @@ def sample_beatmap() -> Beatmap:
 
 @pytest.fixture
 def sample_beatmapset() -> BeatmapSet:
-    """Sample beatmapset for testing."""
+    """標準beatmap fixtureと対応するranked beatmapsetを提供する.
+
+    Returns:
+        BeatmapSet: legacy getscores headerへ設定するbeatmapset.
+    """
     return BeatmapSet(
         id=456,
         artist="Test Artist",
@@ -163,14 +261,25 @@ def sample_beatmapset() -> BeatmapSet:
 
 
 class TestBeatmapScoreListingQuery:
-    """Tests for legacy getscores query use-case."""
+    """Legacy getscoresのbeatmap解決とleaderboard fallback抑止を検証する."""
 
     async def test_returns_unavailable_when_beatmap_not_found_by_checksum(
         self,
         getscores_repo: BeatmapScoreListingQueryRepositoryStub,
         leaderboard_repo: EmptyBeatmapLeaderboardQueryRepositoryStub,
     ) -> None:
-        """Query returns unavailable when beatmap not found."""
+        """Checksumでbeatmapが見つからない場合にunavailableを返す契約を検証する.
+
+        空のrepositoryでchecksum解決を実行し,observable outcomeとしてheaderなしのUNAVAILABLEと
+        NOT_FOUND reasonを返すことを確認する.
+
+        Args:
+            getscores_repo (BeatmapScoreListingQueryRepositoryStub): beatmap未登録のstub.
+            leaderboard_repo (EmptyBeatmapLeaderboardQueryRepositoryStub): 空のleaderboard stub.
+
+        Returns:
+            None: checksum missのunavailable outcomeを検証して値を返さずに完了する.
+        """
         query = _query(getscores_repo, leaderboard_repo)
         result = await query.resolve_by_checksum(checksum_md5="a" * 32)
 
@@ -185,7 +294,20 @@ class TestBeatmapScoreListingQuery:
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
     ) -> None:
-        """Query returns header when beatmap is found."""
+        """Checksumでbeatmapとbeatmapsetが見つかる場合にheaderを返す契約を検証する.
+
+        対応するbeatmapとbeatmapsetを登録してchecksum解決を実行し,observable outcomeとして
+        HEADERと両metadataを持つheaderおよびKNOWN_CHECKSUM reasonを返すことを確認する.
+
+        Args:
+            getscores_repo (BeatmapScoreListingQueryRepositoryStub): metadataを登録するstub.
+            leaderboard_repo (EmptyBeatmapLeaderboardQueryRepositoryStub): 空のleaderboard stub.
+            sample_beatmap (Beatmap): checksumで解決するbeatmap fixture.
+            sample_beatmapset (BeatmapSet): headerへ設定するbeatmapset fixture.
+
+        Returns:
+            None: checksum hitのheader outcomeを検証して値を返さずに完了する.
+        """
         getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
@@ -204,7 +326,19 @@ class TestBeatmapScoreListingQuery:
         leaderboard_repo: EmptyBeatmapLeaderboardQueryRepositoryStub,
         sample_beatmap: Beatmap,
     ) -> None:
-        """Query returns unavailable when beatmapset is missing."""
+        """Beatmapsetが見つからない場合にunavailableを返す契約を検証する.
+
+        beatmapだけを登録してchecksum解決を実行し,observable outcomeとしてheaderなしの
+        UNAVAILABLEとNOT_FOUND reasonを返すことを確認する.
+
+        Args:
+            getscores_repo (BeatmapScoreListingQueryRepositoryStub): beatmapset未登録のstub.
+            leaderboard_repo (EmptyBeatmapLeaderboardQueryRepositoryStub): 空のleaderboard stub.
+            sample_beatmap (Beatmap): checksumで解決するbeatmap fixture.
+
+        Returns:
+            None: beatmapset missのunavailable outcomeを検証して値を返さずに完了する.
+        """
         getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
 
         query = _query(getscores_repo, leaderboard_repo)
@@ -221,7 +355,20 @@ class TestBeatmapScoreListingQuery:
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
     ) -> None:
-        """Query returns unavailable for NOT_SUBMITTED status."""
+        """NOT_SUBMITTED beatmapをunavailableにするcompatibility契約を検証する.
+
+        NOT_SUBMITTED statusのbeatmapと対応beatmapsetを登録してchecksum解決を実行し,observable
+        outcomeとしてheaderなしのUNAVAILABLEとNOT_SUBMITTED reasonを返すことを確認する.
+
+        Args:
+            getscores_repo (BeatmapScoreListingQueryRepositoryStub): status対象を登録するstub.
+            leaderboard_repo (EmptyBeatmapLeaderboardQueryRepositoryStub): 空のleaderboard stub.
+            sample_beatmap (Beatmap): status以外の値を複製する基底beatmap fixture.
+            sample_beatmapset (BeatmapSet): 対応するbeatmapset fixture.
+
+        Returns:
+            None: not submitted statusのunavailable outcomeを検証して値を返さずに完了する.
+        """
         # Create beatmap with NOT_SUBMITTED status
         not_submitted_beatmap = Beatmap(
             id=sample_beatmap.id,
@@ -268,7 +415,20 @@ class TestBeatmapScoreListingQuery:
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
     ) -> None:
-        """Parsed request query preserves stable update-available behavior read-only."""
+        """Checksum missとfilename matchでUPDATE_AVAILABLEを返すcompatibility契約を検証する.
+
+        filenameで一致するbeatmapを登録してparsed requestをresolveし,observable outcomeとして
+        UPDATE_AVAILABLEとmetadataを持つheaderをread-onlyで返すことを確認する.
+
+        Args:
+            getscores_repo (BeatmapScoreListingQueryRepositoryStub): filename matchを登録するstub.
+            leaderboard_repo (EmptyBeatmapLeaderboardQueryRepositoryStub): 空のleaderboard stub.
+            sample_beatmap (Beatmap): filenameで解決するbeatmap fixture.
+            sample_beatmapset (BeatmapSet): headerへ設定するbeatmapset fixture.
+
+        Returns:
+            None: update availableのobservable outcomeを検証して値を返さずに完了する.
+        """
         filename = "Artist - Title (Creator) [Normal].osu"
         getscores_repo.beatmaps_by_filename[(sample_beatmap.beatmapset_id, filename)] = (
             sample_beatmap
@@ -301,6 +461,20 @@ class TestBeatmapScoreListingQuery:
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
     ) -> None:
+        """Legacy personal best fallbackを使用しない契約を検証する.
+
+        GLOBAL selectionを持つstable requestと既知beatmapをresolveし,observable outcomeとして
+        top row readだけを行いpersonal best readとheaderのpersonal bestを空にすることを確認する.
+
+        Args:
+            getscores_repo (BeatmapScoreListingQueryRepositoryStub): metadataを登録するstub.
+            leaderboard_repo (EmptyBeatmapLeaderboardQueryRepositoryStub): read種別を記録するstub.
+            sample_beatmap (Beatmap): checksumで解決するbeatmap fixture.
+            sample_beatmapset (BeatmapSet): headerへ設定するbeatmapset fixture.
+
+        Returns:
+            None: personal best fallbackなしのread outcomeを検証して値を返さずに完了する.
+        """
         getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
@@ -338,6 +512,20 @@ class TestBeatmapScoreListingQuery:
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
     ) -> None:
+        """Song select requestでpersonal bestとtop row readを省略する契約を検証する.
+
+        song_selectがtrueのGLOBAL selectionを持つrequestをresolveし,observable outcomeとして
+        headerのpersonal bestを空にし,leaderboard readを全て行わないことを確認する.
+
+        Args:
+            getscores_repo (BeatmapScoreListingQueryRepositoryStub): metadataを登録するstub.
+            leaderboard_repo (EmptyBeatmapLeaderboardQueryRepositoryStub): empty stub.
+            sample_beatmap (Beatmap): checksumで解決するbeatmap fixture.
+            sample_beatmapset (BeatmapSet): headerへ設定するbeatmapset fixture.
+
+        Returns:
+            None: song select時のleaderboard read抑止を検証して値を返さずに完了する.
+        """
         getscores_repo.beatmaps_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap
         getscores_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 

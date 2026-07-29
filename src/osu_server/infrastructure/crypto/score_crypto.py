@@ -1,4 +1,7 @@
-"""Score cryptography infrastructure service."""
+"""stable score payloadを復号するinfrastructure adapterを提供するmodule.
+
+Rust実装の``athena_crypto``を, score commandが使うdomain value objectへ変換する.
+"""
 
 import athena_crypto
 
@@ -7,7 +10,7 @@ from osu_server.shared.errors import DecryptionError
 
 
 class ScoreCryptoService:
-    """Infrastructure adapter for score payload cryptography."""
+    """score payload復号のservice interfaceを提供するadapter."""
 
     def decrypt_score_payload(
         self,
@@ -15,6 +18,19 @@ class ScoreCryptoService:
         iv: bytes,
         osu_version: str | None,
     ) -> DecryptedPayload:
+        """暗号化済みscore payloadを復号してdomain結果へ変換する.
+
+        Args:
+            encrypted (bytes): Rijndael-256 CBCで暗号化されたscore payload.
+            iv (bytes): 復号に使用するinitialization vector.
+            osu_version (str | None): legacy client version. 未指定時はNone.
+
+        Returns:
+            DecryptedPayload: paddingを除去したpayloadとchecksum検証結果.
+
+        Raises:
+            DecryptionError: 暗号化payload, IV, またはclient versionが無効な場合.
+        """
         return decrypt_score_payload(encrypted, iv, osu_version)
 
 
@@ -23,12 +39,21 @@ def decrypt_score_payload(
     iv: bytes,
     osu_version: str | None,
 ) -> DecryptedPayload:
-    """
-    Decrypt score payload using Rijndael-256 CBC.
+    """Rijndael-256 CBCでscore payloadを復号してdomain結果を返す.
 
-    Preconditions: encrypted and iv are valid byte arrays
-    Postconditions: Returns decrypted plaintext with padding removed
-    Errors: DecryptionError if decryption fails
+    Args:
+        encrypted (bytes): Rijndael-256 CBCで暗号化されたscore payload.
+        iv (bytes): 復号に使用するinitialization vector.
+        osu_version (str | None): legacy client version. 未指定時はNone.
+
+    Returns:
+        DecryptedPayload: paddingを除去したpayloadとchecksum検証結果.
+
+    Raises:
+        DecryptionError: 暗号化payload, IV, またはclient versionが無効な場合.
+
+    Notes:
+        この関数はRust拡張の``ValueError``をdomain境界の``DecryptionError``へ変換する.
     """
     try:
         plaintext, checksum_valid = athena_crypto.decrypt_score_payload(

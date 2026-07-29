@@ -1,4 +1,4 @@
-"""users.id sequence repair migration の構造を検証する."""
+"""users.id sequence repair migrationの構造を検証する."""
 
 import re
 from pathlib import Path
@@ -17,7 +17,14 @@ SETVAL_WITH_RESERVED_ID_FALLBACK = re.compile(
 
 
 def test_users_id_sequence_migration_syncs_with_existing_users() -> None:
-    """BanchoBot seed 後の users_id_seq を既存最大 id に同期する."""
+    """users.id sequence repairがexisting userとBanchoBot reserved IDを両立することを検証する.
+
+    固定revisionのsourceを読み込み, existing userの最大IDまたはreserved IDをsetvalへ渡す
+    fallback条件とsequence更新のobservable outcomeを確認する.
+
+    Returns:
+        None: users.id sequence同期contractを検証して完了する.
+    """
     migration = MIGRATION_PATH.read_text()
 
     assert 'revision: str = "20260710_0100"' in migration

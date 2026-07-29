@@ -1,4 +1,4 @@
-"""Command-side beatmap leaderboard projection repository contract."""
+"""Beatmap leaderboard projection の command-side repository 契約."""
 
 from __future__ import annotations
 
@@ -17,11 +17,11 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class BeatmapLeaderboardUserScope:
-    """Mod を問わないユーザー leaderboard scope を表す.
+    """Mod を問わない user leaderboard scope を表す.
 
     Attributes:
         beatmap_id (int): 対象 Beatmap ID. 正の値でなければならない.
-        beatmap_checksum (str): projectionが表す32文字小文字16進数のcurrent checksum.
+        beatmap_checksum (str): Projection が表す32文字小文字16進数の current checksum.
         ruleset (Ruleset): 対象 ruleset.
         playstyle (Playstyle): 対象 playstyle.
         user_id (int): score owner の User ID. 正の値でなければならない.
@@ -34,6 +34,15 @@ class BeatmapLeaderboardUserScope:
     user_id: int
 
     def __post_init__(self) -> None:
+        """Scope を永続化キーとして検証する.
+
+        Returns:
+            None: 値が永続化キーの制約を満たすことを確認したことを示す.
+
+        Raises:
+            ValueError: beatmap_id または user_id が正でない場合,あるいは checksum が
+                32文字の小文字 MD5 hexadecimal string でない場合に送出する.
+        """
         if self.beatmap_id <= 0:
             msg = "beatmap_id must be positive"
             raise ValueError(msg)
@@ -50,10 +59,10 @@ class BeatmapLeaderboardUserScope:
 
 @dataclass(frozen=True, slots=True)
 class BeatmapLeaderboardUserBestScope(BeatmapLeaderboardUserScope):
-    """raw Mod bitflag ごとのユーザー最高 score scope を表す.
+    """Raw Mod bitflag ごとの user 最高 score scope を表す.
 
     Attributes:
-        mods (ModCombination): score に保存された raw Mod bitflag.
+        mods (ModCombination): Score に保存された raw Mod bitflag.
     """
 
     mods: ModCombination
@@ -61,7 +70,14 @@ class BeatmapLeaderboardUserBestScope(BeatmapLeaderboardUserScope):
 
 @dataclass(frozen=True, slots=True)
 class BeatmapLeaderboardUserBest:
-    """1ユーザーの raw Mod scope に対応する score-priority projection 行."""
+    """1 user の Raw Mod scope に対応する score-priority projection row.
+
+    Attributes:
+        id (int | None): 永続化済み row の正の識別子.未保存時は None.
+        scope (BeatmapLeaderboardUserBestScope): Row が代表する user と Mod の自然キー.
+        score_id (int): Row が参照する正の Score ID.
+        rank_key (ScoreRankKey): Score priority を決める rank key.score_id と一致する.
+    """
 
     id: int | None
     scope: BeatmapLeaderboardUserBestScope
@@ -69,6 +85,15 @@ class BeatmapLeaderboardUserBest:
     rank_key: ScoreRankKey
 
     def __post_init__(self) -> None:
+        """Projection row の識別子と rank key の整合性を検証する.
+
+        Returns:
+            None: Row の識別子と rank key が整合していることを示す.
+
+        Raises:
+            ValueError: 存在する id または score_id が正でない場合,あるいは rank_key の
+                score_id が score_id と一致しない場合に送出する.
+        """
         if self.id is not None and self.id <= 0:
             msg = "id must be positive when present"
             raise ValueError(msg)
@@ -82,13 +107,28 @@ class BeatmapLeaderboardUserBest:
 
 @dataclass(frozen=True, slots=True)
 class UpsertBeatmapLeaderboardUserBest:
-    """候補が上位の場合に raw Mod scope の projection 行を置換する command."""
+    """候補が上位の場合に Raw Mod scope の projection row を置換する command.
+
+    Attributes:
+        scope (BeatmapLeaderboardUserBestScope): 比較対象となる user と Mod の自然キー.
+        score_id (int): 候補となる正の Score ID.
+        rank_key (ScoreRankKey): 候補の score priority を決める key.score_id と一致する.
+    """
 
     scope: BeatmapLeaderboardUserBestScope
     score_id: int
     rank_key: ScoreRankKey
 
     def __post_init__(self) -> None:
+        """Upsert 候補の score 識別子と rank key の整合性を検証する.
+
+        Returns:
+            None: 候補の score 識別子と rank key が整合していることを示す.
+
+        Raises:
+            ValueError: score_id が正でない場合,または rank_key の score_id が score_id と
+                一致しない場合に送出する.
+        """
         if self.score_id <= 0:
             msg = "score_id must be positive"
             raise ValueError(msg)
@@ -99,11 +139,23 @@ class UpsertBeatmapLeaderboardUserBest:
 
 @dataclass(frozen=True, slots=True)
 class BeatmapLeaderboardUserProjectionSlice:
-    """Projection slice rebuilt for a single user."""
+    """単一 user に対して再構築する projection slice.
+
+    Attributes:
+        user_id (int): 再構築対象 user の正の識別子.
+    """
 
     user_id: int
 
     def __post_init__(self) -> None:
+        """User projection slice の識別子を検証する.
+
+        Returns:
+            None: user_id が projection slice の制約を満たすことを示す.
+
+        Raises:
+            ValueError: user_id が正でない場合に送出する.
+        """
         if self.user_id <= 0:
             msg = "user_id must be positive"
             raise ValueError(msg)
@@ -111,11 +163,23 @@ class BeatmapLeaderboardUserProjectionSlice:
 
 @dataclass(frozen=True, slots=True)
 class BeatmapLeaderboardBeatmapProjectionSlice:
-    """Projection slice rebuilt for one or more beatmaps."""
+    """1件以上の beatmap に対して再構築する projection slice.
+
+    Attributes:
+        beatmap_ids (tuple[int, ...]): 再構築対象となる正の Beatmap ID 群.
+    """
 
     beatmap_ids: tuple[int, ...]
 
     def __post_init__(self) -> None:
+        """Beatmap projection slice の対象を検証する.
+
+        Returns:
+            None: beatmap_ids が projection slice の制約を満たすことを示す.
+
+        Raises:
+            ValueError: beatmap_ids が空の場合,または非正の ID を含む場合に送出する.
+        """
         if len(self.beatmap_ids) == 0:
             msg = "beatmap_ids must not be empty"
             raise ValueError(msg)
@@ -130,24 +194,30 @@ type BeatmapLeaderboardProjectionSlice = (
 
 
 class BeatmapLeaderboardCommandRepository(Protocol):
-    """raw Mod scope ごとのユーザー最高 score を更新する command port."""
+    """Raw Mod scope ごとの user 最高 score を更新する command port.
+
+    Notes:
+        Runtime 実装は command Unit of Work から取得する.各操作は同じ Unit of Work が
+        所有する transaction に参加し,この repository 自身は commit または rollback を
+        実行しない.
+    """
 
     async def lock_rebuild(self) -> None:
-        """projection rebuildをsubmit更新とtransaction内で直列化する.
+        """Projection rebuild を submit 更新と transaction 内で直列化する.
 
         Returns:
-            None: transaction終了までexclusive rebuild lockを保持したことを示す.
+            None: Transaction 終了まで exclusive rebuild lock を保持したことを示す.
         """
         ...
 
     async def lock_scope(self, scope: BeatmapLeaderboardUserScope) -> None:
-        """submit更新をrebuildおよび同一scope更新とtransaction内で直列化する.
+        """Submit 更新を rebuild および同一 scope 更新と transaction 内で直列化する.
 
         Args:
-            scope (BeatmapLeaderboardUserScope): Modを含まないserialization scope.
+            scope (BeatmapLeaderboardUserScope): Mod を含まない serialization scope.
 
         Returns:
-            None: shared rebuild guardとexclusive scope lockを保持したことを示す.
+            None: Shared rebuild guard と exclusive scope lock を保持したことを示す.
         """
         ...
 
@@ -155,10 +225,10 @@ class BeatmapLeaderboardCommandRepository(Protocol):
         self,
         scope: BeatmapLeaderboardUserBestScope,
     ) -> BeatmapLeaderboardUserBest | None:
-        """指定 raw Mod scope の現在の最高 score を返す.
+        """指定 Raw Mod scope の現在の最高 score を返す.
 
         Args:
-            scope (BeatmapLeaderboardUserBestScope): 検索する raw Mod scope.
+            scope (BeatmapLeaderboardUserBestScope): 検索する Raw Mod scope.
 
         Returns:
             BeatmapLeaderboardUserBest | None: 保存済みの最高 score. 未登録時は None.
@@ -169,13 +239,13 @@ class BeatmapLeaderboardCommandRepository(Protocol):
         self,
         scope: BeatmapLeaderboardUserScope,
     ) -> BeatmapLeaderboardUserBest | None:
-        """全 raw Mod scope からユーザーの Global 最高 score を返す.
+        """全 Raw Mod scope から user の Global 最高 score を返す.
 
         Args:
             scope (BeatmapLeaderboardUserScope): Mod を含まない検索 scope.
 
         Returns:
-            BeatmapLeaderboardUserBest | None: Global 最高 score. 未登録時は None.
+            BeatmapLeaderboardUserBest | None: Global 最高 score.未登録時は None.
         """
         ...
 
@@ -186,10 +256,14 @@ class BeatmapLeaderboardCommandRepository(Protocol):
         """候補が現在値より上位の場合だけ保存する.
 
         Args:
-            command (UpsertBeatmapLeaderboardUserBest): 比較対象の候補 score.
+            command (UpsertBeatmapLeaderboardUserBest): 比較して保存する候補 score.
 
         Returns:
             BeatmapLeaderboardUserBest: upsert 後の最高 score.
+
+        Raises:
+            ValueError: score_id が別の leaderboard projection scope で既に使用されている場合に
+                送出する.
         """
         ...
 
@@ -198,13 +272,17 @@ class BeatmapLeaderboardCommandRepository(Protocol):
         slice_: BeatmapLeaderboardProjectionSlice,
         rows: Iterable[UpsertBeatmapLeaderboardUserBest],
     ) -> None:
-        """再構築対象 slice の行を指定された Mod別 best で置換する.
+        """再構築対象 slice の row を指定された Mod 別 best で置換する.
 
         Args:
-            slice_ (BeatmapLeaderboardProjectionSlice): user または Beatmap の再構築範囲.
+            slice_ (BeatmapLeaderboardProjectionSlice): User または Beatmap の再構築範囲.
             rows (Iterable[UpsertBeatmapLeaderboardUserBest]): 置換後の最高 score 群.
 
         Returns:
-            None: 永続化が完了したことを示す.
+            None: Projection slice の置換が完了したことを示す.
+
+        Raises:
+            ValueError: rows に slice 外の scope が含まれる場合,または score_id が別の
+                leaderboard projection scope で既に使用されている場合に送出する.
         """
         ...

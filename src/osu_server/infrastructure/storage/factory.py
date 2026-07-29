@@ -1,4 +1,4 @@
-"""Blob storage backend selection."""
+"""application configurationからblob storage backendを選択する."""
 
 from __future__ import annotations
 
@@ -17,7 +17,17 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 
 def create_blob_storage_backend(config: AppConfig) -> BlobStorageBackend:
-    """Create the configured blob storage backend."""
+    """configurationで選択されたblob storage backendを生成する.
+
+    Args:
+        config (AppConfig): backend種別とlocal storage rootを含むapplication configuration.
+
+    Returns:
+        BlobStorageBackend: ``local`` 指定時の ``LocalBlobStorageBackend`` instance.
+
+    Raises:
+        UnsupportedBlobStorageBackendError: ``local`` 以外のbackendが指定された場合.
+    """
     if config.blob_storage_backend == "local":
         return LocalBlobStorageBackend(config.blob_storage_local_root)
 

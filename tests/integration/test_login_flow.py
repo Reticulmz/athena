@@ -1,15 +1,7 @@
-"""E2E integration tests for the osu! stable bancho login and polling flow.
+"""osu! stable client の Bancho login と polling を検証する integration test.
 
-Tests the full register -> login -> polling cycle through all layers
-with InMemory repositories (ENVIRONMENT=test).
-
-Covers:
-- Registration + login flow: POST /web/users -> POST / -> cho-token + packet stream
-- Login success: packet stream contains login_reply(positive user_id),
-  protocol_version, login_permissions
-- Polling stub: login -> cho-token POST / -> 200 empty body
-- Re-login: new cho-token + old token polling failure
-- Authentication failure: unregistered user -> login_reply(-1)
+InMemory repository を使い, account registration, login response, session polling の
+end-to-end contract を確認する.
 """
 
 from __future__ import annotations
@@ -68,7 +60,14 @@ _EXPECTED_MIN_PACKETS = 10
 
 @contextmanager
 def _test_env() -> Generator[None]:
-    """Temporarily set ENVIRONMENT=test for the duration of the block."""
+    """Test 実行に必要な environment variable を一時設定する.
+
+    Yields:
+        None: `ENVIRONMENT` と `DOMAIN` を設定した block を実行し, 終了時に元の値へ戻す.
+
+    Notes:
+        `DATABASE_URL` と `VALKEY_URL` は未設定の場合だけ local default を補う.
+    """
     old_environment = os.environ.get("ENVIRONMENT")
     old_domain = os.environ.get("DOMAIN")
     os.environ["ENVIRONMENT"] = "test"
@@ -89,17 +88,36 @@ def _test_env() -> Generator[None]:
 
 
 def _seed_default_role(app: Starlette) -> None:
-    """Seed the Default role into command-side in-memory persistence.
+    """Default role を command-side の in-memory persistence へ保存する.
 
-    Must be called after TestClient enters (lifespan has run).
+    Args:
+        app (Starlette): lifespan 済みの test application.
+
+    Returns:
+        None: login 用 role を保存して完了し, 呼び出し側へ値を返さない.
+
+    Notes:
+        `TestClient` の context に入った後にだけ呼び出す.
     """
     seed_role_sync(app, _DEFAULT_ROLE)
 
 
 def _seed_default_channels(app: Starlette) -> None:
-    """Seed login-visible channels into command-side in-memory persistence."""
+    """Login response で表示する channel と role override を保存する.
+
+    Args:
+        app (Starlette): lifespan 済みの test application.
+
+    Returns:
+        None: login 用 channel data を保存して完了し, 呼び出し側へ値を返さない.
+    """
 
     async def _seed() -> None:
+        """Channel と Default role 向け override を非同期で保存する.
+
+        Returns:
+            None: channel data を保存して完了し, 呼び出し側へ値を返さない.
+        """
         channel = await seed_channel(app, make_channel(id=0))
         await seed_channel_override(
             app,
@@ -113,7 +131,14 @@ def _seed_default_channels(app: Starlette) -> None:
 
 
 def _seed_test_data(app: Starlette) -> None:
-    """Seed default role and channels required by successful login tests."""
+    """成功する login test に必要な role と channel を保存する.
+
+    Args:
+        app (Starlette): lifespan 済みの test application.
+
+    Returns:
+        None: login に必要な test data を保存して完了し, 呼び出し側へ値を返さない.
+    """
     _seed_default_role(app)
     _seed_default_channels(app)
 
@@ -124,7 +149,16 @@ def _registration_form(
     email: str = _TEST_EMAIL,
     password: str = _TEST_PASSWORD,
 ) -> dict[str, str]:
-    """Build a registration form data dict with check=0 (create account)."""
+    """Stable registration endpoint 用の form data を組み立てる.
+
+    Args:
+        username (str): `user[username]` に設定する account name.
+        email (str): `user[user_email]` に設定する email address.
+        password (str): `user[password]` に設定する plaintext password.
+
+    Returns:
+        dict[str, str]: account 作成を示す `check=0` を含む form data.
+    """
     return {
         "user[username]": username,
         "user[user_email]": email,
@@ -139,18 +173,44 @@ def _login_body(
     password_md5: str = _TEST_PASSWORD_MD5,
     client_info: str = _TEST_CLIENT_INFO,
 ) -> bytes:
-    """Build a raw login request body in osu! stable format."""
+    """Osu! stable format の raw login request body を組み立てる.
+
+    Args:
+        username (str): login する account name.
+        password_md5 (str): hex 形式の password MD5.
+        client_info (str): stable client が送る version と capability 情報.
+
+    Returns:
+        bytes: 改行区切りの username, password MD5, client info を含む request body.
+    """
     return f"{username}\n{password_md5}\n{client_info}\n".encode()
 
 
 def _register_user(client: TestClient) -> None:
-    """Register the default test user. Asserts success."""
+    """既定の test user を registration endpoint へ登録する.
+
+    Args:
+        client (TestClient): registration request を送信する test client.
+
+    Returns:
+        None: successful registration を検証して完了し, 呼び出し側へ値を返さない.
+    """
     resp = client.post("/web/users", data=_registration_form())
     assert resp.status_code == HTTPStatus.OK, f"Registration failed: {resp.content!r}"
 
 
 def _parse_packets(body: bytes) -> list[tuple[int, bytes]]:
-    """Parse a concatenated S2C packet stream into (packet_id, content) pairs."""
+    """連結された S2C packet stream を packet ID と payload の組へ分解する.
+
+    Args:
+        body (bytes): Bancho response body 全体.
+
+    Returns:
+        list[tuple[int, bytes]]: 完全な packet ごとの packet ID と payload の組.
+
+    Notes:
+        末尾に不完全な header または payload がある場合は, その packet を結果へ含めない.
+    """
     packets: list[tuple[int, bytes]] = []
     offset = 0
     while offset + _PACKET_HEADER_SIZE <= len(body):
@@ -170,7 +230,15 @@ def _find_packet(
     packets: list[tuple[int, bytes]],
     packet_id: int,
 ) -> bytes | None:
-    """Find the first packet with the given ID and return its content."""
+    """指定した packet ID に一致する最初の payload を返す.
+
+    Args:
+        packets (list[tuple[int, bytes]]): packet ID と payload の順序付き組.
+        packet_id (int): 検索する packet ID.
+
+    Returns:
+        bytes | None: 一致した packet の payload. 一致しない場合は `None`.
+    """
     for pid, content in packets:
         if pid == packet_id:
             return content
@@ -181,10 +249,16 @@ def _find_packet(
 
 
 class TestBanchoRouting:
-    """Bancho POST traffic is routed by stable client hostnames."""
+    """stable client host による Bancho POST routing 契約を検証する."""
 
     def test_numbered_and_ce_hosts_reach_bancho_endpoint(self) -> None:
-        """cN.$DOMAIN and ce.$DOMAIN hosts reach POST /."""
+        """番号付き `cN` と `ce` host が Bancho endpoint へ到達する契約を検証する.
+
+        3 種の stable client host から root へ POST し, すべてが HTTP 200 を返すことを確認する.
+
+        Returns:
+            None: routing response を検証して完了し, 呼び出し側へ値を返さない.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -197,7 +271,13 @@ class TestBanchoRouting:
                     assert response.status_code == HTTPStatus.OK
 
     def test_post_root_requires_bancho_host(self) -> None:
-        """POST / without a bancho host is not a path fallback."""
+        """Bancho host ではない root POST を path fallback として扱わない契約を検証する.
+
+        host を指定しない root POST が HTTP 405 になり, Bancho route へ到達しないことを確認する.
+
+        Returns:
+            None: 拒否 response を検証して完了し, 呼び出し側へ値を返さない.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -209,10 +289,16 @@ class TestBanchoRouting:
 
 
 class TestRegisterAndLoginFlow:
-    """Register via POST /web/users then login via POST / and verify response."""
+    """registration 後の Bancho login response 契約を検証する."""
 
     def test_register_then_login_returns_cho_token(self) -> None:
-        """POST /web/users (check=0) -> ok -> POST / (credentials) -> cho-token header."""
+        """Account 作成後の login が `cho-token` header を返す契約を検証する.
+
+        `check=0` の registration を成功させた後に credentials を送信し, 空でない token を確認する.
+
+        Returns:
+            None: login header を検証して完了し, 呼び出し側へ値を返さない.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -226,7 +312,13 @@ class TestRegisterAndLoginFlow:
                 assert len(response.headers["cho-token"]) > 0
 
     def test_register_then_login_returns_packet_stream(self) -> None:
-        """Login response body is a non-empty S2C packet stream."""
+        """Account 作成後の login が空でない S2C packet stream を返す契約を検証する.
+
+        registration 済み user の login response body が packet header より長いことを確認する.
+
+        Returns:
+            None: packet stream を検証して完了し, 呼び出し側へ値を返さない.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -239,7 +331,14 @@ class TestRegisterAndLoginFlow:
                 assert len(response.content) > _PACKET_HEADER_SIZE
 
     def test_register_then_login_accepts_uppercase_password_md5(self) -> None:
-        """Stable login の password MD5 hex は大小文字差を認証差にしない."""
+        """Stable login が uppercase password MD5 を受け入れる契約を検証する.
+
+        registration 済み user の password MD5 を uppercase hex で送信する.
+        token が発行されることを確認する.
+
+        Returns:
+            None: case-insensitive authentication を検証して完了し, 呼び出し側へ値を返さない.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -259,10 +358,17 @@ class TestRegisterAndLoginFlow:
 
 
 class TestLoginSuccessPackets:
-    """Verify the S2C packet stream content for a successful login."""
+    """成功する login response の S2C packet stream 契約を検証する."""
 
     def test_login_reply_contains_positive_user_id(self) -> None:
-        """First packet is login_reply with a positive user_id."""
+        """成功する login の先頭 packet が正の user ID を持つ `LOGIN_REPLY` になる契約を検証する.
+
+        registration 済み user の response を分解する.
+        最初の payload を signed integer として確認する.
+
+        Returns:
+            None: login reply の user ID を検証して完了し, 呼び出し側へ値を返さない.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -279,7 +385,14 @@ class TestLoginSuccessPackets:
                 assert user_id > 0
 
     def test_packet_stream_contains_protocol_version(self) -> None:
-        """Packet stream includes a protocol_version packet."""
+        """成功する login response が正の protocol version packet を含む契約を検証する.
+
+        response stream から `PROTOCOL_VERSION` を探す.
+        payload の version が正であることを確認する.
+
+        Returns:
+            None: protocol version packet を検証して完了し, 呼び出し側へ値を返さない.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -295,7 +408,14 @@ class TestLoginSuccessPackets:
                 assert version > 0
 
     def test_packet_stream_contains_login_permissions(self) -> None:
-        """Packet stream includes a login_permissions packet."""
+        """成功する login response が `LOGIN_PERMISSIONS` packet を含む契約を検証する.
+
+        registration 済み user の response stream から permission packet を取得する.
+        packet を取得できることを確認する.
+
+        Returns:
+            None: permission packet の存在を検証して完了し, 呼び出し側へ値を返さない.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -309,7 +429,13 @@ class TestLoginSuccessPackets:
                 assert content is not None, "login_permissions packet not found in stream"
 
     def test_packet_stream_has_expected_packet_count(self) -> None:
-        """Login response contains all 10 expected S2C packets."""
+        """成功する login response が最低限必要な数の S2C packet を含む契約を検証する.
+
+        registration 済み user の response stream を分解し, 10 以上の packet があることを確認する.
+
+        Returns:
+            None: packet 数を検証して完了し, 呼び出し側へ値を返さない.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -328,10 +454,16 @@ class TestLoginSuccessPackets:
 
 
 class TestPollingStub:
-    """Login -> cho-token -> POST / with osu-token header -> 200 empty body."""
+    """有効な session token による polling の基本契約を検証する."""
 
     def test_polling_with_valid_token_returns_empty_body(self) -> None:
-        """POST / with valid osu-token returns 200 with empty body."""
+        """Packet がない polling が HTTP 200 と空 response body を返す契約を検証する.
+
+        login で発行された `osu-token` を送信し, polling queue が空の場合の response を確認する.
+
+        Returns:
+            None: polling response を検証して完了し, 呼び出し側へ値を返さない.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -348,10 +480,17 @@ class TestPollingStub:
 
 
 class TestPresenceBroadcast:
-    """Login live presence is delivered through the polling queue."""
+    """login 時の live presence が polling queue で配送される契約を検証する."""
 
     def test_second_login_enqueues_user_presence_for_existing_online_user(self) -> None:
-        """When User B logs in, User A receives User B's USER_PRESENCE on next poll."""
+        """後から login した user の `USER_PRESENCE` を既存 online user が受信する契約を検証する.
+
+        先に login した user の queue を空にしてから 2 人目を login させる.
+        次の polling response を確認する.
+
+        Returns:
+            None: presence payload の user ID を検証して完了し, 呼び出し側へ値を返さない.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -404,10 +543,16 @@ class TestPresenceBroadcast:
 
 
 class TestReLogin:
-    """Re-login replaces the session: new token issued, old token invalidated."""
+    """re-login が session token を置換する契約を検証する."""
 
     def test_relogin_returns_new_token(self) -> None:
-        """Second login returns a different cho-token."""
+        """同一 user の 2 回目 login が別の `cho-token` を発行する契約を検証する.
+
+        registration 後に同じ credentials で 2 回 login し, token 値が異なることを確認する.
+
+        Returns:
+            None: token の置換を検証して完了し, 呼び出し側へ値を返さない.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -423,7 +568,14 @@ class TestReLogin:
                 assert token1 != token2
 
     def test_old_token_polling_fails_after_relogin(self) -> None:
-        """After re-login, polling with the old token returns login_reply(-1)."""
+        """re-login 後の古い token による polling が authentication failure になる契約を検証する.
+
+        1 回目の token を保持して 2 回目の login を行う.
+        古い token の response が `LOGIN_REPLY(-1)` になることを確認する.
+
+        Returns:
+            None: 古い token の拒否を検証して完了し, 呼び出し側へ値を返さない.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -447,7 +599,13 @@ class TestReLogin:
                 assert user_id == _AUTH_FAILED_USER_ID
 
     def test_new_token_polling_succeeds_after_relogin(self) -> None:
-        """After re-login, polling with the new token succeeds."""
+        """re-login 後の新しい token による polling が成功する契約を検証する.
+
+        2 回目の login で取得した token を送信し, HTTP 200 と空 response body を確認する.
+
+        Returns:
+            None: 新しい token の polling を検証して完了し, 呼び出し側へ値を返さない.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -469,10 +627,17 @@ class TestReLogin:
 
 
 class TestAuthenticationFailure:
-    """Login with invalid credentials returns login_reply with negative user_id."""
+    """無効な credentials による login failure の response 契約を検証する."""
 
     def test_unregistered_user_returns_auth_failed(self) -> None:
-        """Login with a username that was never registered returns login_reply(-1)."""
+        """未登録 user の login が `LOGIN_REPLY(-1)` を返す契約を検証する.
+
+        role と user data を保存しない application へ未知の username を送信する.
+        authentication failure を確認する.
+
+        Returns:
+            None: 未登録 user の failure response を検証して完了し, 呼び出し側へ値を返さない.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -491,7 +656,13 @@ class TestAuthenticationFailure:
                 assert user_id == _AUTH_FAILED_USER_ID
 
     def test_wrong_password_returns_auth_failed(self) -> None:
-        """Login with correct username but wrong password returns login_reply(-1)."""
+        """誤った password の login が `LOGIN_REPLY(-1)` を返す契約を検証する.
+
+        登録済み username と異なる password MD5 を送信し, authentication failure を確認する.
+
+        Returns:
+            None: 誤った password の failure response を検証して完了し, 呼び出し側へ値を返さない.
+        """
         with _test_env():
             app = create_app()
             with TestClient(app, raise_server_exceptions=False) as client:

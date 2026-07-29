@@ -1,4 +1,4 @@
-"""Unit tests for the log rotation logic."""
+"""log rotationの正常系と障害時の保存契約を検証する."""
 
 from __future__ import annotations
 
@@ -17,7 +17,16 @@ from osu_server.infrastructure.logging import rotate_logs
 
 
 def test_rotate_logs_no_file(tmp_path: Path) -> None:
-    """latest.jsonl が存在しない場合、ローテーションはスキップされる."""
+    """latest.jsonlがない場合にarchiveを作らず完了する契約を検証する.
+
+    空のlog directoryでrotate_logsを実行し,圧縮archiveが生成されないことを確認する.
+
+    Args:
+        tmp_path (Path): test専用の空log directory.
+
+    Returns:
+        None: archive不在を検証して完了し,呼び出し側へ値を返さない.
+    """
     rotate_logs(tmp_path, max_files=30)
 
     # アーカイブファイルが生成されていないことを検証
@@ -26,7 +35,16 @@ def test_rotate_logs_no_file(tmp_path: Path) -> None:
 
 
 def test_rotate_logs_empty_file(tmp_path: Path) -> None:
-    """latest.jsonl が空 (0バイト) の場合、ローテーションはスキップされる."""
+    """空のlatest.jsonlをarchiveせず保持する契約を検証する.
+
+    0 byteのlatest.jsonlでrotate_logsを実行し,archiveがなく元fileが残ることを確認する.
+
+    Args:
+        tmp_path (Path): 空fileを作成するtest専用log directory.
+
+    Returns:
+        None: 空fileの無変更を検証して完了し,呼び出し側へ値を返さない.
+    """
     latest = tmp_path / "latest.jsonl"
     latest.touch()
 
@@ -39,7 +57,16 @@ def test_rotate_logs_empty_file(tmp_path: Path) -> None:
 
 
 def test_rotate_logs_success(tmp_path: Path) -> None:
-    """latest.jsonl が非空の場合、日付-1.jsonl.gz にアーカイブされ、元ファイルは削除される."""
+    """非空latest.jsonlを日付付きgzip archiveへ移す契約を検証する.
+
+    log内容を持つlatest.jsonlでrotate_logsを実行し,元fileが消えて日付-1.jsonl.gzの復元内容が一致することを確認する.
+
+    Args:
+        tmp_path (Path): source logとarchiveを保持するtest専用directory.
+
+    Returns:
+        None: archiveの内容と元file削除を検証して完了し,呼び出し側へ値を返さない.
+    """
     latest = tmp_path / "latest.jsonl"
     content = b'{"event": "test", "level": "info"}\n'
     _ = latest.write_bytes(content)
@@ -62,7 +89,16 @@ def test_rotate_logs_success(tmp_path: Path) -> None:
 
 
 def test_rotate_logs_increment(tmp_path: Path) -> None:
-    """既存の同日アーカイブがある場合、連番がインクリメントされる."""
+    """同日archiveがある場合に次の連番を選ぶ契約を検証する.
+
+    -1と-2 archiveを用意してrotate_logsを実行し,新しい内容が-3 archiveへ保存されることを確認する.
+
+    Args:
+        tmp_path (Path): 同日archiveとsource logを保持するtest専用directory.
+
+    Returns:
+        None: 連番の増加とarchive内容を検証して完了し,呼び出し側へ値を返さない.
+    """
     today_str = datetime.now(UTC).astimezone().date().isoformat()
 
     # 既存のアーカイブを模擬
@@ -89,7 +125,16 @@ def test_rotate_logs_increment(tmp_path: Path) -> None:
 
 
 def test_rotate_logs_os_error(tmp_path: Path) -> None:
-    """OSError 発生時に例外を伝播せず warnings.warn で警告し、latest.jsonl を残す."""
+    """archive中のOSErrorをwarningへ変換してsource logを残す契約を検証する.
+
+    gzip.openをOSErrorに差し替えてrotate_logsを実行し,UserWarningが出てlatest.jsonlの内容が維持されることを確認する.
+
+    Args:
+        tmp_path (Path): source logを作成するtest専用directory.
+
+    Returns:
+        None: warningとsource logの保持を検証して完了し,呼び出し側へ値を返さない.
+    """
     latest = tmp_path / "latest.jsonl"
     content = b'{"event": "fail test"}\n'
     _ = latest.write_bytes(content)
@@ -107,9 +152,16 @@ def test_rotate_logs_os_error(tmp_path: Path) -> None:
 
 
 def test_rotate_logs_lock_failure(tmp_path: Path) -> None:
-    """別のプロセスがロックを保持している場合、ローテーションをスキップ.
+    """既存processがlockを保持する場合にwarningなしでrotationをskipする契約を検証する.
 
-    latest.jsonl を残す(警告は出ない).
+    lock fileへnonblocking exclusive lockを保持したままrotate_logsを実行する.
+    warningがなくlatest.jsonlが保持されることを確認する.
+
+    Args:
+        tmp_path (Path): lock fileとsource logを保持するtest専用directory.
+
+    Returns:
+        None: lock競合時の無変更を検証して完了し,呼び出し側へ値を返さない.
     """
     latest = tmp_path / "latest.jsonl"
     content = b'{"event": "lock test"}\n'
@@ -136,9 +188,15 @@ def test_rotate_logs_lock_failure(tmp_path: Path) -> None:
 
 
 def test_rotate_logs_cleanup_old_archives(tmp_path: Path) -> None:
-    """max_files 超過時に、mtime が最も古いアーカイブファイルが削除される.
+    """archive数がmax_filesを超える場合に最古fileを削除する契約を検証する.
 
-    最新の max_files 件のみが残る.
+    mtimeの異なるarchive群と新しいlogを用意してrotationを実行し,最新2件だけが残ることを確認する.
+
+    Args:
+        tmp_path (Path): 既存archiveとsource logを保持するtest専用directory.
+
+    Returns:
+        None: 古いarchiveの削除と最新archiveの保持を検証して完了し,呼び出し側へ値を返さない.
     """
     # 既存のアーカイブを3個作成し、mtime をずらす
     archive1 = tmp_path / "2026-05-28-1.jsonl.gz"
@@ -180,7 +238,17 @@ def test_rotate_logs_cleanup_old_archives(tmp_path: Path) -> None:
 
 
 def test_rotate_logs_cleanup_os_error(tmp_path: Path) -> None:
-    """古いアーカイブの削除時に OSError が発生した場合、警告を出力して続行する."""
+    """古いarchive削除時のOSErrorをwarningへ変換して処理を続ける契約を検証する.
+
+    archive unlinkだけをOSErrorにする差し替えでrotationを実行する.
+    削除失敗のUserWarningが出ることを確認する.
+
+    Args:
+        tmp_path (Path): unlink対象archiveとsource logを保持するtest専用directory.
+
+    Returns:
+        None: cleanup失敗のwarningを検証して完了し,呼び出し側へ値を返さない.
+    """
     archive1 = tmp_path / "2026-05-28-1.jsonl.gz"
     archive2 = tmp_path / "2026-05-28-2.jsonl.gz"
 
@@ -199,6 +267,18 @@ def test_rotate_logs_cleanup_os_error(tmp_path: Path) -> None:
     original_unlink = Path.unlink
 
     def side_effect(self: Path, missing_ok: bool = False) -> None:
+        """Source logだけを削除しarchive削除は失敗させるfakeを実行する.
+
+        Args:
+            self (Path): unlinkが要求された対象path.
+            missing_ok (bool): Path.unlinkから渡される欠損許容設定.
+
+        Returns:
+            None: source logを削除するかOSErrorを送出して完了する.
+
+        Raises:
+            OSError: archive pathのunlinkを模擬的に拒否する場合.
+        """
         if self.name == "latest.jsonl":
             original_unlink(self, missing_ok=missing_ok)
             return

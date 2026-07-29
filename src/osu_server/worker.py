@@ -1,10 +1,9 @@
-"""Taskiq worker entry point.
+"""Taskiq workerの実行エントリーポイントを提供する.
 
-Runs as a separate process to execute background jobs. The ``startup`` hook
-initialises a SQLAlchemy async engine and session factory; ``shutdown``
-disposes the engine.
+別processでbackground jobを実行し,startup hookでDishka runtime stateを構築して,
+shutdown hookでそのstateを解放する.
 
-Start with: ``taskiq worker osu_server.worker:broker``
+`taskiq worker osu_server.worker:broker`で起動する.
 """
 
 from __future__ import annotations
@@ -56,11 +55,26 @@ register_all_jobs(broker)
 
 
 def _get_dishka_container(state: TaskiqState) -> AsyncContainer | None:
-    """Return the Dishka worker container stored in taskiq state."""
+    """Taskiq stateに保存されたDishka containerを取得する.
+
+    Args:
+        state (TaskiqState): worker lifecycleが管理するTaskiq state.
+
+    Returns:
+        AsyncContainer | None: 保存済みのcontainer. 未初期化または解放済みならNone.
+    """
     return cast("AsyncContainer | None", getattr(state, "dishka_container", None))
 
 
 def _clear_worker_runtime_state(state: TaskiqState) -> None:
+    """Taskiq stateからworkerが解決したruntime dependencyを消去する.
+
+    Args:
+        state (TaskiqState): 初期化失敗時またはshutdown時に消去するTaskiq state.
+
+    Returns:
+        None: state上のcontainerと全job use-case参照をNoneへ置き換えたことを示す.
+    """
     state.dishka_container = None
     state.persist_channel_message_use_case = None
     state.persist_private_message_use_case = None
@@ -75,7 +89,14 @@ def _clear_worker_runtime_state(state: TaskiqState) -> None:
 
 @broker.on_event(TaskiqEvents.WORKER_STARTUP)
 async def startup(state: TaskiqState) -> None:
-    """Initialise worker runtime state for task execution."""
+    """Task実行に必要なworker runtime stateを初期化する.
+
+    Args:
+        state (TaskiqState): resolved use-caseとDishka containerを保存するTaskiq state.
+
+    Returns:
+        None: logging,Dishka integration,job use-caseをstateへ設定したことを示す.
+    """
     setup_logging(_config)
     worker_container: AsyncContainer | None = None
 
@@ -119,7 +140,14 @@ async def startup(state: TaskiqState) -> None:
 
 @broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)
 async def shutdown(state: TaskiqState) -> None:
-    """Dispose of worker runtime state created during startup."""
+    """startupが作成したworker runtime stateを解放する.
+
+    Args:
+        state (TaskiqState): clear対象のcontainerとjob use-case参照を持つTaskiq state.
+
+    Returns:
+        None: stateを消去し,存在したDishka containerをcloseしたことを示す.
+    """
     dishka_container = _get_dishka_container(state)
 
     _clear_worker_runtime_state(state)

@@ -1,12 +1,7 @@
-"""Structured logging tests for beatmap fetch jobs.
+"""このmoduleはbeatmap fetch jobの構造化logging contractを検証する.
 
-Covers:
-- ``FetchBeatmapMetadataUseCase`` start, success, failure, mirror fallback events.
-- ``FetchBeatmapFileUseCase`` start, success, failure, checksum mismatch events.
-- Redaction of sensitive values (API credentials, authorization) from log fields.
-
-All tests use ``structlog.testing.capture_logs()`` to verify event names
-and key fields without depending on the logging sink configuration.
+metadataとfile fetchの開始, 成功, 失敗, mirror fallback, checksum mismatchのeventを確認する.
+すべてのtestはlogging sink設定に依存せずcapture_logsでevent名とfieldを検証する.
 """
 
 from __future__ import annotations
@@ -57,7 +52,16 @@ _DEFAULT_CHECKSUM = "0123456789abcdef0123456789abcdef"
 
 @dataclass
 class StubMetadataProvider:
-    """Simple in-memory provider for log capture tests."""
+    """このlog capture test用のin-memory metadata providerを提供する.
+
+    Attributes:
+        by_beatmap_id (dict[int, BeatmapsetSnapshot | None]): beatmap IDごとの返却snapshot.
+        by_beatmapset_id (dict[int, BeatmapsetSnapshot | None]): beatmapset IDごとの返却snapshot.
+        by_checksum (dict[str, BeatmapsetSnapshot | None]): MD5 checksumごとの返却snapshot.
+        exception (Exception | None): lookup時に意図的に送出する例外.
+        delay (float): 各lookupの前に待機する秒数.
+        calls (list[str]): 実行したlookup種別と入力値の履歴.
+    """
 
     by_beatmap_id: dict[int, BeatmapsetSnapshot | None] = field(default_factory=dict)
     by_beatmapset_id: dict[int, BeatmapsetSnapshot | None] = field(default_factory=dict)
@@ -67,6 +71,14 @@ class StubMetadataProvider:
     calls: list[str] = field(default_factory=list)
 
     async def lookup_by_beatmap_id(self, beatmap_id: int) -> BeatmapsetSnapshot | None:
+        """対象beatmap IDでsnapshotを検索するtest double呼出を処理する.
+
+        Args:
+            beatmap_id (int): 検索対象のbeatmap ID.
+
+        Returns:
+            BeatmapsetSnapshot | None: 設定済みsnapshot. 未設定の場合はNone.
+        """
         self.calls.append(f"beatmap_id:{beatmap_id}")
         if self.delay > 0:
             await asyncio.sleep(self.delay)
@@ -75,6 +87,14 @@ class StubMetadataProvider:
         return self.by_beatmap_id.get(beatmap_id)
 
     async def lookup_by_beatmapset_id(self, beatmapset_id: int) -> BeatmapsetSnapshot | None:
+        """対象beatmapset IDでsnapshotを検索するtest double呼出を処理する.
+
+        Args:
+            beatmapset_id (int): 検索対象のbeatmapset ID.
+
+        Returns:
+            BeatmapsetSnapshot | None: 設定済みsnapshot. 未設定の場合はNone.
+        """
         self.calls.append(f"beatmapset_id:{beatmapset_id}")
         if self.delay > 0:
             await asyncio.sleep(self.delay)
@@ -83,6 +103,14 @@ class StubMetadataProvider:
         return self.by_beatmapset_id.get(beatmapset_id)
 
     async def lookup_by_checksum(self, checksum_md5: str) -> BeatmapsetSnapshot | None:
+        """MD5 checksumでsnapshotを検索するtest double呼出を処理する.
+
+        Args:
+            checksum_md5 (str): 検索対象のMD5 checksum.
+
+        Returns:
+            BeatmapsetSnapshot | None: 設定済みsnapshot. 未設定の場合はNone.
+        """
         self.calls.append(f"checksum:{checksum_md5}")
         if self.delay > 0:
             await asyncio.sleep(self.delay)
@@ -93,7 +121,14 @@ class StubMetadataProvider:
 
 @dataclass
 class StubFileProvider:
-    """Simple stub file provider for log capture tests."""
+    """このlog capture test用のin-memory file providerを提供する.
+
+    Attributes:
+        by_beatmap_id (dict[int, OsuFileFetchResult]): beatmap IDごとの返却file結果.
+        exception (Exception | None): fetch時に意図的に送出する例外.
+        delay (float): fetch前に待機する秒数.
+        calls (list[int]): fetchしたbeatmap IDの履歴.
+    """
 
     by_beatmap_id: dict[int, OsuFileFetchResult] = field(default_factory=dict)
     exception: Exception | None = None
@@ -101,6 +136,17 @@ class StubFileProvider:
     calls: list[int] = field(default_factory=list)
 
     async def fetch_osu_file(self, beatmap_id: int) -> OsuFileFetchResult:
+        """対象beatmapのosu fileを取得するtest double呼出を処理する.
+
+        Args:
+            beatmap_id (int): 取得対象のbeatmap ID.
+
+        Returns:
+            OsuFileFetchResult: 設定済みのfile取得結果.
+
+        Raises:
+            ValueError: 指定beatmap IDのfile結果が未設定の場合.
+        """
         self.calls.append(beatmap_id)
         if self.delay > 0:
             await asyncio.sleep(self.delay)
@@ -114,12 +160,26 @@ class StubFileProvider:
 
 @dataclass
 class StubBlobStorageService:
-    """Simple stub blob storage for log capture tests."""
+    """このlog capture test用に保存済みblobを記録するstorage serviceを提供する.
+
+    Attributes:
+        next_blob_id (int): 次に保存するblobへ割り当てる識別子.
+        stored (list[Blob]): 保存済みblobの履歴.
+    """
 
     next_blob_id: int = 1
     stored: list[Blob] = field(default_factory=list)
 
     async def put_bytes(self, data: bytes, *, content_type: str) -> BlobStored:
+        """対象byte列をlocal blobとして記録して保存結果を返す.
+
+        Args:
+            data (bytes): 保存対象のosu file byte列.
+            content_type (str): 保存するcontent type.
+
+        Returns:
+            BlobStored: 新規blobを含む保存結果.
+        """
         blob = Blob(
             id=self.next_blob_id,
             sha256=hashlib.sha256(data).hexdigest(),
@@ -158,6 +218,29 @@ def _make_snapshot(
     last_fetched_at: datetime | None = None,
     next_refresh_at: datetime | None = None,
 ) -> BeatmapsetSnapshot:
+    """対象metadata fetch test用のbeatmapset snapshotを作る.
+
+    Args:
+        beatmap_id (int): 先頭beatmapへ設定する識別子.
+        beatmapset_id (int): snapshotへ設定するbeatmapset識別子.
+        checksum_md5 (str): 先頭beatmapへ設定するMD5 checksum.
+        mode (str): 先頭beatmapへ設定するgame mode値.
+        version (str): 先頭beatmapへ設定するdifficulty version.
+        artist (str): beatmapsetへ設定するartist名.
+        title (str): beatmapsetへ設定するtitle.
+        creator (str): beatmapsetへ設定するcreator名.
+        source (BeatmapMetadataSource): snapshotを提供したmetadata source.
+        verified (BeatmapSourceVerification): sourceの検証状態.
+        official_status (BeatmapRankStatus): official rank status.
+        official_status_source (BeatmapMetadataSource): official statusの取得source.
+        official_status_verified (BeatmapSourceVerification): official status sourceの検証状態.
+        beatmap_count (int): 生成するchild beatmap snapshot数.
+        last_fetched_at (datetime | None): metadataを取得した時刻. Noneの場合は固定test時刻.
+        next_refresh_at (datetime | None): 次回更新時刻. Noneの場合は30日後.
+
+    Returns:
+        BeatmapsetSnapshot: 指定したmetadataとchild beatmapを持つsnapshot.
+    """
     fetched_at = last_fetched_at or _NOW
     refresh_at = next_refresh_at or _NOW + _THIRTY_DAYS
     child_snapshots = [
@@ -192,6 +275,14 @@ def _make_snapshot(
 
 
 def _make_mirror_snapshot(**kwargs: object) -> BeatmapsetSnapshot:
+    """このunverified mirror sourceを持つbeatmapset snapshotを作る.
+
+    Args:
+        **kwargs (object): 基底snapshot factoryへ渡すoverride値.
+
+    Returns:
+        BeatmapsetSnapshot: mirror由来かつunverifiedとして設定されたsnapshot.
+    """
     return _make_snapshot(
         source=BeatmapMetadataSource.MIRROR,
         verified=BeatmapSourceVerification.UNVERIFIED,
@@ -202,7 +293,11 @@ def _make_mirror_snapshot(**kwargs: object) -> BeatmapsetSnapshot:
 
 
 def _make_freshness_policy() -> BeatmapFreshnessPolicy:
-    """metadata cache の refresh 判定 policy を作る。"""
+    """対象metadata cacheのrefresh判定policyを作る.
+
+    Returns:
+        BeatmapFreshnessPolicy: ranked, pending, graveyard, mirrorの更新間隔を持つpolicy.
+    """
     return BeatmapFreshnessPolicy(
         ranked_refresh_interval=_THIRTY_DAYS,
         pending_refresh_interval=_ONE_HOUR,
@@ -222,7 +317,7 @@ _FILE_BODY_MISMATCH = b"osu file format v14\n[General]\nAudioFilename: wrong.mp3
 
 
 class TestMetadataFetchJobLogging:
-    """Structured observability for ``FetchBeatmapMetadataUseCase``."""
+    """このmetadata fetch jobの構造化eventを検証するtest group."""
 
     @staticmethod
     def _make_job(
@@ -231,6 +326,18 @@ class TestMetadataFetchJobLogging:
         official: StubMetadataProvider | None = None,
         mirror: StubMetadataProvider | None = None,
     ) -> FetchBeatmapMetadataUseCase:
+        """指定providerを持つmetadata fetch use caseを作る.
+
+        Args:
+            repo (InMemoryBeatmapStore): fetch状態とsnapshotを保持するin-memory repository.
+            official (StubMetadataProvider | None): official sourceとして使うprovider.
+                Noneの場合は空のstubを使う.
+            mirror (StubMetadataProvider | None): fallback mirrorとして使うprovider.
+                Noneの場合は空のstubを使う.
+
+        Returns:
+            FetchBeatmapMetadataUseCase: 構造化loggingを検証するためのuse case.
+        """
         _official = official or StubMetadataProvider()
         _mirror = mirror or StubMetadataProvider()
         composite = CompositeBeatmapMetadataProvider(official=_official, mirror=_mirror)
@@ -241,7 +348,14 @@ class TestMetadataFetchJobLogging:
         )
 
     async def test_logs_start_and_success_for_beatmap_id(self) -> None:
-        """Metadata fetch logs started and succeeded events with target and source."""
+        """対象beatmap ID metadata fetchが開始と成功eventを記録する契約を検証する.
+
+        official providerがsnapshotを返す条件でfetchする.
+        target種別, key, beatmapset ID, sourceを持つeventを確認する.
+
+        Returns:
+            None: 開始eventと成功eventを検証して完了し, 呼び出し側へ値を返さない.
+        """
         repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
         official = StubMetadataProvider(by_beatmap_id={2000: snapshot})
@@ -264,7 +378,14 @@ class TestMetadataFetchJobLogging:
         assert succeeded[0]["source"] == BeatmapMetadataSource.OFFICIAL.value
 
     async def test_logs_start_and_success_for_checksum(self) -> None:
-        """Metadata fetch logs started and succeeded events for checksum lookup."""
+        """対象checksum metadata fetchが開始と成功eventを記録する契約を検証する.
+
+        checksumでofficial snapshotを検索する.
+        成功eventがchecksum target種別と入力keyを持つことを確認する.
+
+        Returns:
+            None: 成功eventのtarget fieldを検証して完了し, 呼び出し側へ値を返さない.
+        """
         repo = InMemoryBeatmapStore()
         checksum = _DEFAULT_CHECKSUM
         snapshot = _make_snapshot()
@@ -281,7 +402,14 @@ class TestMetadataFetchJobLogging:
         assert succeeded[0]["target_key"] == checksum
 
     async def test_logs_failure_when_all_sources_fail(self) -> None:
-        """Metadata fetch logs a failure event when no provider returns a result."""
+        """全sourceが結果を返さないmetadata fetchの失敗eventを検証する.
+
+        officialとmirrorの両providerがNoneを返す条件でfetchする.
+        target情報とerror fieldを持つ失敗eventを確認する.
+
+        Returns:
+            None: 失敗eventのtarget fieldとerror fieldを検証して完了し, 呼び出し側へ値を返さない.
+        """
         repo = InMemoryBeatmapStore()
         official = StubMetadataProvider()
         mirror = StubMetadataProvider()
@@ -298,7 +426,14 @@ class TestMetadataFetchJobLogging:
         assert "error" in failed[0]
 
     async def test_logs_failure_when_all_providers_raise(self) -> None:
-        """Metadata fetch logs a failure event when all providers raise."""
+        """全providerが例外を送出するmetadata fetchの失敗eventを検証する.
+
+        officialとmirrorの両providerを失敗させる.
+        処理が例外を伝播せず失敗eventを一度だけ記録することを確認する.
+
+        Returns:
+            None: 失敗eventの件数を検証して完了し, 呼び出し側へ値を返さない.
+        """
         repo = InMemoryBeatmapStore()
         official = StubMetadataProvider(exception=RuntimeError("official down"))
         mirror = StubMetadataProvider(exception=RuntimeError("mirror down"))
@@ -312,7 +447,14 @@ class TestMetadataFetchJobLogging:
         assert len(failed) == 1
 
     async def test_logs_mirror_fallback_when_official_returns_none(self) -> None:
-        """Mirror fallback is logged when official returns None and mirror succeeds."""
+        """対象official sourceがNoneを返す場合のmirror fallback eventを検証する.
+
+        mirror providerがsnapshotを返す条件でfetchする.
+        fallback eventがmetadata source種別とbeatmap ID keyを持つことを確認する.
+
+        Returns:
+            None: mirror fallback eventのfieldを検証して完了し, 呼び出し側へ値を返さない.
+        """
         repo = InMemoryBeatmapStore()
         mirror_snapshot = _make_mirror_snapshot()
         official = StubMetadataProvider()
@@ -330,7 +472,14 @@ class TestMetadataFetchJobLogging:
         assert mirror_events[0]["key"] == "2000"
 
     async def test_logs_mirror_fallback_when_official_raises(self) -> None:
-        """Mirror fallback is logged when official raises and mirror succeeds."""
+        """対象official sourceが例外を送出する場合のmirror fallback eventを検証する.
+
+        official providerの失敗後にmirror providerがsnapshotを返す条件でfetchする.
+        metadata fallback eventが記録されることを確認する.
+
+        Returns:
+            None: mirror fallback eventのsource種別を検証して完了し, 呼び出し側へ値を返さない.
+        """
         repo = InMemoryBeatmapStore()
         mirror_snapshot = _make_mirror_snapshot()
         official = StubMetadataProvider(exception=RuntimeError("official down"))
@@ -346,7 +495,14 @@ class TestMetadataFetchJobLogging:
         assert mirror_events[0]["source_type"] == "metadata"
 
     async def test_does_not_log_mirror_fallback_when_official_succeeds(self) -> None:
-        """No mirror fallback event when official provider succeeds."""
+        """対象official sourceが成功する場合にmirror fallback eventを記録しない契約を検証する.
+
+        official providerだけがsnapshotを返す条件でfetchする.
+        mirror fallback eventが0件になることを確認する.
+
+        Returns:
+            None: fallback eventが不在であることを検証して完了し, 呼び出し側へ値を返さない.
+        """
         repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
         official = StubMetadataProvider(by_beatmap_id={2000: snapshot})
@@ -361,7 +517,14 @@ class TestMetadataFetchJobLogging:
         assert len(mirror_events) == 0
 
     async def test_logs_cache_hit_without_provider_fetch_lifecycle(self) -> None:
-        """fresh cache hit は provider fetch lifecycle と区別できる event で記録する。"""
+        """対象fresh cache hitがprovider fetch lifecycleと区別されるeventを記録する契約を検証する.
+
+        同じtargetを二度実行する.
+        二回目がcache hit eventだけを記録してproviderを再呼出ししないことを確認する.
+
+        Returns:
+            None: cache hit eventとprovider呼出履歴を検証して完了し, 呼び出し側へ値を返さない.
+        """
         repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
         official = StubMetadataProvider(by_beatmap_id={2000: snapshot})
@@ -384,7 +547,14 @@ class TestMetadataFetchJobLogging:
         assert official.calls == ["beatmap_id:2000"]
 
     async def test_no_api_credentials_in_logs(self) -> None:
-        """Log events must not include API credentials, tokens, or authorization values."""
+        """このlog eventがAPI credentialやauthorization fieldを含まない契約を検証する.
+
+        metadata fetchで出力されたすべてのevent keyを走査する.
+        機密値を示すfield名が含まれないことを確認する.
+
+        Returns:
+            None: event keyから機密fieldが除外されることを検証して完了し, 呼び出し側へ値を返さない.
+        """
         repo = InMemoryBeatmapStore()
         snapshot = _make_snapshot()
         official = StubMetadataProvider(by_beatmap_id={2000: snapshot})
@@ -426,7 +596,7 @@ class TestMetadataFetchJobLogging:
 
 
 class TestFileFetchJobLogging:
-    """Structured observability for ``FetchBeatmapFileUseCase``."""
+    """このfile fetch jobの構造化eventを検証するtest group."""
 
     @staticmethod
     async def _setup_repo_with_beatmap(
@@ -436,6 +606,17 @@ class TestFileFetchJobLogging:
         beatmapset_id: int = 1000,
         checksum_md5: str = _DEFAULT_CHECKSUM,
     ) -> None:
+        """対象file fetch用のbeatmapをin-memory repositoryへ保存する.
+
+        Args:
+            repo (InMemoryBeatmapStore): 保存先のin-memory repository.
+            beatmap_id (int): 保存するbeatmapの識別子.
+            beatmapset_id (int): 保存するbeatmapsetの識別子.
+            checksum_md5 (str): 保存するbeatmap fileの期待MD5 checksum.
+
+        Returns:
+            None: beatmapset snapshotを保存して完了し, 呼び出し側へ値を返さない.
+        """
         bm = Beatmap(
             id=beatmap_id,
             beatmapset_id=beatmapset_id,
@@ -484,6 +665,17 @@ class TestFileFetchJobLogging:
         file_provider: StubFileProvider | None = None,
         blob_storage: StubBlobStorageService | None = None,
     ) -> FetchBeatmapFileUseCase:
+        """指定providerとstorageを持つfile fetch use caseを作る.
+
+        Args:
+            repo (InMemoryBeatmapStore): fetch状態を保持するin-memory repository.
+            file_provider (StubFileProvider | None): osu fileを返すprovider. Noneの場合は空のstub.
+            blob_storage (StubBlobStorageService | None): blobを記録するstorage service.
+                Noneの場合は空のstubを使う.
+
+        Returns:
+            FetchBeatmapFileUseCase: 構造化loggingを検証するためのuse case.
+        """
         _provider = file_provider or StubFileProvider()
         _blob = blob_storage or StubBlobStorageService()
         return FetchBeatmapFileUseCase(
@@ -493,7 +685,14 @@ class TestFileFetchJobLogging:
         )
 
     async def test_logs_start_and_success(self) -> None:
-        """File fetch logs started and succeeded events with target and source."""
+        """対象file fetchが開始と成功eventを記録する契約を検証する.
+
+        一致するMD5のosu fileを取得する.
+        target情報, beatmap ID, sourceを持つ開始eventと成功eventを確認する.
+
+        Returns:
+            None: 開始eventと成功eventを検証して完了し, 呼び出し側へ値を返さない.
+        """
         repo = InMemoryBeatmapStore()
         await self._setup_repo_with_beatmap(repo, checksum_md5=_FILE_BODY_MD5)
         fetch_result = OsuFileFetchResult(
@@ -522,7 +721,13 @@ class TestFileFetchJobLogging:
         assert succeeded[0]["source"] == BeatmapFileSource.OSU_CURRENT.value
 
     async def test_logs_failure_when_provider_raises(self) -> None:
-        """File fetch logs a failure event when the file provider raises."""
+        """対象file providerの例外がfile fetch失敗eventになる契約を検証する.
+
+        file providerを失敗させ, target情報とerror fieldを持つ失敗eventが記録されることを確認する.
+
+        Returns:
+            None: 失敗eventのtarget fieldとerror fieldを検証して完了し, 呼び出し側へ値を返さない.
+        """
         repo = InMemoryBeatmapStore()
         await self._setup_repo_with_beatmap(repo)
         file_provider = StubFileProvider(exception=RuntimeError("mirror down"))
@@ -539,7 +744,14 @@ class TestFileFetchJobLogging:
         assert "error" in failed[0]
 
     async def test_logs_checksum_mismatch(self) -> None:
-        """File fetch logs a checksum mismatch event when fetched bytes don't match."""
+        """取得byte列のchecksum mismatchが専用eventになる契約を検証する.
+
+        期待MD5と異なるosu fileを返す.
+        checksum prefixを持つmismatch eventと失敗eventが記録されることを確認する.
+
+        Returns:
+            None: mismatch eventと失敗eventを検証して完了し, 呼び出し側へ値を返さない.
+        """
         repo = InMemoryBeatmapStore()
         await self._setup_repo_with_beatmap(repo, checksum_md5=_DEFAULT_CHECKSUM)
         fetch_result = OsuFileFetchResult(
@@ -567,7 +779,13 @@ class TestFileFetchJobLogging:
         assert len(failed) == 1
 
     async def test_logs_failure_when_beatmap_not_found(self) -> None:
-        """File fetch logs failure when beatmap does not exist in repo."""
+        """このrepositoryにないbeatmapのfile fetchが失敗eventになる契約を検証する.
+
+        beatmapを保存しない条件でfile fetchを実行し, 失敗eventが一度だけ記録されることを確認する.
+
+        Returns:
+            None: 失敗eventの件数を検証して完了し, 呼び出し側へ値を返さない.
+        """
         repo = InMemoryBeatmapStore()
         file_provider = StubFileProvider()
         job = self._make_job(repo, file_provider=file_provider)

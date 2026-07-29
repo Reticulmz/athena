@@ -1,4 +1,10 @@
-"""Persist private message command use-case."""
+"""private message を durable storage へ保存する command use-case を提供する.
+
+この workflow は Unit of Work が利用可能な場合に private message write を transaction
+内で実行する.
+runtime が未構成または storage operation が失敗した場合は,例外を返さず
+`ChatPersistenceResult` の failure として返す.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +26,13 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright
 
 @dataclass(frozen=True, slots=True)
 class PersistPrivateMessageCommand:
-    """Command to persist a private message."""
+    """durable storage に保存する private message を表す command.
+
+    Attributes:
+        sender_id (int): message を送信した user の識別子.
+        target_id (int): message を受信する user の識別子.
+        content (str): 保存する message text.
+    """
 
     sender_id: int
     target_id: int
@@ -28,17 +40,45 @@ class PersistPrivateMessageCommand:
 
 
 class PersistPrivateMessageUseCase:
-    """Use-case for persisting private messages."""
+    """private message を Unit of Work 経由で永続化する use-case.
+
+    Attributes:
+        _uow_factory (UnitOfWorkFactory | None):
+            message write transaction を作成する factory. runtime 未構成時はNone.
+    """
 
     def __init__(
         self,
         *,
         uow_factory: UnitOfWorkFactory | None = None,
     ) -> None:
+        """Optional な message persistence runtime を設定する.
+
+        Args:
+            uow_factory (UnitOfWorkFactory | None):
+                private message write を行う transaction factory. None の場合は runtime
+                unavailable result
+                を返す.
+
+        """
         self._uow_factory: UnitOfWorkFactory | None = uow_factory
 
     async def execute(self, command: PersistPrivateMessageCommand) -> ChatPersistenceResult:
-        """Execute the persist private message command."""
+        """Private message を保存し,commit または failure result を返す.
+
+        Args:
+            command (PersistPrivateMessageCommand):
+                sender,target,保存する text を含む command.
+
+        Returns:
+            ChatPersistenceResult: 保存成功,runtime unavailable,または storage error
+            を表す結果.
+
+        Notes:
+            repository が失敗結果を返す場合は rollback する. Unit of Work または storage
+            の例外は捕捉して`STORAGE_ERROR`
+            resultへ変換する.
+        """
         if self._uow_factory is None:
             result = ChatPersistenceResult.failure(
                 ChatPersistenceFailureReason.RUNTIME_UNAVAILABLE

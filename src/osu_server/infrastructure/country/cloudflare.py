@@ -1,4 +1,7 @@
-"""CloudflareCountryResolver — Cloudflare の CF-IPCountry ヘッダから国コードを取得する。"""
+"""CloudflareのCF-IPCountry headerから国コードを取得するmodule.
+
+reverse proxyが付与するheaderを, Athena内部で使う2文字の国コードへ適用する.
+"""
 
 from __future__ import annotations
 
@@ -9,11 +12,18 @@ if TYPE_CHECKING:
 
 
 class CloudflareCountryResolver:
-    """Cloudflare リバースプロキシが付与する ``CF-IPCountry`` ヘッダから国コードを取得する。
+    """Cloudflare reverse proxyが付与する``CF-IPCountry`` headerから国コードを解決する.
 
-    ヘッダが存在しない場合は ``"XX"`` (不明) を返す。
+    ``CF-IPCountry``がないrequestは, 不明を表す``"XX"``へ解決する.
     """
 
     def resolve(self, headers: Mapping[str, str]) -> str:
-        """ヘッダから2文字の国コードを返す。"""
+        """HTTP headerから2文字の国コードを返す.
+
+        Args:
+            headers (Mapping[str, str]): Cloudflare headerを含むrequest header.
+
+        Returns:
+            str: ``CF-IPCountry``の値. headerがない場合は``"XX"``.
+        """
         return headers.get("CF-IPCountry", "XX")

@@ -1,4 +1,4 @@
-"""Score domain models."""
+"""score bounded context の public domain 値と policy を再公開する."""
 
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.domain.scores.leaderboards import (

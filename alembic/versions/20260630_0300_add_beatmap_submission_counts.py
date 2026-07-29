@@ -1,4 +1,4 @@
-"""Add beatmap submission counters.
+"""beatmap submission counterを追加するmigration.
 
 Revision ID: 20260630_0300
 Revises: 20260630_0200
@@ -22,6 +22,15 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """beatmapのplay countとpass countを追加して既存scoreからbackfillする.
+
+    Returns:
+        None: non-null counter, 初期aggregate, 整合CHECK constraintを追加したことを示す.
+
+    Notes:
+        `server_default=sa.text("0")`は新規rowのcounter初期値をdatabase側へ委譲する. text UPDATEは
+        score tableのaggregateをbeatmapsへ一括反映する既存のbackfill queryとして保持する.
+    """
     op.add_column(
         "beatmaps",
         sa.Column(
@@ -77,6 +86,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Beatmap submission counterと整合constraintを削除する.
+
+    Returns:
+        None: counter CHECK constraintと2つのbeatmaps columnを削除したことを示す.
+    """
     op.drop_constraint(
         "ck_beatmaps_pass_count_lte_play_count",
         "beatmaps",

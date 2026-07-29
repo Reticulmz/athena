@@ -1,3 +1,5 @@
+"""Stable verification結果をreport-safeなtextとJSONへ変換する."""
+
 from __future__ import annotations
 
 import json
@@ -31,7 +33,21 @@ _SECRET_ASSIGNMENT = re.compile(
 
 
 class StableVerificationReporter:
+    """Stable verification runを安全なtextまたはJSONで表示する.
+
+    Notes:
+        診断文字列中のcredential-likeなassignmentは出力前にredactする.
+    """
+
     def render_text(self, result: VerificationRunResult) -> str:
+        """Verification runを人間向けの改行区切りtextへ変換する.
+
+        Args:
+            result (VerificationRunResult): targetとsurface結果を含むverification run.
+
+        Returns:
+            str: target, 成否, 各surface結果を含むreport-safeなtext.
+        """
         lines: list[str] = []
         if result.target is None:
             lines.append("Target: fixture-only")
@@ -44,6 +60,14 @@ class StableVerificationReporter:
         return "\n".join(lines)
 
     def render_json(self, result: VerificationRunResult) -> str:
+        """Verification runをmachine-readable JSON textへ変換する.
+
+        Args:
+            result (VerificationRunResult): targetとsurface結果を含むverification run.
+
+        Returns:
+            str: redact済みのtargetとresult schemaを表すJSON text.
+        """
         payload: dict[str, object] = {
             "target": _target_payload(result.target),
             "failed": result.failed,
@@ -55,10 +79,26 @@ class StableVerificationReporter:
 
 
 def redact_text(value: str) -> str:
+    """credential-likeなkey=value値をreport-safeなplaceholderへ置換する.
+
+    Args:
+        value (str): redact前の診断またはreport text.
+
+    Returns:
+        str: secret値を`<redacted>`へ置換したtext.
+    """
     return _SECRET_ASSIGNMENT.sub(lambda match: f"{match.group(1)}=<redacted>", value)
 
 
 def _target_text_lines(target: StableTarget) -> list[str]:
+    """targetを人間向けreportの固定3行へ変換する.
+
+    Args:
+        target (StableTarget): base URLとstable host identityを持つprobe接続先.
+
+    Returns:
+        list[str]: target URL, Host header, host mismatchを示すtext行.
+    """
     return [
         f"Target: {target.base_url}",
         f"Stable Host: osu.{target.host_identity}",
@@ -67,6 +107,14 @@ def _target_text_lines(target: StableTarget) -> list[str]:
 
 
 def _target_host_mismatch(target: StableTarget) -> str:
+    """Base URLにstable host identityが含まれるかをyes/noで表す.
+
+    Args:
+        target (StableTarget): 比較対象のprobe接続先.
+
+    Returns:
+        str: host identityを含む場合は`no`, 含まない場合は`yes`.
+    """
     if target.host_identity in target.base_url:
         return "no"
 
@@ -74,6 +122,14 @@ def _target_host_mismatch(target: StableTarget) -> str:
 
 
 def _target_payload(target: StableTarget | None) -> dict[str, str] | None:
+    """targetをJSON schema向けのmappingへ変換する.
+
+    Args:
+        target (StableTarget | None): verification target. fixture-only runではNone.
+
+    Returns:
+        dict[str, str] | None: base_urlとhost_identityのmapping. target未設定時はNone.
+    """
     if target is None:
         return None
 
@@ -84,6 +140,14 @@ def _target_payload(target: StableTarget | None) -> dict[str, str] | None:
 
 
 def _surface_result_text(result: SurfaceResult) -> str:
+    """1件のsurface結果をreport-safeな空白区切りtextへ変換する.
+
+    Args:
+        result (SurfaceResult): text表示するsurface検証結果.
+
+    Returns:
+        str: surface, status, evidence, scope, redact済み診断を連結したtext.
+    """
     return " ".join(
         (
             result.surface.value,
@@ -96,6 +160,14 @@ def _surface_result_text(result: SurfaceResult) -> str:
 
 
 def _surface_result_payload(result: SurfaceResult) -> dict[str, str | None]:
+    """1件のsurface結果をJSON schema向けのmappingへ変換する.
+
+    Args:
+        result (SurfaceResult): JSON表示するsurface検証結果.
+
+    Returns:
+        dict[str, str | None]: redact済みdiagnostic_summaryを含むresult mapping.
+    """
     return {
         "surface": result.surface.value,
         "status": result.status.value,

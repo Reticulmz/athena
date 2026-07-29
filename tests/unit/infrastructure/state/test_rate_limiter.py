@@ -1,4 +1,4 @@
-"""Tests for RateLimiter Protocol + InMemoryRateLimiter."""
+"""RateLimiterのmemory実装に対する時間窓契約を検証する."""
 
 from __future__ import annotations
 
@@ -10,6 +10,11 @@ from osu_server.infrastructure.state.memory.rate_limiter import InMemoryRateLimi
 
 @pytest.fixture
 def limiter() -> InMemoryRateLimiter:
+    """各testへ時刻共有のない空のrate limiterを提供する.
+
+    Returns:
+        InMemoryRateLimiter: 各testで独立して使用するrate limiter.
+    """
     return InMemoryRateLimiter()
 
 
@@ -17,7 +22,11 @@ def limiter() -> InMemoryRateLimiter:
 
 
 def test_implements_protocol() -> None:
-    """InMemoryRateLimiter satisfies the RateLimiter Protocol."""
+    """memory実装を生成したときRateLimiter Protocolとして認識されることを確認する.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     assert isinstance(InMemoryRateLimiter(), RateLimiter)
 
 
@@ -25,7 +34,14 @@ def test_implements_protocol() -> None:
 
 
 async def test_allowed_within_limit(limiter: InMemoryRateLimiter) -> None:
-    """Requests within the limit are allowed."""
+    """時間窓内で上限回数まで照会したとき全requestを許可することを確認する.
+
+    Args:
+        limiter (InMemoryRateLimiter): 検証対象の空のrate limiter.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     limit = 3
     window = 10
 
@@ -38,7 +54,14 @@ async def test_allowed_within_limit(limiter: InMemoryRateLimiter) -> None:
 
 
 async def test_rejected_when_exceeded(limiter: InMemoryRateLimiter) -> None:
-    """The request exceeding the limit is rejected."""
+    """時間窓内で上限まで許可した後のrequestを拒否することを確認する.
+
+    Args:
+        limiter (InMemoryRateLimiter): 検証対象の空のrate limiter.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     limit = 3
     window = 10
 
@@ -49,7 +72,14 @@ async def test_rejected_when_exceeded(limiter: InMemoryRateLimiter) -> None:
 
 
 async def test_rejected_stays_rejected(limiter: InMemoryRateLimiter) -> None:
-    """Subsequent requests after exceeding the limit remain rejected."""
+    """上限超過後の同一時間窓では後続requestも連続して拒否することを確認する.
+
+    Args:
+        limiter (InMemoryRateLimiter): 検証対象の空のrate limiter.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     limit = 2
     window = 10
 
@@ -64,7 +94,11 @@ async def test_rejected_stays_rejected(limiter: InMemoryRateLimiter) -> None:
 
 
 async def test_window_reset_allows_again() -> None:
-    """After the window expires, requests are allowed again."""
+    """上限到達後に時間窓を越えたrequestを再び許可することを確認する.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     limit = 2
     window = 5
     base_time = 1000.0
@@ -72,6 +106,11 @@ async def test_window_reset_allows_again() -> None:
     call_count = 0
 
     def mock_time() -> float:
+        """呼出回数に応じて窓内時刻または期限後時刻を返す.
+
+        Returns:
+            float: 呼出回数に対応する窓内または期限後のfake時刻.
+        """
         nonlocal call_count
         call_count += 1
         # First two calls: within window (time = 1000.0)
@@ -94,7 +133,14 @@ async def test_window_reset_allows_again() -> None:
 
 
 async def test_users_are_independent(limiter: InMemoryRateLimiter) -> None:
-    """Rate limits are tracked independently per user."""
+    """一方のuserが上限へ達しても別userのrequestを許可することを確認する.
+
+    Args:
+        limiter (InMemoryRateLimiter): 検証対象の空のrate limiter.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     limit = 1
     window = 10
 
@@ -109,6 +155,13 @@ async def test_users_are_independent(limiter: InMemoryRateLimiter) -> None:
 
 
 async def test_limit_of_one(limiter: InMemoryRateLimiter) -> None:
-    """A limit of 1 allows exactly one request."""
+    """上限1では最初のrequestだけを許可し次を拒否することを確認する.
+
+    Args:
+        limiter (InMemoryRateLimiter): 検証対象の空のrate limiter.
+
+    Returns:
+        None: 検証を完了し値を返さない.
+    """
     assert await limiter.check(1, 1, 10) is True
     assert await limiter.check(1, 1, 10) is False

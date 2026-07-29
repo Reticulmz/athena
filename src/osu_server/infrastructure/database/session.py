@@ -1,19 +1,22 @@
-"""SQLAlchemy async session factory.
+"""SQLAlchemy async session factoryを作成するmodule.
 
-Provides a factory function that creates an ``async_sessionmaker`` bound to
-a given ``AsyncEngine``.
+指定した``AsyncEngine``へboundした``async_sessionmaker``を提供する.
 """
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 
 def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
-    """Create an async session factory bound to *engine*.
+    """指定したengineへboundしたasync session factoryを作成する.
 
     Args:
-        engine: The SQLAlchemy async engine to bind sessions to.
+        engine (AsyncEngine): sessionをbindするSQLAlchemy async engine.
 
     Returns:
-        An ``async_sessionmaker`` that produces ``AsyncSession`` instances.
+        async_sessionmaker[AsyncSession]: ``AsyncSession``を生成するfactory.
+
+    Notes:
+        command serviceがcommit後もdomain objectを読めるよう
+        ``expire_on_commit``はFalseに固定する.
     """
     return async_sessionmaker(engine, expire_on_commit=False)

@@ -1,4 +1,4 @@
-"""Unit tests for the taskiq worker lifecycle."""
+"""Taskiq worker lifecycleのdependency設定とcleanup契約を検証する."""
 
 from __future__ import annotations
 
@@ -52,54 +52,113 @@ if TYPE_CHECKING:
 
 
 class FakeDishkaContainer:
-    """AsyncContainer test double that records close calls."""
+    """close呼び出し回数を記録するAsyncContainer test doubleを表す.
+
+    Attributes:
+        close_calls (int): closeが完了した回数.
+    """
 
     close_calls: int
 
     def __init__(self) -> None:
+        """close記録を0件で初期化する."""
         self.close_calls = 0
 
     async def close(self) -> None:
+        """Container close要求を記録する.
+
+        Returns:
+            None: close回数を増やして完了し,呼び出し側へ値を返さない.
+        """
         self.close_calls += 1
 
 
 class FailingWorkerContainer:
-    """Worker container fake that fails while resolving the file fetch use-case."""
+    """file fetch use caseの解決で失敗するworker container fakeを表す.
+
+    Attributes:
+        close_calls (int): cleanup時のclose呼び出し回数.
+    """
 
     close_calls: int
 
     def __init__(self) -> None:
+        """close記録を0件で失敗containerを初期化する."""
         self.close_calls = 0
 
     async def get(self, dependency_type: type[object]) -> object:
+        """File fetch依存だけをRuntimeErrorにしてstartup失敗を再現する.
+
+        Args:
+            dependency_type (type[object]): workerがcontainerから解決しようとする依存型.
+
+        Returns:
+            object: file fetch以外の依存解決を表す無名object.
+
+        Raises:
+            RuntimeError: FetchBeatmapFileUseCaseの解決が要求された場合.
+        """
         if dependency_type is FetchBeatmapFileUseCase:
             msg = "beatmap file fetch unavailable"
             raise RuntimeError(msg)
         return object()
 
     async def close(self) -> None:
+        """失敗後のcontainer cleanupを記録する.
+
+        Returns:
+            None: close回数を増やして完了し,呼び出し側へ値を返さない.
+        """
         self.close_calls += 1
 
 
 @dataclass(frozen=True, slots=True)
 class RecordedBeatmapFetch:
+    """beatmap fetch taskへの入力を比較するための記録値を表す.
+
+    Attributes:
+        target_type (str): fetch targetの種別を表す文字列.
+        target_key (str): targetを一意に特定する値.
+    """
+
     target_type: str
     target_key: str
 
 
 class FakeBeatmapFetchUseCase:
-    """Beatmap fetch use-case fake that records task adapter calls."""
+    """task adapterから渡されたbeatmap fetchを記録するuse case fakeを表す.
+
+    Attributes:
+        calls (list[BeatmapFetchTarget]): executeで受け取ったtargetの呼び出し順記録.
+    """
 
     calls: list[BeatmapFetchTarget]
 
     def __init__(self) -> None:
+        """空のfetch記録でuse case fakeを初期化する."""
         self.calls = []
 
     async def execute(self, target: BeatmapFetchTarget) -> None:
+        """Task adapterが渡したfetch targetを記録する.
+
+        Args:
+            target (BeatmapFetchTarget): fetch対象を表すcommand input.
+
+        Returns:
+            None: targetを記録して完了し,呼び出し側へ値を返さない.
+        """
         self.calls.append(target)
 
 
 def _make_config(tmp_path: Path) -> AppConfig:
+    """Worker startupをin-memoryで実行する最小AppConfigを生成する.
+
+    Args:
+        tmp_path (Path): logとblob storageを隔離するtest専用directory.
+
+    Returns:
+        AppConfig: test environmentとlocal storage pathを持つ設定値.
+    """
     return AppConfig.model_validate(
         {
             "database_url": "postgresql://test:test@localhost:5432/test",
@@ -117,7 +176,26 @@ def _install_in_memory_worker_container(
     tmp_path: Path,
     config: AppConfig,
 ) -> None:
+    """Worker moduleへin-memory Dishka container factoryを接続する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): worker moduleの設定とfactoryを置換するfixture.
+        tmp_path (Path): in-memory blob storageのrootに使うtest専用directory.
+        config (AppConfig): worker startupに渡すtest設定.
+
+    Returns:
+        None: module依存を差し替えて完了し,呼び出し側へ値を返さない.
+    """
+
     def make_test_worker_container(app_config: AppConfig) -> AsyncContainer:
+        """Test runtime providerを持つworker containerを生成する.
+
+        Args:
+            app_config (AppConfig): worker moduleが読み込んだ設定値.
+
+        Returns:
+            AsyncContainer: in-memory provider overrideを含むworker container.
+        """
         return make_worker_container(
             app_config,
             overrides=(
@@ -136,6 +214,14 @@ def _install_in_memory_worker_container(
 
 
 def _make_task_context(private_message_use_case: object) -> Context:
+    """Private message taskを直接実行するTaskiq Contextを生成する.
+
+    Args:
+        private_message_use_case (object): broker stateへ設定するprivate persistence use case.
+
+    Returns:
+        Context: persist_private_messageが依存を取得できるtask context.
+    """
     broker = InMemoryBroker()
     broker.state.persist_private_message_use_case = private_message_use_case
     message = TaskiqMessage(
@@ -149,40 +235,112 @@ def _make_task_context(private_message_use_case: object) -> Context:
 
 
 def _state_dishka_container(state: TaskiqState) -> AsyncContainer | None:
+    """Taskiq stateからDishka containerを型付きで取得する.
+
+    Args:
+        state (TaskiqState): worker lifecycleが更新するbroker state.
+
+    Returns:
+        AsyncContainer | None: 現在のcontainer. startup前またはshutdown後はNone.
+    """
     return cast("AsyncContainer | None", getattr(state, "dishka_container", None))
 
 
 def _state_persist_channel_message_use_case(state: TaskiqState) -> object | None:
+    """Taskiq stateからchannel message persistence use caseを取得する.
+
+    Args:
+        state (TaskiqState): lifecycle dependencyを保持するbroker state.
+
+    Returns:
+        object | None: 解決済みchannel persistence use case. 未設定時はNone.
+    """
     return cast("object | None", getattr(state, "persist_channel_message_use_case", None))
 
 
 def _state_persist_private_message_use_case(state: TaskiqState) -> object | None:
+    """Taskiq stateからprivate message persistence use caseを取得する.
+
+    Args:
+        state (TaskiqState): lifecycle dependencyを保持するbroker state.
+
+    Returns:
+        object | None: 解決済みprivate persistence use case. 未設定時はNone.
+    """
     return cast("object | None", getattr(state, "persist_private_message_use_case", None))
 
 
 def _state_beatmap_metadata_fetch(state: TaskiqState) -> object | None:
+    """Taskiq stateからbeatmap metadata fetch use caseを取得する.
+
+    Args:
+        state (TaskiqState): lifecycle dependencyを保持するbroker state.
+
+    Returns:
+        object | None: 解決済みmetadata fetch use case. 未設定時はNone.
+    """
     return cast("object | None", getattr(state, "beatmap_metadata_fetch", None))
 
 
 def _state_beatmap_file_fetch(state: TaskiqState) -> object | None:
+    """Taskiq stateからbeatmap file fetch use caseを取得する.
+
+    Args:
+        state (TaskiqState): lifecycle dependencyを保持するbroker state.
+
+    Returns:
+        object | None: 解決済みfile fetch use case. 未設定時はNone.
+    """
     return cast("object | None", getattr(state, "beatmap_file_fetch", None))
 
 
 def _state_score_performance_calculation_executor(state: TaskiqState) -> object | None:
+    """Taskiq stateからscore performance calculation executorを取得する.
+
+    Args:
+        state (TaskiqState): lifecycle dependencyを保持するbroker state.
+
+    Returns:
+        object | None: 解決済みperformance calculation executor. 未設定時はNone.
+    """
     return cast("object | None", getattr(state, "score_performance_calculation_executor", None))
 
 
 def _state_performance_recalculation_batch_processor(state: TaskiqState) -> object | None:
+    """Taskiq stateからperformance recalculation batch processorを取得する.
+
+    Args:
+        state (TaskiqState): lifecycle dependencyを保持するbroker state.
+
+    Returns:
+        object | None: 解決済みbatch processor. 未設定時はNone.
+    """
     return cast("object | None", getattr(state, "performance_recalculation_batch_processor", None))
 
 
 def _state_beatmap_leaderboard_user_rebuild_use_case(state: TaskiqState) -> object | None:
+    """Taskiq stateからuser leaderboard rebuild use caseを取得する.
+
+    Args:
+        state (TaskiqState): lifecycle dependencyを保持するbroker state.
+
+    Returns:
+        object | None: 解決済みuser leaderboard rebuild use case. 未設定時はNone.
+    """
     return cast("object | None", getattr(state, "beatmap_leaderboard_user_rebuild_use_case", None))
 
 
 def _state_beatmap_leaderboard_beatmapset_rebuild_use_case(
     state: TaskiqState,
 ) -> object | None:
+    """Taskiq stateからbeatmapset leaderboard rebuild use caseを取得する.
+
+    Args:
+        state (TaskiqState): lifecycle dependencyを保持するbroker state.
+
+    Returns:
+        object | None: 解決済みbeatmapset leaderboard rebuild use case. 未設定時はNone.
+    """
     return cast(
         "object | None",
         getattr(state, "beatmap_leaderboard_beatmapset_rebuild_use_case", None),
@@ -190,21 +348,50 @@ def _state_beatmap_leaderboard_beatmapset_rebuild_use_case(
 
 
 def _state_replay_download_accounting_executor(state: TaskiqState) -> object | None:
+    """Taskiq stateからreplay download accounting executorを取得する.
+
+    Args:
+        state (TaskiqState): lifecycle dependencyを保持するbroker state.
+
+    Returns:
+        object | None: 解決済みreplay download accounting executor. 未設定時はNone.
+    """
     return cast("object | None", getattr(state, "replay_download_accounting_executor", None))
 
 
 async def _run_startup(state: TaskiqState) -> None:
+    """型付きstartup hookをTaskiq stateで実行する.
+
+    Args:
+        state (TaskiqState): startup hookへ渡すbroker state.
+
+    Returns:
+        None: lifecycle startupを完了し,呼び出し側へ値を返さない.
+    """
     hook = cast("WorkerLifecycleHook", worker_module.startup)
     await hook(state)
 
 
 async def _run_shutdown(state: TaskiqState) -> None:
+    """型付きshutdown hookをTaskiq stateで実行する.
+
+    Args:
+        state (TaskiqState): shutdown hookへ渡すbroker state.
+
+    Returns:
+        None: lifecycle shutdownを完了し,呼び出し側へ値を返さない.
+    """
     hook = cast("WorkerLifecycleHook", worker_module.shutdown)
     await hook(state)
 
 
 @pytest.fixture(autouse=True)
 def _reset_logging() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
+    """test前後のglobal logging stateを隔離して復元する.
+
+    Yields:
+        None: test本体へ制御を渡し,終了後にhandlerとstructlog設定を復元する.
+    """
     root = logging.getLogger()
     original_handlers = root.handlers[:]
     original_level = root.level
@@ -228,6 +415,18 @@ async def test_worker_startup_configures_logging(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """Worker startupがmasking付きJSON loggingを設定する契約を検証する.
+
+    in-memory worker containerでstartupとshutdownを実行してlog eventを書き込む.
+    JSON logにeventが残りpasswordがmaskされることを確認する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): worker moduleのruntime dependencyを差し替えるfixture.
+        tmp_path (Path): worker logを隔離するtest専用directory.
+
+    Returns:
+        None: log内容とsecret maskingを検証して完了し,呼び出し側へ値を返さない.
+    """
     state = TaskiqState()
     config = _make_config(tmp_path)
     _install_in_memory_worker_container(monkeypatch, tmp_path=tmp_path, config=config)
@@ -251,6 +450,18 @@ async def test_worker_startup_sets_task_use_cases_from_dishka_container(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """Worker startupが全task use caseをDishka stateへ設定する契約を検証する.
+
+    in-memory providerでstartupを実行する.
+    containerとchatとbeatmapとscore taskの各use caseが期待した具象型でstateへ入ることを確認する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): worker moduleのruntime dependencyを差し替えるfixture.
+        tmp_path (Path): in-memory providerのstorageを隔離するtest専用directory.
+
+    Returns:
+        None: lifecycle stateの全dependencyを検証して完了し,呼び出し側へ値を返さない.
+    """
     state = TaskiqState()
     config = _make_config(tmp_path)
     _install_in_memory_worker_container(monkeypatch, tmp_path=tmp_path, config=config)
@@ -297,11 +508,32 @@ async def test_worker_startup_failure_closes_dishka_container(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """startup中のdependency解決失敗がcontainerをcloseしてstateを空にする契約を検証する.
+
+    file fetch解決で失敗するcontainer factoryを接続してstartupを実行する.
+    RuntimeError後に全state fieldがNoneでcontainer closeが1回となることを確認する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): worker moduleのcontainer factoryを失敗fakeへ差し替える
+            fixture.
+        tmp_path (Path): failure pathでも有効なtest設定を作るdirectory.
+
+    Returns:
+        None: failure cleanupのstateとclose回数を検証して完了し,呼び出し側へ値を返さない.
+    """
     state = TaskiqState()
     config = _make_config(tmp_path)
     failing_container = FailingWorkerContainer()
 
     def make_failing_worker_container(_: AppConfig) -> FailingWorkerContainer:
+        """startup失敗を再現する既存container fakeを返す.
+
+        Args:
+            _ (AppConfig): worker moduleがfactoryへ渡すtest設定.
+
+        Returns:
+            FailingWorkerContainer: file fetch解決を拒否する共有container fake.
+        """
         return failing_container
 
     monkeypatch.setattr(worker_module, "_config", config)
@@ -332,6 +564,18 @@ async def test_worker_runtime_chat_use_case_executes_persistence_task(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """Worker stateのchat use caseがqueue taskからmessageを永続化する契約を検証する.
+
+    in-memory workerをstartupしてprivate message taskを直接実行する.
+    container queryがsenderとtarget間の保存済みcontentを返すことを確認する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): worker moduleのruntime dependencyを差し替えるfixture.
+        tmp_path (Path): in-memory storageを隔離するtest専用directory.
+
+    Returns:
+        None: queue adapter経由のmessage永続化を検証して完了し,呼び出し側へ値を返さない.
+    """
     state = TaskiqState()
     config = _make_config(tmp_path)
     _install_in_memory_worker_container(monkeypatch, tmp_path=tmp_path, config=config)
@@ -363,6 +607,14 @@ async def test_worker_runtime_chat_use_case_executes_persistence_task(
 
 @pytest.mark.asyncio
 async def test_worker_shutdown_clears_runtime_state() -> None:
+    """Worker shutdownが全runtime stateをclearしてcontainerをcloseする契約を検証する.
+
+    全dependency fieldを持つTaskiq stateでshutdownを実行する.
+    各fieldがNoneになりcontainer fakeのclose回数が1になることを確認する.
+
+    Returns:
+        None: state clearとcontainer cleanupを検証して完了し,呼び出し側へ値を返さない.
+    """
     state = TaskiqState()
     dishka_container = FakeDishkaContainer()
     state.dishka_container = dishka_container

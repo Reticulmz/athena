@@ -1,8 +1,7 @@
-"""Integration tests for authorization refresh — InMemory implementations.
+"""In-memory authorization refreshがactive sessionへ反映されるcontractを検証する.
 
-Validates:
-- Task 4.2: role change → refresh → subsequent action sees updated authorization
-- Task 4.3: refresh does not delete sessions; logout still deletes sessions
+Notes:
+    Role変更後のrefreshとsession保持をin-memory repository/storeで検証する.
 """
 
 from __future__ import annotations
@@ -54,7 +53,14 @@ def _make_services() -> tuple[
     InMemorySessionStore,
     InMemoryRoleCommandRepository,
 ]:
-    """Create SessionAuthorizationService with InMemory implementations."""
+    """Authorization refresh integration test用のin-memory dependency群を構築する.
+
+    Returns:
+        tuple: service, session store, role command repositoryの順のtest dependency.
+
+    Notes:
+        全roleをseedし, command/query repositoryが同一in-memory stateを共有する.
+    """
     state = InMemoryCommandRepositoryState()
     uow_factory = InMemoryUnitOfWorkFactory(state)
     role_repo = InMemoryRoleCommandRepository(state)
@@ -80,6 +86,17 @@ def _make_session(
     privileges: int = _DEFAULT_PRIVILEGES,
     role_ids: tuple[int, ...] = (1,),
 ) -> SessionData:
+    """Authorization refresh test用のactive session dataを構築する.
+
+    Args:
+        user_id (int): sessionを所有するtest user ID.
+        username (str): sessionに保存するdisplay name.
+        privileges (int): refresh前のserver-side privilege bitmask.
+        role_ids (tuple[int, ...]): refresh前のassigned role ID列.
+
+    Returns:
+        SessionData: Japan client metadataと指定authorizationを持つsession data.
+    """
     return SessionData(
         user_id=user_id,
         username=username,
@@ -98,11 +115,15 @@ def _make_session(
 
 
 class TestRefreshedAuthorizationInSession:
-    """Role 変更後に refresh すると session の認可が更新される。"""
+    """Role変更後のrefreshがactive session authorizationを更新するcontractを検証する."""
 
     @pytest.mark.asyncio
     async def test_role_permission_change_updates_session_authorization(self) -> None:
-        """role の permissions 変更 → refresh → session が新しい権限を反映する。"""
+        """Role permission変更後のrefreshがsession privilegeを更新するcontractを検証する.
+
+        Returns:
+            None: active sessionが変更後のrole privilegeを持つことを確認して完了する.
+        """
         svc, store, repo = _make_services()
 
         # Setup: user 1 has Default role, active session
@@ -140,7 +161,11 @@ class TestRefreshedAuthorizationInSession:
 
     @pytest.mark.asyncio
     async def test_new_role_grant_updates_session_after_refresh(self) -> None:
-        """新しい role を付与 → refresh → session が追加された権限を反映する。"""
+        """Role grant後のuser refreshがsession roleとprivilegeを更新するcontractを検証する.
+
+        Returns:
+            None: active sessionが新しいrole IDとcombined privilegeを持つことを確認する.
+        """
         svc, store, repo = _make_services()
 
         # Setup: user 1 has only Default role
@@ -164,10 +189,13 @@ class TestRefreshedAuthorizationInSession:
 
     @pytest.mark.asyncio
     async def test_role_revoke_removes_permission_after_refresh(self) -> None:
-        """role 剥奪 → refresh → session から該当権限が除去される。
+        """Role revoke後のrefreshがsessionからrevoke済みprivilegeを除去するcontractを検証する.
 
-        This is the "equivalent ACL transition" proving that access can be
-        granted and then revoked without re-login.
+        Returns:
+            None: re-loginなしでgranted privilegeをrevokeできることを確認して完了する.
+
+        Notes:
+            Grantとrevokeを連続して適用するequivalent ACL transitionを検証する.
         """
         svc, store, repo = _make_services()
 
@@ -194,7 +222,11 @@ class TestRefreshedAuthorizationInSession:
 
     @pytest.mark.asyncio
     async def test_non_session_fields_preserved_after_refresh(self) -> None:
-        """refresh 後も認可以外の session fields は保持される。"""
+        """Authorization refreshがsessionのnon-authorization fieldを保持するcontractを検証する.
+
+        Returns:
+            None: privilege更新後もprofileとclient metadataが不変であることを確認する.
+        """
         svc, store, repo = _make_services()
 
         await repo.assign_role(user_id=1, role_id=ROLE_DEFAULT.id)
@@ -244,11 +276,15 @@ class TestRefreshedAuthorizationInSession:
 
 
 class TestRefreshDoesNotInvalidateSession:
-    """refresh は session を削除せず、logout は session を削除する。"""
+    """Authorization refreshがsessionを無効化しないcontractを検証する."""
 
     @pytest.mark.asyncio
     async def test_refresh_preserves_session_existence(self) -> None:
-        """refresh 後も session は存在し、token は有効。"""
+        """Authorization refresh後もsession tokenが有効なままであるcontractを検証する.
+
+        Returns:
+            None: refresh前後でsession existenceとuser lookupが保持されることを確認する.
+        """
         svc, store, repo = _make_services()
 
         await repo.assign_role(user_id=1, role_id=ROLE_DEFAULT.id)
@@ -268,7 +304,11 @@ class TestRefreshDoesNotInvalidateSession:
 
     @pytest.mark.asyncio
     async def test_delete_by_user_still_deletes_session(self) -> None:
-        """delete_by_user は引き続き session を削除する (logout path)。"""
+        """Logout pathのdelete_by_userがsessionを削除するcontractを検証する.
+
+        Returns:
+            None: tokenとuser lookupの両方が削除されることを確認して完了する.
+        """
         store = InMemorySessionStore()
         await store.create(user_id=1, token="token-abc", data=_make_session())
 
@@ -281,7 +321,11 @@ class TestRefreshDoesNotInvalidateSession:
 
     @pytest.mark.asyncio
     async def test_no_active_session_returns_no_active(self) -> None:
-        """session がない user の refresh は NO_ACTIVE_SESSION を返し、session を作成しない。"""
+        """Active sessionがないuserのrefreshがNO_ACTIVE_SESSIONを返すcontractを検証する.
+
+        Returns:
+            None: refreshがnew sessionを作成せずstatusだけを返すことを確認して完了する.
+        """
         svc, store, repo = _make_services()
 
         await repo.assign_role(user_id=1, role_id=ROLE_DEFAULT.id)

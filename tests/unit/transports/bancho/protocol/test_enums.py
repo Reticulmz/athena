@@ -1,10 +1,6 @@
-"""Tests for ClientPacketID and ServerPacketID enums.
+"""ClientPacketID と ServerPacketID の stable Bancho wire ID を検証する.
 
-Validates:
-- Req 2.1: ClientPacketID contains all C2S packet IDs
-- Req 2.2: ServerPacketID contains all S2C packet IDs
-- Req 2.3: Two enums are independent; same numeric ID can coexist
-- Req 2.4: Values conform to bancho-documentation Wiki (ID 0-109)
+各 direction の enum member, IntEnum contract, 同一数値 ID の独立性を確認する.
 """
 
 from enum import IntEnum
@@ -18,16 +14,30 @@ from osu_server.transports.stable.bancho.protocol.enums import (
 
 
 class TestClientPacketID:
-    """ClientPacketID enum tests."""
+    """C2S ClientPacketID enum の member と IntEnum contract を検証する."""
 
     def test_is_int_enum(self) -> None:
+        """ClientPacketID が IntEnum の subclass であることを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         assert issubclass(ClientPacketID, IntEnum)
 
     def test_total_count(self) -> None:
+        """ClientPacketID が C2S protocol の 49 member を持つことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         assert len(ClientPacketID) == 49
 
     def test_known_values(self) -> None:
-        """Spot-check representative C2S packet IDs."""
+        """代表的な C2S packet ID が固定 wire値と一致することを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         assert ClientPacketID.STATUS_CHANGE == 0
         assert ClientPacketID.SEND_MESSAGE == 1
         assert ClientPacketID.EXIT == 2
@@ -44,7 +54,11 @@ class TestClientPacketID:
         assert ClientPacketID.TOURNAMENT_LEAVE_MATCH_CHANNEL == 109
 
     def test_all_expected_members(self) -> None:
-        """Verify every expected C2S member exists with correct value."""
+        """全 C2S enum member が期待する名前と wire値を持つことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         expected: dict[str, int] = {
             "STATUS_CHANGE": 0,
             "SEND_MESSAGE": 1,
@@ -100,7 +114,11 @@ class TestClientPacketID:
         assert actual == expected
 
     def test_int_coercion(self) -> None:
-        """IntEnum members are usable as plain ints."""
+        """ClientPacketID member が plain int として利用できることを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         assert int(ClientPacketID.EXIT) == 2
         assert ClientPacketID.PONG + 1 == 5
 
@@ -109,16 +127,30 @@ class TestClientPacketID:
 
 
 class TestServerPacketID:
-    """ServerPacketID enum tests."""
+    """S2C ServerPacketID enum の member と IntEnum contract を検証する."""
 
     def test_is_int_enum(self) -> None:
+        """ServerPacketID が IntEnum の subclass であることを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         assert issubclass(ServerPacketID, IntEnum)
 
     def test_total_count(self) -> None:
+        """ServerPacketID が S2C protocol の 62 member を持つことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         assert len(ServerPacketID) == 62
 
     def test_known_values(self) -> None:
-        """Spot-check representative S2C packet IDs."""
+        """代表的な S2C packet ID が固定 wire値と一致することを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         assert ServerPacketID.LOGIN_REPLY == 5
         assert ServerPacketID.SEND_MESSAGE == 7
         assert ServerPacketID.PING == 8
@@ -136,12 +168,20 @@ class TestServerPacketID:
         assert ServerPacketID.SWITCH_TOURNAMENT_SERVER == 107
 
     def test_match_start_and_all_players_loaded_match_lekuruu(self) -> None:
-        """Guard S2C 45/46 ordering from Lekuruu packet file names."""
+        """Lekuruu packet file 名に従う S2C ID 45 と 46 の順序を検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         assert ServerPacketID.ALL_PLAYERS_LOADED == 45
         assert ServerPacketID.MATCH_START == 46
 
     def test_all_expected_members(self) -> None:
-        """Verify every expected S2C member exists with correct value."""
+        """全 S2C enum member が期待する名前と wire値を持つことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         expected: dict[str, int] = {
             "LOGIN_REPLY": 5,
             "COMMAND_ERROR": 6,
@@ -210,7 +250,11 @@ class TestServerPacketID:
         assert actual == expected
 
     def test_int_coercion(self) -> None:
-        """IntEnum members are usable as plain ints."""
+        """ServerPacketID member が plain int として利用できることを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         assert int(ServerPacketID.LOGIN_REPLY) == 5
         assert ServerPacketID.PING + 1 == 9
 
@@ -219,21 +263,34 @@ class TestServerPacketID:
 
 
 class TestEnumSeparation:
-    """Verify C2S and S2C enums are independent."""
+    """C2S と S2C packet ID enum が独立していることを検証する."""
 
     def test_shared_numeric_ids_exist_in_both(self) -> None:
-        """IDs like 50 appear in both enums with different names."""
+        """数値 ID 50 が両 direction に異なる member 名で存在することを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         c2s_50 = ClientPacketID(50)
         s2c_50 = ServerPacketID(50)
         assert c2s_50.name == "MATCH_CHANGE_BEATMAP"
         assert s2c_50.name == "MATCH_TRANSFER_HOST"
 
     def test_enums_are_distinct_types(self) -> None:
+        """ClientPacketID と ServerPacketID が異なる enum type であることを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         assert ClientPacketID is not ServerPacketID
         assert type(ClientPacketID.SEND_MESSAGE) is not type(ServerPacketID.SEND_MESSAGE)
 
     def test_same_name_different_value(self) -> None:
-        """SEND_MESSAGE exists in both but with different numeric IDs."""
+        """SEND_MESSAGE が両 direction で異なる数値 ID を持つことを検証する.
+
+        Returns:
+            None: 処理を完了し, 呼び出し側へ値を返さない.
+        """
         assert ClientPacketID.SEND_MESSAGE == 1
         assert ServerPacketID.SEND_MESSAGE == 7
         assert ClientPacketID.SEND_MESSAGE != ServerPacketID.SEND_MESSAGE

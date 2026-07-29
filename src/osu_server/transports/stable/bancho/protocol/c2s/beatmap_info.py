@@ -1,4 +1,4 @@
-"""BEATMAP_INFO の C2S request payload 定義。"""
+"""BEATMAP_INFOのC2S request payloadを定義する."""
 
 from typing import Annotated
 
@@ -12,28 +12,16 @@ from osu_server.transports.stable.bancho.protocol.types import BanchoString
 
 @cpstruct(order=LittleEndian)
 class BeatmapInfoRequest:
-    """BEATMAP_INFO の filename / beatmap ID 混在 request payload を表す。
+    """BEATMAP_INFOのfilenameとbeatmap ID混在request payloadを表す.
 
     Attributes:
-        filename_count (int): `filenames` の要素数を示す signed int32。wire 上では
-            最初に配置され、`len(filenames)` と一致しなければならない。
-        filenames (list[str]): filename request の BanchoString 一覧。直前の
-            `filename_count` 件を入力順で保持する。
-        id_count (int): `beatmap_ids` の要素数を示す signed int32。filename
-            collection の直後に配置され、`len(beatmap_ids)` と一致しなければ
-            ならない。
-        beatmap_ids (list[int]): beatmap ID の signed int32 一覧。直前の
-            `id_count` 件を入力順で保持する。
-
-    Raises:
-        Caterpillar の pack / unpack 例外: signed int32 の表現可能範囲を超える
-            count または beatmap ID を pack する場合、または必要な field bytes が
-            欠けた payload を unpack する場合に送出され得る。
+        filename_count (int): filenamesの要素数を示すsigned int32. wire先頭に配置する.
+        filenames (list[str]): filename_count件のBanchoString filenameを入力順に保持する.
+        id_count (int): beatmap_idsの要素数を示すsigned int32. filename collectionの直後に置く.
+        beatmap_ids (list[int]): id_count件のsigned int32 beatmap IDを入力順に保持する.
 
     Notes:
-        この struct は count を自動計算せず、負の count、trailing bytes、最大件数、
-        request の参照先に対する独自の policy を加えない。これらの packet-level
-        policy は後続の C2S parser または runtime workflow の責務である。
+        このstructはcountを自動計算せず, countとlist長の整合性も検証しない.
     """
 
     filename_count: Annotated[int, int32]

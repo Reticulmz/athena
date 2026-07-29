@@ -1,4 +1,4 @@
-"""Score query use-case package."""
+"""スコアに関する読み取り専用 query use-case を公開する."""
 
 from osu_server.services.queries.scores.beatmap_leaderboards import (
     BeatmapLeaderboardHeader,

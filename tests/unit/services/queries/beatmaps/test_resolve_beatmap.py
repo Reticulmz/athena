@@ -1,4 +1,4 @@
-"""Unit tests for beatmap resolution query use-case."""
+"""beatmap解決queryのunit testを定義する."""
 
 from __future__ import annotations
 
@@ -26,9 +26,20 @@ from osu_server.services.queries.beatmaps.resolve_beatmap import (
 
 
 class BeatmapQueryRepositoryStub:
-    """Typed test double for the read-only beatmap query repository."""
+    """read-only beatmap query repositoryのtyped test doubleを提供する.
+
+    Attributes:
+        beatmaps_by_id (dict[int, Beatmap]): beatmap IDで参照するbeatmap.
+        beatmapsets_by_id (dict[int, BeatmapSet]): beatmapset IDで参照するbeatmapset.
+        beatmap_id_by_checksum (dict[str, int]): MD5 checksumから解決するbeatmap ID.
+        attachments_by_beatmap_id (dict[int, BeatmapFileAttachment]): beatmap IDに対応する
+            file attachment.
+        fetch_states_by_target (dict[BeatmapFetchTarget, BeatmapFetchRecord]): 取得対象ごとの
+            保存済みfetch state.
+    """
 
     def __init__(self) -> None:
+        """空のread modelを持つrepository stubを初期化する."""
         self.beatmaps_by_id: dict[int, Beatmap] = {}
         self.beatmapsets_by_id: dict[int, BeatmapSet] = {}
         self.beatmap_id_by_checksum: dict[str, int] = {}
@@ -36,12 +47,36 @@ class BeatmapQueryRepositoryStub:
         self.fetch_states_by_target: dict[BeatmapFetchTarget, BeatmapFetchRecord] = {}
 
     async def get_beatmap(self, beatmap_id: int) -> Beatmap | None:
+        """Beatmap IDに一致する保存済みbeatmapを返す.
+
+        Args:
+            beatmap_id (int): 検索するbeatmapの識別子.
+
+        Returns:
+            Beatmap | None: 一致するbeatmap. 未登録の場合はNone.
+        """
         return self.beatmaps_by_id.get(beatmap_id)
 
     async def get_beatmapset(self, beatmapset_id: int) -> BeatmapSet | None:
+        """Beatmapset IDに一致する保存済みbeatmapsetを返す.
+
+        Args:
+            beatmapset_id (int): 検索するbeatmapsetの識別子.
+
+        Returns:
+            BeatmapSet | None: 一致するbeatmapset. 未登録の場合はNone.
+        """
         return self.beatmapsets_by_id.get(beatmapset_id)
 
     async def get_beatmap_by_checksum(self, checksum_md5: str) -> Beatmap | None:
+        """MD5 checksumに一致する保存済みbeatmapを返す.
+
+        Args:
+            checksum_md5 (str): 検索するbeatmap fileのMD5 checksum.
+
+        Returns:
+            Beatmap | None: checksumに対応するbeatmap. 未登録の場合はNone.
+        """
         beatmap_id = self.beatmap_id_by_checksum.get(checksum_md5)
         if beatmap_id is None:
             return None
@@ -50,6 +85,15 @@ class BeatmapQueryRepositoryStub:
     async def get_beatmap_by_filename_in_beatmapset(
         self, beatmapset_id: int, original_filename: str
     ) -> Beatmap | None:
+        """beatmapset内で元file名に一致するbeatmapを返す.
+
+        Args:
+            beatmapset_id (int): 検索対象のbeatmapset識別子.
+            original_filename (str): 一致を確認する元のfile名.
+
+        Returns:
+            Beatmap | None: file attachmentの元file名が一致するbeatmap. 見つからない場合はNone.
+        """
         beatmapset = self.beatmapsets_by_id.get(beatmapset_id)
         if beatmapset is None:
             return None
@@ -60,21 +104,45 @@ class BeatmapQueryRepositoryStub:
         return None
 
     async def get_current_file_attachment(self, beatmap_id: int) -> BeatmapFileAttachment | None:
+        """Beatmap IDに対応する現在のfile attachmentを返す.
+
+        Args:
+            beatmap_id (int): file attachmentを検索するbeatmapの識別子.
+
+        Returns:
+            BeatmapFileAttachment | None: 保存済みの現在のfile attachment. 未登録の場合はNone.
+        """
         return self.attachments_by_beatmap_id.get(beatmap_id)
 
     async def get_fetch_state(self, target: BeatmapFetchTarget) -> BeatmapFetchRecord | None:
+        """取得対象に対応する保存済みfetch stateを返す.
+
+        Args:
+            target (BeatmapFetchTarget): 状態を検索する取得対象.
+
+        Returns:
+            BeatmapFetchRecord | None: 保存済みfetch state. 未登録の場合はNone.
+        """
         return self.fetch_states_by_target.get(target)
 
 
 @pytest.fixture
 def beatmap_query_repo() -> BeatmapQueryRepositoryStub:
-    """Typed beatmap query repository stub."""
+    """空のbeatmap query repository fixtureを提供する.
+
+    Returns:
+        BeatmapQueryRepositoryStub: testごとに独立した空のread model.
+    """
     return BeatmapQueryRepositoryStub()
 
 
 @pytest.fixture
 def sample_beatmap() -> Beatmap:
-    """Sample beatmap for testing."""
+    """解決成功契約に使うranked beatmap fixtureを提供する.
+
+    Returns:
+        Beatmap: attachmentを持たずfresh metadataを持つbeatmap.
+    """
     return Beatmap(
         id=123,
         beatmapset_id=456,
@@ -104,7 +172,11 @@ def sample_beatmap() -> Beatmap:
 
 @pytest.fixture
 def sample_beatmapset() -> BeatmapSet:
-    """Sample beatmapset for testing."""
+    """解決成功契約に使うranked beatmapset fixtureを提供する.
+
+    Returns:
+        BeatmapSet: 空のbeatmap一覧を持つbeatmapset.
+    """
     return BeatmapSet(
         id=456,
         artist="Test Artist",
@@ -122,12 +194,21 @@ def sample_beatmapset() -> BeatmapSet:
 
 
 class TestResolveBeatmapByIdQuery:
-    """Tests for resolve beatmap by ID query use-case."""
+    """IDによるbeatmap解決queryのread contractを検証する."""
 
     async def test_returns_none_when_beatmap_not_found(
         self, beatmap_query_repo: BeatmapQueryRepositoryStub
     ) -> None:
-        """Query returns None when beatmap doesn't exist."""
+        """存在しないbeatmap IDのunavailable結果を検証する.
+
+        空のrepositoryで解決queryを実行し,beatmapとbeatmapsetがともにNoneのまま返ることを確認する.
+
+        Args:
+            beatmap_query_repo (BeatmapQueryRepositoryStub): 空のbeatmap read model fixture.
+
+        Returns:
+            None: unavailable結果の公開fieldを検証して完了する.
+        """
         query = ResolveBeatmapByIdQuery(beatmap_query_repo)
         result = await query.execute(beatmap_id=999, options=None)
 
@@ -140,7 +221,20 @@ class TestResolveBeatmapByIdQuery:
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
     ) -> None:
-        """Query returns beatmap and beatmapset when they exist."""
+        """保存済みbeatmap IDの解決結果とmetadata stateを検証する.
+
+        beatmapとbeatmapsetをrepositoryへ登録してqueryを実行し,両方のobjectとfresh metadata
+        stateが返ることを確認する.
+
+        Args:
+            beatmap_query_repo (BeatmapQueryRepositoryStub): 保存済みobjectを登録するbeatmap
+                read model fixture.
+            sample_beatmap (Beatmap): 解決対象として登録するbeatmap fixture.
+            sample_beatmapset (BeatmapSet): beatmapに対応して登録するbeatmapset fixture.
+
+        Returns:
+            None: 解決結果とmetadata stateを検証して完了する.
+        """
         beatmap_query_repo.beatmaps_by_id[sample_beatmap.id] = sample_beatmap
         beatmap_query_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
 
@@ -153,12 +247,22 @@ class TestResolveBeatmapByIdQuery:
 
 
 class TestResolveBeatmapByChecksumQuery:
-    """Tests for resolve beatmap by checksum query use-case."""
+    """MD5 checksumによるbeatmap解決queryのread contractを検証する."""
 
     async def test_returns_none_when_beatmap_not_found_by_checksum(
         self, beatmap_query_repo: BeatmapQueryRepositoryStub
     ) -> None:
-        """Query returns None when beatmap with checksum doesn't exist."""
+        """未登録MD5 checksumのunavailable結果を検証する.
+
+        空のrepositoryでqueryを実行し,beatmapとbeatmapsetがともにNoneのまま返ることを確認する.
+
+        Args:
+            beatmap_query_repo (BeatmapQueryRepositoryStub): checksum対応付けを持たない
+                beatmap read model fixture.
+
+        Returns:
+            None: unavailable結果の公開fieldを検証して完了する.
+        """
         query = ResolveBeatmapByChecksumQuery(beatmap_query_repo)
         result = await query.execute(checksum_md5="nonexistent", options=None)
 
@@ -171,7 +275,19 @@ class TestResolveBeatmapByChecksumQuery:
         sample_beatmap: Beatmap,
         sample_beatmapset: BeatmapSet,
     ) -> None:
-        """Query returns beatmap when found by checksum."""
+        """保存済みMD5 checksumがbeatmapとbeatmapsetへ解決されることを検証する.
+
+        checksum対応付けと保存済みobjectを登録してqueryを実行し,対応するbeatmapとbeatmapsetが返ることを確認する.
+
+        Args:
+            beatmap_query_repo (BeatmapQueryRepositoryStub): checksum対応付けとobjectを登録する
+                beatmap read model fixture.
+            sample_beatmap (Beatmap): checksumから解決するbeatmap fixture.
+            sample_beatmapset (BeatmapSet): 解決結果に含めるbeatmapset fixture.
+
+        Returns:
+            None: checksum解決結果を検証して完了する.
+        """
         beatmap_query_repo.beatmaps_by_id[sample_beatmap.id] = sample_beatmap
         beatmap_query_repo.beatmapsets_by_id[sample_beatmapset.id] = sample_beatmapset
         beatmap_query_repo.beatmap_id_by_checksum[sample_beatmap.checksum_md5] = sample_beatmap.id
@@ -186,7 +302,18 @@ class TestResolveBeatmapByChecksumQuery:
         self,
         beatmap_query_repo: BeatmapQueryRepositoryStub,
     ) -> None:
-        """Query returns explicit unavailable result structure."""
+        """未登録MD5 checksumの明示的なpending fetch結果を検証する.
+
+        fetch stateを持たないrepositoryでqueryを実行し,read dataを補完せずpending fetch
+        stateを返すことを確認する.
+
+        Args:
+            beatmap_query_repo (BeatmapQueryRepositoryStub): fetch stateを持たないbeatmap read
+                model fixture.
+
+        Returns:
+            None: unavailable結果の構造とpending stateを検証して完了する.
+        """
         query = ResolveBeatmapByChecksumQuery(beatmap_query_repo)
         result = await query.execute(checksum_md5="missing", options=None)
 
@@ -199,7 +326,18 @@ class TestResolveBeatmapByChecksumQuery:
         self,
         beatmap_query_repo: BeatmapQueryRepositoryStub,
     ) -> None:
-        """Query returns stored fetch state instead of mutating to fill read data."""
+        """保存済みfetch stateをread dataの補完なしで反映することを検証する.
+
+        failed fetch recordを登録してqueryを実行し,beatmapを作成せず保存済みfailed stateを
+        返すことを確認する.
+
+        Args:
+            beatmap_query_repo (BeatmapQueryRepositoryStub): failed fetch recordを登録する
+                beatmap read model fixture.
+
+        Returns:
+            None: 非mutatingなunavailable結果を検証して完了する.
+        """
         target = BeatmapFetchTarget.metadata_by_checksum("missing")
         beatmap_query_repo.fetch_states_by_target[target] = BeatmapFetchRecord(
             target=target,

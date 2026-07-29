@@ -1,4 +1,4 @@
-"""Tests for bancho workflow contract value objects."""
+"""Bancho workflowのtransport-local value object contractを検証する."""
 
 import ast
 import inspect
@@ -18,10 +18,25 @@ from osu_server.transports.stable.bancho.workflows import polling as polling_wor
 
 
 def _try_set_attribute(instance: object, name: str, value: object) -> None:
+    """Frozen dataclassへのattribute代入を試行する.
+
+    Args:
+        instance (object): attributeを書き換える対象object.
+        name (str): 代入対象attribute名.
+        value (object): 設定を試みる値.
+
+    Returns:
+        None: setattrを実行して完了し, 呼び出し側へ値を返さない.
+    """
     setattr(instance, name, value)
 
 
 def test_login_workflow_contracts_are_transport_local_value_objects() -> None:
+    """LoginWorkflowのinputとresultがslots付きfrozen value objectであることを検証する.
+
+    Returns:
+        None: field順, 値, slots, immutabilityを検証して完了し, 呼び出し側へ値を返さない.
+    """
     login_input = LoginWorkflowInput(body=b"login", headers={"X-Real-IP": "127.0.0.1"})
     login_result = LoginWorkflowResult(content=b"s2c", cho_token="token")
 
@@ -40,6 +55,11 @@ def test_login_workflow_contracts_are_transport_local_value_objects() -> None:
 
 
 def test_polling_workflow_contracts_are_transport_local_value_objects() -> None:
+    """PollingWorkflowのinputとresultがslots付きfrozen value objectであることを検証する.
+
+    Returns:
+        None: field順, 値, slots, immutabilityを検証して完了し, 呼び出し側へ値を返さない.
+    """
     polling_input = PollingWorkflowInput(token="token", body=b"c2s")
     polling_result = PollingWorkflowResult(content=b"queued-s2c")
 
@@ -58,6 +78,11 @@ def test_polling_workflow_contracts_are_transport_local_value_objects() -> None:
 
 
 def test_workflow_contract_modules_do_not_import_starlette() -> None:
+    """loginとpolling workflow moduleがStarletteへ依存しない契約を検証する.
+
+    Returns:
+        None: import ASTにstarlette moduleがないことを検証して完了し, 呼び出し側へ値を返さない.
+    """
     workflow_sources = (
         inspect.getsource(login_workflow_module),
         inspect.getsource(polling_workflow_module),
@@ -75,5 +100,10 @@ def test_workflow_contract_modules_do_not_import_starlette() -> None:
 
 
 def test_workflow_package_does_not_export_legacy_login_handler_alias() -> None:
+    """Workflow packageが廃止済みLoginHandler aliasをexportしない契約を検証する.
+
+    Returns:
+        None: __all__とmodule attributeの両方を検証して完了し, 呼び出し側へ値を返さない.
+    """
     assert "LoginHandler" not in workflows.__all__
     assert not hasattr(workflows, "LoginHandler")

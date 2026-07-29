@@ -1,4 +1,4 @@
-"""SQL query diagnostics collector tests."""
+"""SQL query diagnostics collectorのredactionとbudget契約を検証するmodule."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 
 class QueryBudget(Protocol):
-    """query_budget fixture の型 contract."""
+    """query_budget fixtureが提供するcontext manager factoryの型contractを表す."""
 
     def __call__(
         self,
@@ -29,22 +29,42 @@ class QueryBudget(Protocol):
         max_queries: int,
         name: str,
         duplicate_threshold: int = 2,
-    ) -> AbstractContextManager[None]: ...
+    ) -> AbstractContextManager[None]:
+        """指定budgetを持つquery diagnostics scopeを生成する.
+
+        Args:
+            max_queries (int): scope内で許容する最大query数.
+            name (str): failure messageへ表示するscope名.
+            duplicate_threshold (int): duplicateとして報告する最小同一template数.
+
+        Returns:
+            AbstractContextManager[None]: query数を収集してbudgetを検証するcontext manager.
+        """
+        ...
 
 
 class _SyncEngine:
-    """SQLAlchemy sync engine の最小テストダブル."""
+    """SQLAlchemy sync engineを表すattributeなしの最小test double."""
 
 
 class _AsyncEngine:
-    """AsyncEngine.sync_engine を持つ最小テストダブル."""
+    """AsyncEngine.sync_engineを公開する最小test double.
+
+    Attributes:
+        sync_engine (_SyncEngine): listenerを登録する同期engine fake.
+    """
 
     def __init__(self) -> None:
+        """listener登録先として使う同期engine fakeを初期化する."""
         self.sync_engine: _SyncEngine = _SyncEngine()
 
 
 def test_scope_records_duplicate_templates_without_parameters() -> None:
-    """SQL params と literal を保存せず, redacted template で duplicate を集計する."""
+    """SQL parameterとliteralを保存せずredacted templateでduplicateを集計することを検証する.
+
+    Returns:
+        None: redacted summaryとsecret非出力を検証して完了する.
+    """
     with query_diagnostic_scope(
         scope_kind="test",
         scope_name="score submission",
@@ -79,7 +99,11 @@ def test_scope_records_duplicate_templates_without_parameters() -> None:
 
 
 def test_scope_redacts_matching_dollar_quoted_literal_tag() -> None:
-    """Dollar-quoted literal は同一 tag の終端までまとめて redaction する."""
+    """Dollar-quoted literalを同一tagの終端までまとめてredactすることを検証する.
+
+    Returns:
+        None: redacted SQL prefixとliteral非出力を検証して完了する.
+    """
     with query_diagnostic_scope(
         scope_kind="test",
         scope_name="dollar quoted",
@@ -98,7 +122,11 @@ def test_scope_redacts_matching_dollar_quoted_literal_tag() -> None:
 
 
 def test_record_query_without_scope_is_noop() -> None:
-    """Active scope がない SQL event は記録されない."""
+    """Active scopeがないSQL eventが記録されないことを検証する.
+
+    Returns:
+        None: 空scopeのquery countを検証して完了する.
+    """
     record_query("SELECT $1", parameters={"token": "secret-token"})
 
     with query_diagnostic_scope(
@@ -112,7 +140,11 @@ def test_record_query_without_scope_is_noop() -> None:
 
 
 def test_scope_reset_prevents_query_leakage_between_scopes() -> None:
-    """Contextvar reset により別 scope の query が混ざらない."""
+    """ContextVar resetにより別scope間でqueryが混ざらないことを検証する.
+
+    Returns:
+        None: 独立scopeごとのquery countを検証して完了する.
+    """
     with query_diagnostic_scope(
         scope_kind="test",
         scope_name="first",
@@ -133,10 +165,27 @@ def test_scope_reset_prevents_query_leakage_between_scopes() -> None:
 
 
 def test_install_query_diagnostics_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
-    """同じ engine への listener 二重登録を防ぐ."""
+    """同じengineへquery diagnostics listenerを二重登録しないことを検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): SQLAlchemy listener関数をrecording fakeへ置換するfixture.
+
+    Returns:
+        None: listener登録回数とtarget engineを検証して完了する.
+    """
     listened: list[tuple[object, str, object]] = []
 
     def listen(engine: object, event_name: str, callback: object) -> None:
+        """Listener登録requestを記録してidempotency assertionへ渡す.
+
+        Args:
+            engine (object): listener登録対象のsync engine.
+            event_name (str): SQLAlchemy event名.
+            callback (object): event発生時に呼び出すcallback.
+
+        Returns:
+            None: 登録requestを記録して値を返さず完了する.
+        """
         listened.append((engine, event_name, callback))
 
     monkeypatch.setattr(sqlalchemy_event, "listen", listen)
@@ -153,7 +202,11 @@ def test_install_query_diagnostics_is_idempotent(monkeypatch: pytest.MonkeyPatch
 
 
 def test_duplicate_summary_is_bounded_and_reports_truncation() -> None:
-    """Duplicate summary は上位件数に制限し, truncation を明示する."""
+    """Duplicate summaryが上位件数へ制限されtruncationを示すことを検証する.
+
+    Returns:
+        None: total数とtruncation flagおよびreported件数を検証して完了する.
+    """
     with query_diagnostic_scope(
         scope_kind="test",
         scope_name="many duplicates",
@@ -173,7 +226,14 @@ def test_duplicate_summary_is_bounded_and_reports_truncation() -> None:
 
 
 def test_query_budget_fixture_allows_within_limit(query_budget: QueryBudget) -> None:
-    """Budget 内の query count は test failure にしない."""
+    """budget内のquery countではquery_budget fixtureがfailureにしないことを検証する.
+
+    Args:
+        query_budget (QueryBudget): query数を計測してbudgetを検証するfixture.
+
+    Returns:
+        None: 許容queryを実行して例外なく完了する.
+    """
     with query_budget(max_queries=1, name="unit budget"):
         record_query("SELECT 1")
 
@@ -181,7 +241,14 @@ def test_query_budget_fixture_allows_within_limit(query_budget: QueryBudget) -> 
 def test_query_budget_fixture_fails_with_redacted_summary(
     query_budget: QueryBudget,
 ) -> None:
-    """Budget 超過時は params を出さずに query summary を返す."""
+    """budget超過時にparameterを出さないquery summaryでfailureになることを検証する.
+
+    Args:
+        query_budget (QueryBudget): query数を計測してbudgetを検証するfixture.
+
+    Returns:
+        None: redacted failure messageの内容とsecret非出力を検証して完了する.
+    """
     with (
         pytest.raises(AssertionError) as exc_info,
         query_budget(max_queries=0, name="secret-free", duplicate_threshold=1),

@@ -1,4 +1,4 @@
-"""Score bounded-context ownership tests."""
+"""Score bounded contextへの移設とdeprecated import禁止を検証するmodule."""
 
 from __future__ import annotations
 
@@ -50,6 +50,14 @@ DEPRECATED_SCORE_IMPORT_ROOT = "osu_server.domain.score"
 
 
 def test_score_domain_concepts_import_from_scores_context() -> None:
+    """Score domainの公開conceptがscores contextから提供されることを検証する.
+
+    各conceptをscores packageからimportし,期待するclassまたはfunction名で公開される観測結果を
+    確認する.
+
+    Returns:
+        None: 公開import境界を検証して完了し,呼び出し側へ値を返さない.
+    """
     assert DecryptedPayload.__name__ == "DecryptedPayload"
     assert ParsedScore.__name__ == "ParsedScore"
     assert ParseError.__name__ == "ParseError"
@@ -65,6 +73,13 @@ def test_score_domain_concepts_import_from_scores_context() -> None:
 
 
 def test_old_score_context_locations_are_not_supported() -> None:
+    """廃止したscore contextのsource fileがrepositoryに残らないことを検証する.
+
+    旧packageの全pathを確認し,存在する相対pathの一覧が空になる観測結果を確認する.
+
+    Returns:
+        None: 旧source pathの不在を検証して完了し,呼び出し側へ値を返さない.
+    """
     remaining = [
         path.relative_to(PROJECT_ROOT).as_posix()
         for path in OLD_SCORE_CONTEXT_PATHS
@@ -75,6 +90,14 @@ def test_old_score_context_locations_are_not_supported() -> None:
 
 
 def test_cross_layer_and_tests_do_not_import_old_score_context() -> None:
+    """Production cross-layer codeとtestが旧score contextをimportしないことを検証する.
+
+    repositories,services,transports,jobs,testsのPython ASTを走査し,deprecated rootへのimport違反が
+    空になる観測結果を確認する.
+
+    Returns:
+        None: import境界を検証して完了し,呼び出し側へ値を返さない.
+    """
     violations = [
         f"{path.relative_to(PROJECT_ROOT).as_posix()} imports {module}"
         for root in CROSS_LAYER_AND_TEST_ROOTS
@@ -88,6 +111,14 @@ def test_cross_layer_and_tests_do_not_import_old_score_context() -> None:
 
 
 def test_deprecated_import_baseline_has_no_old_score_context() -> None:
+    """Deprecated import baselineが旧score contextを許容しないことを検証する.
+
+    baselineのrecorded import rootを読み,deprecated score rootに一致するentryがない観測結果を
+    確認する.
+
+    Returns:
+        None: baselineの禁止範囲を検証して完了し,呼び出し側へ値を返さない.
+    """
     entries = DEPRECATED_IMPORT_BASELINE.read_text(encoding="utf-8").splitlines()
     roots = [entry.split("\t", maxsplit=1)[1] for entry in entries if entry and "\t" in entry]
 
@@ -95,6 +126,17 @@ def test_deprecated_import_baseline_has_no_old_score_context() -> None:
 
 
 def _imported_modules(path: Path) -> set[str]:
+    """Python sourceのabsolute import module名をASTから収集する.
+
+    Args:
+        path (Path): 解析するUTF-8 encoded Python source file.
+
+    Returns:
+        set[str]: absolute importとfrom importで参照するmodule名の集合.
+
+    Notes:
+        relative importはdeprecated absolute package boundaryの判定対象外である.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.as_posix())
     modules: set[str] = set()
 
@@ -111,4 +153,13 @@ def _imported_modules(path: Path) -> set[str]:
 
 
 def _module_matches_root(module: str, root: str) -> bool:
+    """Module名がdeprecated root自身またはそのsubmoduleかを判定する.
+
+    Args:
+        module (str): 判定するabsolute module名.
+        root (str): 禁止するpackage root.
+
+    Returns:
+        bool: moduleがrootと等しいか,rootにASCII dotを続けたsubmoduleの場合はTrue.
+    """
     return module == root or module.startswith(f"{root}.")

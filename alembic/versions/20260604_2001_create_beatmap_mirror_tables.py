@@ -1,4 +1,4 @@
-"""create beatmap mirror tables
+"""beatmap mirror保存用schemaを作成するmigration.
 
 Revision ID: 20260604_2001
 Revises: 20260604_1846
@@ -17,6 +17,11 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """beatmap, attachment, fetch stateのmirror tableとindexを作成する.
+
+    Returns:
+        None: beatmap metadata, file attachment, fetch stateの保存schemaを作成したことを示す.
+    """
     op.create_table(
         "beatmapsets",
         sa.Column("id", sa.Integer, primary_key=True, autoincrement=False),
@@ -137,6 +142,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Beatmap mirror保存schemaを外部keyの依存順で削除する.
+
+    Returns:
+        None: fetch state, attachment, beatmap, beatmapsetのtableとindexを削除したことを示す.
+    """
     op.drop_index("idx_beatmap_fetch_states_target_lookup", table_name="beatmap_fetch_states")
     op.drop_table("beatmap_fetch_states")
     op.drop_index("idx_beatmap_file_attachments_blob", table_name="beatmap_file_attachments")

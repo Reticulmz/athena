@@ -1,4 +1,4 @@
-"""Add user latest activity metadata.
+"""user latest activity metadataを追加するmigration.
 
 Revision ID: 20260710_0300
 Revises: 20260710_0200
@@ -22,6 +22,14 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """Latest activity timestampをcreated_atでbackfillして必須columnへ移行する.
+
+    Returns:
+        None: usersのlatest_activity_at backfillとnon-null schema変更を完了したことを示す.
+
+    Notes:
+        text UPDATEは既存user rowの初期activity値をcreated_atから復元するために使用する.
+    """
     op.add_column(
         "users",
         sa.Column(
@@ -49,4 +57,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """User latest activity metadata columnを削除する.
+
+    Returns:
+        None: usersからlatest_activity_atを削除したことを示す.
+    """
     op.drop_column("users", "latest_activity_at")

@@ -1,12 +1,4 @@
-"""Login request parser for the osu! stable bancho protocol.
-
-Parses the raw HTTP body of a login request into structured domain objects.
-The osu! stable client sends login data as three newline-separated lines:
-  username\\npassword_md5\\nclient_info_line\\n
-
-The client_info line is pipe-delimited:
-  osu_version|utc_offset|display_city|client_hashes|pm_private
-"""
+"""Stable Bancho login request body を domain login input へ解析する."""
 
 from __future__ import annotations
 
@@ -22,16 +14,21 @@ _UTC_OFFSET_MAX = 24
 
 
 def parse_login_request(body: bytes) -> LoginRequest:
-    """Parse a raw login request body into a ``LoginRequest``.
+    """受け取った raw login request body を LoginRequest へ解析する.
 
     Args:
-        body: Raw bytes from the HTTP request body.
+        body (bytes): HTTP request body から取得した raw bytes.
 
     Returns:
-        A populated ``LoginRequest`` with parsed ``ClientInfo``.
+        LoginRequest: username, password MD5, ClientInfo を含む login request.
 
     Raises:
-        ValueError: If the body does not contain exactly 3 non-empty lines.
+        UnicodeDecodeError: body を UTF-8 text として復号できない場合.
+        ValueError: 必須行または client info field が不足するか空文字列の場合, または utc_offset
+            か boolean field を解析できない場合.
+
+    Notes:
+        先頭の 3 行だけを username, password_md5, client_info として使う. 末尾の空行は無視する.
     """
     text = body.decode("utf-8")
     lines = [line.strip() for line in text.splitlines()]
@@ -63,18 +60,19 @@ def parse_login_request(body: bytes) -> LoginRequest:
 
 
 def parse_client_info(raw: str) -> ClientInfo:
-    """Parse a pipe-delimited client_info string into a ``ClientInfo``.
-
-    Expected format: ``osu_version|utc_offset|display_city|client_hashes|pm_private``
+    """client_info の pipe 区切り text を ClientInfo へ解析する.
 
     Args:
-        raw: The pipe-delimited client_info string.
+        raw (str): osu_version, utc_offset, display_city, client_hashes, pm_private を含む text.
 
     Returns:
-        A populated ``ClientInfo``.
+        ClientInfo: 型変換済みの stable client metadata.
 
     Raises:
-        ValueError: If there are fewer than 5 fields or type conversion fails.
+        ValueError: field が 5 個未満か utc_offset または boolean field を解析できない場合.
+
+    Notes:
+        5 個を超える field は無視する. utc_offset は stable wire の表現可能範囲へ clamp する.
     """
     parts = raw.split("|")
 
@@ -101,7 +99,18 @@ def parse_client_info(raw: str) -> ClientInfo:
 
 
 def _parse_int(value: str, field_name: str) -> int:
-    """Convert a string to int with a descriptive error on failure."""
+    """Protocol field text を整数へ変換し失敗時の field 名を保持する.
+
+    Args:
+        value (str): 整数として解釈する client field text.
+        field_name (str): error message に含める protocol field 名.
+
+    Returns:
+        int: value を int として変換した値.
+
+    Raises:
+        ValueError: value が整数として解釈できない場合.
+    """
     try:
         return int(value)
     except ValueError:
@@ -110,7 +119,18 @@ def _parse_int(value: str, field_name: str) -> int:
 
 
 def _parse_bool(value: str, field_name: str) -> bool:
-    """Convert '1'/'0' to bool with a descriptive error on failure."""
+    """0 または 1 の client field text を bool へ変換する.
+
+    Args:
+        value (str): boolean を表す 0 または 1 の text.
+        field_name (str): error message に含める protocol field 名.
+
+    Returns:
+        bool: value が 1 なら True, 0 なら False.
+
+    Raises:
+        ValueError: value が 0 と 1 のどちらでもない場合.
+    """
     if value == "1":
         return True
     if value == "0":

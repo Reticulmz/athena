@@ -1,4 +1,4 @@
-"""Structured SQLAlchemy exception details for command repository logs."""
+"""command repository log向けのSQLAlchemy例外詳細を提供する."""
 
 from __future__ import annotations
 
@@ -6,7 +6,17 @@ from sqlalchemy.exc import DBAPIError, SQLAlchemyError, StatementError
 
 
 def sqlalchemy_error_details(exc: SQLAlchemyError) -> dict[str, object]:
-    """Return searchable SQLAlchemy exception details for structured logs."""
+    """構造化logへ追加するSQLAlchemy例外の検索可能な詳細を作る.
+
+    Args:
+        exc (SQLAlchemyError): 詳細化するSQLAlchemy例外.
+
+    Returns:
+        dict[str, object]: 例外型とmessageを含むlog field. StatementErrorではSQLと原例外も含む.
+
+    Notes:
+        このhelperは例外を送出せず機密値のmaskも行わない. 呼び出し側がlog出力範囲を決める.
+    """
     details: dict[str, object] = {
         "error_type": type(exc).__name__,
         "error_message": str(exc),

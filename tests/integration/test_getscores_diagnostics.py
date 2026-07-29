@@ -1,9 +1,8 @@
-"""Diagnostics integration tests for the legacy getscores endpoint.
+"""Legacy getscores endpoint の diagnostic event と response purity を検証する統合テスト.
 
-Asserts that the handler emits structlog events for auth failures, parse
-warnings, invalid identity, lookup conflicts, unavailable / update-available
-outcomes, and anti-cheat signal — without leaking ``ha`` (password md5),
-raw ``us`` values, or internal provenance fields in stable response bodies.
+認証失敗, parse warning, identity invalid, lookup outcome, anti-cheat signalの
+structlog eventを確認する.
+stable response bodyとlogが`ha`, raw `us`, internal provenanceを漏らさないことも検証する.
 """
 
 from __future__ import annotations
@@ -128,6 +127,14 @@ _INTERNAL_PROVENANCE_TOKENS = (
 
 @contextmanager
 def _test_env() -> Generator[None]:
+    """in-memory application 用の ENVIRONMENT と DOMAIN を一時設定する.
+
+    Yields:
+        None: test が設定済み環境変数を使用する間だけ制御を渡す.
+
+    Constraints:
+        呼出し前の ENVIRONMENT と DOMAIN は context 終了時に復元する.
+    """
     old_env = os.environ.get("ENVIRONMENT")
     old_domain = os.environ.get("DOMAIN")
     os.environ["ENVIRONMENT"] = "test"
@@ -148,6 +155,14 @@ def _test_env() -> Generator[None]:
 
 
 async def _seed_user_with_session(app: Starlette) -> int:
+    """Getscores authentication を通過する user と session を作成する.
+
+    Args:
+        app (Starlette): in-memory dependency を解決する test application.
+
+    Returns:
+        int: 永続化した user ID.
+    """
     password_service = await resolve_dependency(app, PasswordService)
     session_store = await resolve_dependency(app, SessionStore)
 
@@ -188,6 +203,15 @@ async def _seed_known_beatmap(
     *,
     next_refresh_at: datetime = _NEXT_REFRESH,
 ) -> None:
+    """File 未取得で ranked の既知 beatmap を永続化する.
+
+    Args:
+        app (Starlette): beatmap set を保存する test application.
+        next_refresh_at (datetime): metadata freshness として設定する次回更新時刻.
+
+    Returns:
+        None: known checksum を持つ beatmap set を seed して完了する.
+    """
     beatmap = Beatmap(
         id=75,
         beatmapset_id=1,
@@ -234,14 +258,14 @@ async def _assign_leaderboard_visible_role(
     app: Starlette,
     user_ids: tuple[int, ...],
 ) -> None:
-    """Getscores rowへ表示するsynthetic userにroleを付与する。
+    """Getscores row に表示する synthetic user に role を付与する.
 
     Args:
-        app (Starlette): Unit of Work dependencyを解決するtest application。
-        user_ids (tuple[int, ...]): Leaderboard表示を許可するUser ID群。
+        app (Starlette): Unit of Work dependency を解決する test application.
+        user_ids (tuple[int, ...]): leaderboard 表示を許可する user ID 群.
 
     Returns:
-        None: Role付与とcommitが完了したことを示す。
+        None: role 付与と commit を完了する.
     """
     await seed_role(app, _LEADERBOARD_VISIBLE_ROLE)
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
@@ -252,14 +276,14 @@ async def _assign_leaderboard_visible_role(
 
 
 async def _seed_visible_user(app: Starlette, *, username: str) -> int:
-    """Leaderboard row用のsynthetic userを作成する。
+    """Leaderboard row 用の synthetic user を作成する.
 
     Args:
-        app (Starlette): Unit of Work dependencyを解決するtest application。
-        username (str): Response rowに使うsynthetic username。
+        app (Starlette): Unit of Work dependency を解決する test application.
+        username (str): response row に使う synthetic username.
 
     Returns:
-        int: 永続化したUser ID。
+        int: 永続化した user ID.
     """
     user = await seed_user(
         app,
@@ -284,19 +308,19 @@ async def _seed_leaderboard_score(
     score_value: int,
     submitted_offset_seconds: int,
 ) -> None:
-    """Getscores diagnosticsのPBとrow用scoreを作成する。
+    """Getscores diagnostics の personal best と row 用 score を作成する.
 
     Args:
-        app (Starlette): Unit of Work dependencyを解決するtest application。
-        user_id (int): Scoreを所有するUser ID。
-        score_value (int): Leaderboard順位に使うscore値。
-        submitted_offset_seconds (int): 基準日時へ加算する秒数。
+        app (Starlette): Unit of Work dependency を解決する test application.
+        user_id (int): score を所有する user ID.
+        score_value (int): leaderboard 順位に使う score 値.
+        submitted_offset_seconds (int): 基準日時へ加算する秒数.
 
     Returns:
-        None: Scoreとleaderboard projectionがcommit済みであることを示す。
+        None: score と leaderboard projection を commit して完了する.
 
     Raises:
-        AssertionError: Repositoryが永続化後のScore IDを返さない場合。
+        AssertionError: repository が永続化後の score ID を返さない場合.
     """
     uow_factory = await resolve_dependency(app, UnitOfWorkFactory)
     async with uow_factory() as uow:
@@ -351,13 +375,13 @@ async def _seed_leaderboard_score(
 
 
 async def _seed_diagnostic_leaderboard(app: Starlette) -> None:
-    """Fallback shapeを識別できる2-row scenarioを作成する。
+    """Fallback shape を識別できる 2-row scenario を作成する.
 
     Args:
-        app (Starlette): Unit of Work dependencyを解決するtest application。
+        app (Starlette): Unit of Work dependency を解決する test application.
 
     Returns:
-        None: Viewer PBと2件のleaderboard rowがquery可能なことを示す。
+        None: viewer personal best と2件の leaderboard row を query 可能にする.
     """
     viewer_id = await _seed_user_with_session(app)
     rival_id = await _seed_visible_user(app, username="DiagnosticRival")
@@ -399,6 +423,17 @@ def _query(
     password_md5: str | None = _TEST_PASSWORD_MD5,
     extra: dict[str, str] | None = None,
 ) -> dict[str, str]:
+    """Legacy getscores request parameter を既定値と差し替え値から構築する.
+
+    Args:
+        checksum (str | None): `c` に設定する beatmap checksum. None は省略する.
+        username (str | None): `us` に設定する username. None は省略する.
+        password_md5 (str | None): `ha` に設定する password MD5. None は省略する.
+        extra (dict[str, str] | None): 既定 query へ追加または上書きする field. None は追加しない.
+
+    Returns:
+        dict[str, str]: getscores endpoint へ渡す query parameter.
+    """
     params: dict[str, str] = {}
     if checksum is not None:
         params["c"] = checksum
@@ -417,25 +452,45 @@ def _query(
 
 
 def _events_with(logs: list[EventDict], event_name: str) -> list[EventDict]:
+    """Capture log から指定 event 名の entry だけを抽出する.
+
+    Args:
+        logs (list[EventDict]): structlog が capture した event entry.
+        event_name (str): 抽出する `event` field の値.
+
+    Returns:
+        list[EventDict]: event 名が一致する entry の出現順 list.
+    """
     return [
         entry for entry in logs if cast("Mapping[str, object]", entry).get("event") == event_name
     ]
 
 
 def _no_credentials_leaked(entry: EventDict) -> bool:
-    """Operator diagnosticがcredentialとrequest usernameを含まないか返す。
+    """Operator diagnostic が credential と request username を含まないか返す.
 
     Args:
-        entry (EventDict): Structlogが生成した1件のevent。
+        entry (EventDict): structlog が生成した1件の event.
 
     Returns:
-        bool: Raw password MD5とrequest usernameがどちらもなければTrue。
+        bool: raw password MD5 と request username がどちらもなければ True.
     """
     diagnostic_text = repr(cast("Mapping[str, object]", entry))
     return _TEST_PASSWORD_MD5 not in diagnostic_text and _TEST_USERNAME not in diagnostic_text
 
 
 def _warning_values(logs: list[EventDict]) -> tuple[str, ...]:
+    """Getscores parse warning event の warning value を取得する.
+
+    Args:
+        logs (list[EventDict]): structlog が capture した event entry.
+
+    Returns:
+        tuple[str, ...]: warning event がない場合は空tuple. ある場合は warning value の組.
+
+    Raises:
+        AssertionError: warning event が複数あるか warning field が文字列 list でない場合.
+    """
     events = _events_with(logs, "getscores_parse_warning")
     if not events:
         return ()
@@ -448,6 +503,14 @@ def _warning_values(logs: list[EventDict]) -> tuple[str, ...]:
 
 
 def _terminal_lf_count(body: bytes) -> int:
+    """Response body の末尾に連続する LF byte 数を数える.
+
+    Args:
+        body (bytes): LF 数を数える stable response body.
+
+    Returns:
+        int: body 末尾に連続する LF byte の数.
+    """
     return len(body) - len(body.rstrip(b"\n"))
 
 
@@ -456,6 +519,19 @@ def _assert_diagnostic_shape(
     case: GetscoresBranchCase,
     shape: GetscoresWireShapeFixture,
 ) -> None:
+    """Diagnostic request の stable response が evidence shape と一致することを検証する.
+
+    Args:
+        response (httpx2.Response): getscores endpoint が返した response.
+        case (GetscoresBranchCase): request branch の canonical evidence.
+        shape (GetscoresWireShapeFixture): response に期待する wire shape.
+
+    Returns:
+        None: status, headers, parsed header body, row count を検証して完了する.
+
+    Raises:
+        AssertionError: response が evidence shape と異なる場合.
+    """
     assert shape.shape_id is case.expected_shape_id
     assert shape.shape_id in {
         GetscoresWireShapeId.HEADER_ONLY,
@@ -483,6 +559,18 @@ def _assert_diagnostic_redaction(
     logs: list[EventDict],
     query: Mapping[str, str],
 ) -> None:
+    """Captured diagnostic log が credential と internal provenance を含まないことを検証する.
+
+    Args:
+        logs (list[EventDict]): request 中に capture した structlog event.
+        query (Mapping[str, str]): request へ渡した raw query value.
+
+    Returns:
+        None: 禁止 token が log 表現にないことを検証して完了する.
+
+    Raises:
+        AssertionError: credential, raw malformed value, provenance token が含まれる場合.
+    """
     diagnostic_text = repr(cast("list[object]", logs))
     raw_malformed_values = tuple(value for value in query.values() if value.startswith("invalid-"))
     forbidden_tokens = (
@@ -500,6 +588,18 @@ def _assert_case_evidence_redaction(
     case: GetscoresBranchCase,
     query: Mapping[str, str],
 ) -> None:
+    """Canonical branch evidence 自体が raw request value を含まないことを検証する.
+
+    Args:
+        case (GetscoresBranchCase): redaction を確認する typed branch evidence.
+        query (Mapping[str, str]): evidence に含めてはならない raw query value.
+
+    Returns:
+        None: 禁止 token が evidence 表現にないことを検証して完了する.
+
+    Raises:
+        AssertionError: credential, malformed query value, provenance token が含まれる場合.
+    """
     evidence_text = repr(case)
     raw_malformed_values = tuple(value for value in query.values() if value.startswith("invalid-"))
     forbidden_tokens = (
@@ -518,9 +618,14 @@ def _assert_case_evidence_redaction(
 
 
 class TestAuthFailureDiagnostics:
-    """Auth failures emit getscores_auth_failed without credential leakage."""
+    """認証失敗が credential を漏らさず getscores_auth_failed を記録することを検証する."""
 
     def test_missing_credentials_emits_auth_failed_event(self) -> None:
+        """Username と password MD5 がない request が auth failed event を記録することを検証する.
+
+        Returns:
+            None: HTTP 401, failure reason, credential redaction を検証して完了する.
+        """
         with _test_env():
             app = create_app()
             with (
@@ -545,6 +650,11 @@ class TestAuthFailureDiagnostics:
         assert _no_credentials_leaked(entry)
 
     def test_invalid_credentials_emits_auth_failed_event(self) -> None:
+        """不正 password MD5 が auth failed event を記録することを検証する.
+
+        Returns:
+            None: HTTP 401 と全 event の credential redaction を検証して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -568,6 +678,11 @@ class TestAuthFailureDiagnostics:
             assert _no_credentials_leaked(entry)
 
     def test_no_session_emits_auth_failed_event(self) -> None:
+        """Session がない既存 user が no_session auth failed event を記録することを検証する.
+
+        Returns:
+            None: HTTP 401, no_session reason, credential redaction を検証して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -577,6 +692,11 @@ class TestAuthFailureDiagnostics:
             ) as client:
 
                 async def _seed_user_only() -> None:
+                    """Session を作らず authentication 対象 user だけを seed する.
+
+                    Returns:
+                        None: test application に user を永続化して完了する.
+                    """
                     password_service = await resolve_dependency(app, PasswordService)
                     password_hash = await password_service.hash(_TEST_PASSWORD_MD5)
                     _ = await seed_user(
@@ -615,9 +735,14 @@ class TestAuthFailureDiagnostics:
 
 
 class TestRequestDiagnostics:
-    """Authorized requests emit appropriate diagnostic events."""
+    """認証済み getscores request が branch 別の diagnostic event を記録することを検証する."""
 
     def test_missing_identity_emits_identity_invalid(self) -> None:
+        """Checksum がない request が identity invalid event を記録することを検証する.
+
+        Returns:
+            None: short body, missing_identity reason, warmup 非実行を検証して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -643,6 +768,11 @@ class TestRequestDiagnostics:
         assert _events_with(logs, "beatmap_file_warmup") == []
 
     def test_malformed_identity_does_not_request_warmup_or_log_raw_query(self) -> None:
+        """不正 checksum が raw query を漏らさず warmup を要求しないことを検証する.
+
+        Returns:
+            None: invalid_checksum reason, redaction, warmup 非実行を検証して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -669,6 +799,11 @@ class TestRequestDiagnostics:
         assert _events_with(logs, "beatmap_file_warmup") == []
 
     def test_unknown_checksum_emits_unavailable(self) -> None:
+        """未知 checksum が unavailable と metadata pending warmup を記録することを検証する.
+
+        Returns:
+            None: short body, unavailable event, redacted warmup event を検証して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -708,6 +843,11 @@ class TestRequestDiagnostics:
         assert _no_credentials_leaked(warmup_entry)
 
     def test_update_available_emits_warmup_event_without_changing_short_body(self) -> None:
+        """Checksum差分のupdate availableがwarmup eventを記録してもshort bodyを保つことを検証する.
+
+        Returns:
+            None: update event, already_available warmup, response body を検証して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -717,6 +857,11 @@ class TestRequestDiagnostics:
             ) as client:
 
                 async def _setup() -> None:
+                    """Attached file付きのauthorized userとknown beatmapをseedする.
+
+                    Returns:
+                        None: update available を判定できる既存 file 状態を作成して完了する.
+                    """
                     _ = await _seed_user_with_session(app)
                     await _seed_known_beatmap(app)
                     _ = await attach_beatmap_file(
@@ -768,18 +913,18 @@ class TestRequestDiagnostics:
         case_id: str,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Malformed caseをwarning, fallback shape, redactionへ照合する。
+        """Malformed case を warning, fallback shape, redaction へ照合する.
 
         Args:
-            case_id (str): Canonical malformed branch case ID。
-            caplog (pytest.LogCaptureFixture): Raw request URLを出すhttpx INFO logの制御。
+            case_id (str): canonical malformed branch case ID.
+            caplog (pytest.LogCaptureFixture): raw request URL を出す httpx INFO log の制御.
 
         Returns:
-            None: Provisional state, shape, warning集合, redactionが一致したことを示す。
+            None: provisional state, shape, warning 集合, redaction の一致を検証して完了する.
 
         Raises:
-            KeyError: Canonical caseまたはshapeがtyped evidence bundleにない場合。
-            AssertionError: Runtimeまたはevidenceがcatalog contractと異なる場合。
+            KeyError: canonical case または shape が typed evidence bundle にない場合.
+            AssertionError: runtime または evidence が catalog contract と異なる場合.
         """
         caplog.set_level(logging.WARNING, logger="httpx")
         case = _GETSCORES_CASES[case_id]
@@ -815,18 +960,18 @@ class TestRequestDiagnostics:
         case_id: str,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Valid diagnostic variantがresponse selectionを変更しないことを確認する。
+        """Valid diagnostic variant が response selection を変更しないことを確認する.
 
         Args:
-            case_id (str): Canonical invariance control case ID。
-            caplog (pytest.LogCaptureFixture): Raw request URLを出すhttpx INFO logの制御。
+            case_id (str): canonical invariance control case ID.
+            caplog (pytest.LogCaptureFixture): raw request URL を出す httpx INFO log の制御.
 
         Returns:
-            None: Athena deterministic state, row shape, empty warningが一致したことを示す。
+            None: Athena deterministic state, row shape, empty warning の一致を検証して完了する.
 
         Raises:
-            KeyError: Canonical caseまたはshapeがtyped evidence bundleにない場合。
-            AssertionError: Runtimeまたはevidenceがcatalog contractと異なる場合。
+            KeyError: canonical case または shape が typed evidence bundle にない場合.
+            AssertionError: runtime または evidence が catalog contract と異なる場合.
         """
         caplog.set_level(logging.WARNING, logger="httpx")
         case = _GETSCORES_CASES[case_id]
@@ -859,6 +1004,11 @@ class TestRequestDiagnostics:
             assert anti_cheat_events == []
 
     def test_known_header_emits_warmup_event_without_changing_body(self) -> None:
+        """Known header response が body を変えず requested warmup event を記録することを検証する.
+
+        Returns:
+            None: header body, requested event, credential redaction を検証して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -868,6 +1018,11 @@ class TestRequestDiagnostics:
             ) as client:
 
                 async def _setup() -> None:
+                    """Authenticated user と known beatmap を test application に seed する.
+
+                    Returns:
+                        None: known header response を返す metadata 状態を作成して完了する.
+                    """
                     _ = await _seed_user_with_session(app)
                     await _seed_known_beatmap(app)
 
@@ -897,7 +1052,11 @@ class TestRequestDiagnostics:
 
 
 class TestStableResponsePurity:
-    """Stable response bodies must never contain provenance fields."""
+    """Stable response body が internal provenance field を含まないことを検証する.
+
+    Attributes:
+        _BANNED_TOKENS (tuple[bytes, ...]): response body に含めてはならない internal field token.
+    """
 
     _BANNED_TOKENS: tuple[bytes, ...] = (
         b"_source",
@@ -912,6 +1071,11 @@ class TestStableResponsePurity:
     )
 
     def test_known_header_response_has_no_provenance(self) -> None:
+        """Known header response が provenance token を含まないことを検証する.
+
+        Returns:
+            None: response content に禁止 token がないことを検証して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
@@ -921,6 +1085,11 @@ class TestStableResponsePurity:
             ) as client:
 
                 async def _setup() -> None:
+                    """Authenticated user と known beatmap を test application に seed する.
+
+                    Returns:
+                        None: header response を取得できる metadata 状態を作成して完了する.
+                    """
                     _ = await _seed_user_with_session(app)
                     await _seed_known_beatmap(app)
 
@@ -934,6 +1103,11 @@ class TestStableResponsePurity:
                     assert token not in response.content
 
     def test_unavailable_response_has_no_provenance(self) -> None:
+        """Unavailable short response が provenance token を含まないことを検証する.
+
+        Returns:
+            None: response content に禁止 token がないことを検証して完了する.
+        """
         with _test_env():
             app = create_app()
             with TestClient(
