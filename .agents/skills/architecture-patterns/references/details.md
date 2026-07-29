@@ -289,6 +289,9 @@ class Money:
             raise ValueError("Currency mismatch")
         return Money(self.amount + other.amount, self.currency)
 
+    def __add__(self, other: "Money") -> "Money":
+        return self.add(other)
+
 
 # Aggregate root: enforces all invariants for its cluster of entities
 class Order:

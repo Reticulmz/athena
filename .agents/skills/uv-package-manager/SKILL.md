@@ -332,14 +332,15 @@ my-package = { git = "https://github.com/user/repo.git" }
 uv add -r requirements.txt
 
 # Migrate from poetry
-# Already have pyproject.toml, just use:
+# First migrate [tool.poetry] metadata to the standardized [project] table.
+uv lock
 uv sync
 
 # Export to requirements.txt
 uv pip freeze > requirements.txt
 
 # Export with hashes
-uv pip freeze --require-hashes > requirements.txt
+uv export --format requirements.txt --output-file requirements.txt
 ```
 
 For advanced workflows including Docker integration, lockfile management, performance optimization, tool comparison, common workflows, tool integration, troubleshooting, best practices, migration guides, and command reference, see [references/advanced-patterns.md](references/advanced-patterns.md)

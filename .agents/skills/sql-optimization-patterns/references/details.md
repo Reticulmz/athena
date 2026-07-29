@@ -233,6 +233,7 @@ LEFT JOIN orders o ON u.id = o.user_id
 GROUP BY u.id, u.name;
 
 -- Add index to materialized view
+CREATE UNIQUE INDEX idx_user_summary_user_id ON user_order_summary(id);
 CREATE INDEX idx_user_summary_spent ON user_order_summary(total_spent DESC);
 
 -- Refresh materialized view
@@ -255,9 +256,10 @@ Split large tables for better performance.
 -- Range partitioning by date (PostgreSQL)
 CREATE TABLE orders (
     id BIGINT GENERATED ALWAYS AS IDENTITY,
-    user_id INT,
-    total DECIMAL,
-    created_at TIMESTAMPTZ
+    user_id BIGINT NOT NULL,
+    total NUMERIC(12, 2) NOT NULL CHECK (total >= 0),
+    created_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (id, created_at)
 ) PARTITION BY RANGE (created_at);
 
 -- Create partitions

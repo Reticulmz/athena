@@ -310,19 +310,19 @@ def entropy(data: bytes) -> float:
 
 ```bash
 # Extract TLS metadata
-tshark -r capture.pcap -Y "ssl.handshake" \
-    -T fields -e ip.src -e ssl.handshake.ciphersuite
+tshark -r capture.pcap -Y "tls.handshake" \
+    -T fields -e ip.src -e tls.handshake.ciphersuite
 
 # JA3 fingerprinting (client)
-tshark -r capture.pcap -Y "ssl.handshake.type == 1" \
-    -T fields -e ssl.handshake.ja3
+tshark -r capture.pcap -Y "tls.handshake.type == 1" \
+    -T fields -e tls.handshake.ja3
 
 # JA3S fingerprinting (server)
-tshark -r capture.pcap -Y "ssl.handshake.type == 2" \
-    -T fields -e ssl.handshake.ja3s
+tshark -r capture.pcap -Y "tls.handshake.type == 2" \
+    -T fields -e tls.handshake.ja3s
 
 # Certificate extraction
-tshark -r capture.pcap -Y "ssl.handshake.certificate" \
+tshark -r capture.pcap -Y "tls.handshake.certificate" \
     -T fields -e x509sat.printableString
 ```
 

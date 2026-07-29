@@ -117,6 +117,11 @@ export default defineConfig({
         video: 'retain-on-failure', // Optional artifact capture
     },
 });
+```
+
+```typescript
+// tests/checkout.spec.ts
+import { test } from '@playwright/test';
 
 // 3. Add test.step for better reporting
 test('checkout flow', async ({ page }) => {
@@ -129,8 +134,8 @@ test('checkout flow', async ({ page }) => {
         await page.goto('/cart');
         await page.getByRole('button', { name: 'Checkout' }).click();
     });
-});
 
-// 4. Inspect page state
-await page.pause();  // Pauses execution, opens inspector
+    // 4. Inspect page state while running in debug mode
+    await page.pause();  // Pauses execution, opens inspector
+});
 ```

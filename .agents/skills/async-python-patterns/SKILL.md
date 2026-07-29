@@ -185,13 +185,13 @@ async def safe_operation(item_id: int) -> Optional[dict]:
 async def process_items(item_ids: List[int]):
     """Process multiple items with error handling."""
     tasks = [safe_operation(iid) for iid in item_ids]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    results = await asyncio.gather(*tasks)
 
     # Filter out failures
-    successful = [r for r in results if r is not None and not isinstance(r, Exception)]
-    failed = [r for r in results if isinstance(r, Exception)]
+    successful = [r for r in results if r is not None]
+    failed_count = len(results) - len(successful)
 
-    print(f"Success: {len(successful)}, Failed: {len(failed)}")
+    print(f"Success: {len(successful)}, Failed: {failed_count}")
     return successful
 
 asyncio.run(process_items([1, 2, 3, 4, 5, 6]))

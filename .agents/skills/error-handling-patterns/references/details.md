@@ -7,13 +7,15 @@
 **Custom Exception Hierarchy:**
 
 ```python
+from datetime import UTC, datetime
+
 class ApplicationError(Exception):
     """Base exception for all application errors."""
     def __init__(self, message: str, code: str = None, details: dict = None):
         super().__init__(message)
         self.code = code
         self.details = details or {}
-        self.timestamp = datetime.utcnow()
+        self.timestamp = datetime.now(UTC)
 
 class ValidationError(ApplicationError):
     """Raised when validation fails."""
@@ -501,12 +503,16 @@ def get_user_profile(user_id: str) -> UserProfile:
 
 # Multiple fallbacks
 def get_exchange_rate(currency: str) -> float:
-    return (
-        try_function(lambda: api_provider_1.get_rate(currency))
-        or try_function(lambda: api_provider_2.get_rate(currency))
-        or try_function(lambda: cache.get_rate(currency))
-        or DEFAULT_RATE
+    providers = (
+        lambda: api_provider_1.get_rate(currency),
+        lambda: api_provider_2.get_rate(currency),
+        lambda: cache.get_rate(currency),
     )
+    for provider in providers:
+        rate = try_function(provider)
+        if rate is not None:
+            return rate
+    return DEFAULT_RATE
 
 def try_function(func: Callable[[], Optional[T]]) -> Optional[T]:
     try:

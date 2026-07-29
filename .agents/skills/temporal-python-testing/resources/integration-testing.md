@@ -10,16 +10,21 @@ Comprehensive patterns for testing workflows with mocked external dependencies, 
 
 ```python
 import pytest
+from datetime import timedelta
+from temporalio import activity, workflow
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
-from unittest.mock import Mock
 
 @pytest.mark.asyncio
 async def test_workflow_with_mocked_activity(workflow_env):
     """Mock activity to test workflow logic"""
 
-    # Create mock activity
-    mock_activity = Mock(return_value="mocked-result")
+    calls: list[str] = []
+
+    @activity.defn
+    async def process_external_data(input: str) -> str:
+        calls.append(input)
+        return "mocked-result"
 
     @workflow.defn
     class WorkflowWithActivity:
@@ -36,7 +41,7 @@ async def test_workflow_with_mocked_activity(workflow_env):
         workflow_env.client,
         task_queue="test",
         workflows=[WorkflowWithActivity],
-        activities=[mock_activity],  # Use mock instead of real activity
+        activities=[process_external_data],
     ):
         result = await workflow_env.client.execute_workflow(
             WorkflowWithActivity.run,
@@ -45,7 +50,7 @@ async def test_workflow_with_mocked_activity(workflow_env):
             task_queue="test",
         )
         assert result == "processed: mocked-result"
-        mock_activity.assert_called_once()
+        assert calls == ["test-input"]
 ```
 
 ### Dynamic Mock Responses

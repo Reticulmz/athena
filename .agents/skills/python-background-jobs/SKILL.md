@@ -62,7 +62,7 @@ For operations exceeding a few seconds, return a job ID and process asynchronous
 from uuid import uuid4
 from dataclasses import dataclass
 from enum import Enum
-from datetime import datetime
+from datetime import UTC, datetime
 
 class JobStatus(Enum):
     PENDING = "pending"
@@ -89,7 +89,7 @@ async def start_export(request: ExportRequest) -> JobResponse:
     await jobs_repo.create(Job(
         id=job_id,
         status=JobStatus.PENDING,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(UTC),
     ))
 
     # Enqueue task for background processing
@@ -185,6 +185,8 @@ def process_order(self, order_id: str) -> None:
 Persist job state transitions for visibility and debugging.
 
 ```python
+from datetime import UTC, datetime
+
 class JobRepository:
     """Repository for managing job state."""
 
@@ -207,9 +209,9 @@ class JobRepository:
         updates = {"status": status.value, **fields}
 
         if status == JobStatus.RUNNING:
-            updates["started_at"] = datetime.utcnow()
+            updates["started_at"] = datetime.now(UTC)
         elif status in (JobStatus.SUCCEEDED, JobStatus.FAILED):
-            updates["completed_at"] = datetime.utcnow()
+            updates["completed_at"] = datetime.now(UTC)
 
         await self._db.execute(
             "UPDATE jobs SET status = $1, ... WHERE id = $2",

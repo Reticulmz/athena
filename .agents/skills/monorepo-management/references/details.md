@@ -303,7 +303,7 @@ import type { User, CreateUserInput } from "@repo/types";
 ```json
 // turbo.json
 {
-  "pipeline": {
+  "tasks": {
     "build": {
       // Build depends on dependencies being built first
       "dependsOn": ["^build"],

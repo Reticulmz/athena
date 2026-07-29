@@ -293,9 +293,9 @@ app.get(
   (req, res) => {
     // Generate JWT
     const tokens = generateTokens(req.user.id, req.user.email, req.user.role);
-    // Redirect to frontend with token
+    // Fragments are not sent in HTTP requests or Referer headers.
     res.redirect(
-      `${process.env.FRONTEND_URL}/auth/callback?token=${tokens.accessToken}`,
+      `${process.env.FRONTEND_URL}/auth/callback#token=${encodeURIComponent(tokens.accessToken)}`,
     );
   },
 );

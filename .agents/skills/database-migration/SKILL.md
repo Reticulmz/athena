@@ -204,34 +204,40 @@ module.exports = {
 ```javascript
 module.exports = {
   up: async (queryInterface, Sequelize) => {
-    // Get all records
-    const [users] = await queryInterface.sequelize.query(
-      "SELECT id, address_string FROM users",
-    );
-
-    // Transform each record
-    for (const user of users) {
-      const addressParts = user.address_string.split(",");
-
-      await queryInterface.sequelize.query(
-        `UPDATE users
-         SET street = :street,
-             city = :city,
-             state = :state
-         WHERE id = :id`,
-        {
-          replacements: {
-            id: user.id,
-            street: addressParts[0]?.trim(),
-            city: addressParts[1]?.trim(),
-            state: addressParts[2]?.trim(),
-          },
-        },
+    await queryInterface.sequelize.transaction(async (transaction) => {
+      // Get all records
+      const [users] = await queryInterface.sequelize.query(
+        "SELECT id, address_string FROM users",
+        { transaction },
       );
-    }
 
-    // Drop old column
-    await queryInterface.removeColumn("users", "address_string");
+      // Transform each record
+      for (const user of users) {
+        const addressParts = user.address_string.split(",");
+
+        await queryInterface.sequelize.query(
+          `UPDATE users
+           SET street = :street,
+               city = :city,
+               state = :state
+           WHERE id = :id`,
+          {
+            replacements: {
+              id: user.id,
+              street: addressParts[0]?.trim(),
+              city: addressParts[1]?.trim(),
+              state: addressParts[2]?.trim(),
+            },
+            transaction,
+          },
+        );
+      }
+
+      // Drop old column only after every row is transformed.
+      await queryInterface.removeColumn("users", "address_string", {
+        transaction,
+      });
+    });
   },
 
   down: async (queryInterface, Sequelize) => {

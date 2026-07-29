@@ -101,6 +101,7 @@ class CreateOrderHandler(CommandHandler[CreateOrder]):
 ```python
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TypeVar, Generic, List, Optional
 
 # Query base
@@ -246,6 +247,8 @@ class GetCustomerOrdersHandler(QueryHandler[GetCustomerOrders, PaginatedResult[O
 ### Template 3: FastAPI CQRS Application
 
 ```python
+from datetime import datetime
+
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional
@@ -364,6 +367,12 @@ async def search_orders(
 ### Template 4: Read Model Synchronization
 
 ```python
+import asyncio
+import logging
+from typing import List
+
+logger = logging.getLogger(__name__)
+
 class ReadModelSynchronizer:
     """Keeps read models in sync with events."""
 
@@ -392,8 +401,7 @@ class ReadModelSynchronizer:
                 try:
                     await projection.apply(event)
                 except Exception as e:
-                    # Log error, possibly retry or skip
-                    logger.error(f"Projection error: {e}")
+                    logger.exception("Projection error: %s", e)
                     continue
 
             await self._save_checkpoint(projection.name, event.global_position)
@@ -429,12 +437,15 @@ class ReadModelSynchronizer:
 ### Template 5: Eventual Consistency Handling
 
 ```python
+import asyncio
+import time
+
 class ConsistentQueryHandler:
     """Query handler that can wait for consistency."""
 
-    def __init__(self, read_db, event_store):
+    def __init__(self, read_db, query_bus: QueryBus):
         self.read_db = read_db
-        self.event_store = event_store
+        self.query_bus = query_bus
 
     async def query_after_command(
         self,
@@ -447,21 +458,21 @@ class ConsistentQueryHandler:
         Execute query, ensuring read model is at expected version.
         Used for read-your-writes consistency.
         """
-        start_time = time.time()
+        start_time = time.monotonic()
 
-        while time.time() - start_time < timeout:
+        while time.monotonic() - start_time < timeout:
             # Check if read model is caught up
             projection_version = await self._get_projection_version(stream_id)
 
             if projection_version >= expected_version:
-                return await self.execute_query(query)
+                return await self.query_bus.dispatch(query)
 
             # Wait a bit and retry
             await asyncio.sleep(0.1)
 
         # Timeout - return stale data with warning
         return {
-            "data": await self.execute_query(query),
+            "data": await self.query_bus.dispatch(query),
             "_warning": "Data may be stale"
         }
 

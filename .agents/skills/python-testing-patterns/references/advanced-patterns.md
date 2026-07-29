@@ -210,6 +210,8 @@ def test_with_db_backend(db_backend):
 
 ```python
 # test_properties.py
+from collections import Counter
+
 from hypothesis import given, strategies as st
 import pytest
 
@@ -245,7 +247,7 @@ def test_sorted_list_properties(lst):
     assert len(sorted_lst) == len(lst)
 
     # All elements and duplicate counts preserved
-    assert sorted_lst == sorted(lst)
+    assert Counter(sorted_lst) == Counter(lst)
 
     # Is ordered
     for i in range(len(sorted_lst) - 1):

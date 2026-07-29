@@ -113,8 +113,11 @@ async def client(db_session):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
-        yield client
+    try:
+        async with AsyncClient(app=app, base_url="http://test") as client:
+            yield client
+    finally:
+        app.dependency_overrides.pop(get_db, None)
 
 # tests/test_users.py
 import pytest

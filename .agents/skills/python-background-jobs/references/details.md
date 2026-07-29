@@ -7,6 +7,8 @@
 Handle permanently failed tasks for manual inspection.
 
 ```python
+from datetime import UTC, datetime
+
 @app.task(bind=True, max_retries=3)
 def process_webhook(self, webhook_id: str, payload: dict) -> None:
     """Process webhook with DLQ for failures."""
@@ -23,7 +25,7 @@ def process_webhook(self, webhook_id: str, payload: dict) -> None:
                 "payload": payload,
                 "error": str(e),
                 "attempts": self.request.retries + 1,
-                "failed_at": datetime.utcnow().isoformat(),
+                "failed_at": datetime.now(UTC).isoformat(),
             })
             logger.error(
                 "Webhook moved to DLQ after max retries",

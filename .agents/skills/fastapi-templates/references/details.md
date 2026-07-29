@@ -136,7 +136,7 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         obj_in: CreateSchemaType
     ) -> ModelType:
         """Create new record."""
-        db_obj = self.model(**obj_in.dict())
+        db_obj = self.model(**obj_in.model_dump())
         db.add(db_obj)
         await db.flush()
         await db.refresh(db_obj)
@@ -149,7 +149,7 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         obj_in: UpdateSchemaType
     ) -> ModelType:
         """Update record."""
-        update_data = obj_in.dict(exclude_unset=True)
+        update_data = obj_in.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(db_obj, field, value)
         await db.flush()
@@ -183,6 +183,22 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
             select(User).where(User.email == email)
         )
         return result.scalars().first()
+
+    async def create_with_hashed_password(
+        self,
+        db: AsyncSession,
+        user_in: UserCreate,
+        hashed_password: str,
+    ) -> User:
+        """Create a user without passing a plaintext password to the model."""
+        db_obj = User(
+            **user_in.model_dump(exclude={"password"}),
+            hashed_password=hashed_password,
+        )
+        db.add(db_obj)
+        await db.flush()
+        await db.refresh(db_obj)
+        return db_obj
 
     async def is_active(self, db: AsyncSession, user_id: int) -> bool:
         """Check if user is active."""
@@ -219,13 +235,11 @@ class UserService:
         if existing:
             raise ValueError("Email already registered")
 
-        # Hash password
-        user_in_dict = user_in.dict()
-        user_in_dict["hashed_password"] = get_password_hash(user_in_dict.pop("password"))
-
-        # Create user
-        user = await self.repository.create(db, UserCreate(**user_in_dict))
-        return user
+        return await self.repository.create_with_hashed_password(
+            db,
+            user_in,
+            get_password_hash(user_in.password),
+        )
 
     async def authenticate(
         self,
@@ -252,14 +266,18 @@ class UserService:
         if not user:
             return None
 
+        update_data = user_in.model_dump(
+            exclude={"password"},
+            exclude_unset=True,
+        )
         if user_in.password:
-            user_in_dict = user_in.dict(exclude_unset=True)
-            user_in_dict["hashed_password"] = get_password_hash(
-                user_in_dict.pop("password")
-            )
-            user_in = UserUpdate(**user_in_dict)
+            user.hashed_password = get_password_hash(user_in.password)
 
-        return await self.repository.update(db, user, user_in)
+        return await self.repository.update(
+            db,
+            user,
+            UserUpdate(**update_data),
+        )
 
 user_service = UserService()
 ```
@@ -345,7 +363,7 @@ async def delete_user(
 
 ```python
 # core/security.py
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -360,9 +378,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     """Create JWT access token."""
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.now(UTC) + timedelta(minutes=15)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt

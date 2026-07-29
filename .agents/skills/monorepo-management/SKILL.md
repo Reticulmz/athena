@@ -80,7 +80,7 @@ cd my-monorepo
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": ["**/.env.*local"],
-  "pipeline": {
+  "tasks": {
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
@@ -208,7 +208,7 @@ pnpm changeset publish
 ```yaml
 # .github/workflows/release.yml
 - name: Create Release Pull Request or Publish
-  uses: changesets/action@v1
+  uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
   with:
     publish: pnpm release
   env:

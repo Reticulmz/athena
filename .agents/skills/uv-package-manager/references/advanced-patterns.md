@@ -419,12 +419,11 @@ uv add -r requirements.txt
 poetry install
 poetry add requests
 
-# After
+# First migrate [tool.poetry] metadata to the standardized [project] table.
+# After the pyproject.toml migration:
+uv lock
 uv sync
 uv add requests
-
-# Keep existing pyproject.toml
-# uv reads [project] and [tool.poetry] sections
 ```
 
 ### From pip-tools

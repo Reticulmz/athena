@@ -113,6 +113,7 @@ async def fetch_user_data(user_id: str) -> dict:
 Pass infrastructure components through constructors for easy testing.
 
 ```python
+import time
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -161,6 +162,7 @@ service = UserService(
 Degrade gracefully when non-critical operations fail.
 
 ```python
+from functools import wraps
 from typing import TypeVar
 from collections.abc import Callable
 

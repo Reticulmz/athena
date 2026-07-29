@@ -84,7 +84,6 @@ async def producer(queue: Queue, producer_id: int, num_items: int):
         await queue.put(item)
         print(f"Producer {producer_id} produced: {item}")
         await asyncio.sleep(0.1)
-    await queue.put(None)  # Signal completion
 
 async def consumer(queue: Queue, consumer_id: int):
     """Consume items from queue."""
@@ -116,12 +115,13 @@ async def producer_consumer_example():
     # Wait for producers
     await asyncio.gather(*producers)
 
-    # Wait for queue to be empty
-    await queue.join()
+    # Send one completion signal per consumer.
+    for _ in consumers:
+        await queue.put(None)
 
-    # Cancel consumers
-    for c in consumers:
-        c.cancel()
+    # Wait for all items and completion signals to be consumed.
+    await queue.join()
+    await asyncio.gather(*consumers)
 
 asyncio.run(producer_consumer_example())
 ```
@@ -250,21 +250,21 @@ from typing import List, Optional
 class AsyncDB:
     """Simulated async database."""
 
-    async def execute(self, query: str) -> List[dict]:
+    async def execute(self, query: str, *params: object) -> List[dict]:
         """Execute query."""
         await asyncio.sleep(0.1)
         return [{"id": 1, "name": "Example"}]
 
-    async def fetch_one(self, query: str) -> Optional[dict]:
+    async def fetch_one(self, query: str, *params: object) -> Optional[dict]:
         """Fetch single row."""
         await asyncio.sleep(0.1)
         return {"id": 1, "name": "Example"}
 
 async def get_user_data(db: AsyncDB, user_id: int) -> dict:
     """Fetch user and related data concurrently."""
-    user_task = db.fetch_one(f"SELECT * FROM users WHERE id = {user_id}")
-    orders_task = db.execute(f"SELECT * FROM orders WHERE user_id = {user_id}")
-    profile_task = db.fetch_one(f"SELECT * FROM profiles WHERE user_id = {user_id}")
+    user_task = db.fetch_one("SELECT * FROM users WHERE id = $1", user_id)
+    orders_task = db.execute("SELECT * FROM orders WHERE user_id = $1", user_id)
+    profile_task = db.fetch_one("SELECT * FROM profiles WHERE user_id = $1", user_id)
 
     user, orders, profile = await asyncio.gather(user_task, orders_task, profile_task)
 

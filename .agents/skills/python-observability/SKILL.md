@@ -89,8 +89,11 @@ logger = structlog.get_logger()
 Every log entry should include standard fields for filtering and correlation.
 
 ```python
+import time
 import structlog
 from contextvars import ContextVar
+from starlette.requests import Request
+from starlette.responses import Response
 
 # Store correlation ID in context
 correlation_id: ContextVar[str] = ContextVar("correlation_id", default="")
@@ -99,6 +102,7 @@ logger = structlog.get_logger()
 
 def process_request(request: Request) -> Response:
     """Process request with structured logging."""
+    start = time.perf_counter()
     logger.info(
         "Request received",
         correlation_id=correlation_id.get(),
@@ -113,7 +117,7 @@ def process_request(request: Request) -> Response:
             "Request completed",
             correlation_id=correlation_id.get(),
             status_code=200,
-            duration_ms=elapsed,
+            duration_ms=round((time.perf_counter() - start) * 1000, 2),
         )
         return result
     except Exception as e:

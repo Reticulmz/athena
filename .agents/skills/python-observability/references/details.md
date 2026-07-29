@@ -43,6 +43,7 @@ Instrument your endpoints:
 ```python
 import time
 from functools import wraps
+from starlette.requests import Request
 
 def track_request(func):
     """Decorator to track request metrics."""
@@ -51,6 +52,7 @@ def track_request(func):
         method = request.method
         endpoint = request.url.path
         start = time.perf_counter()
+        status = "500"
 
         try:
             response = await func(request, *args, **kwargs)
@@ -158,7 +160,7 @@ def configure_tracing(service_name: str, otlp_endpoint: str) -> None:
 
 tracer = trace.get_tracer(__name__)
 
-async def process_order(order_id: str) -> Order:
+async def process_order(order_id: str) -> str:
     """Process order with tracing."""
     with tracer.start_as_current_span("process_order") as span:
         span.set_attribute("order.id", order_id)
@@ -172,5 +174,5 @@ async def process_order(order_id: str) -> Order:
         with tracer.start_as_current_span("send_confirmation"):
             send_confirmation(order_id)
 
-        return order
+        return order_id
 ```

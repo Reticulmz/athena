@@ -12,19 +12,16 @@ CREATE TABLE events (
     stream_type TEXT NOT NULL,
     event_type TEXT NOT NULL,
     event_data JSONB NOT NULL,
-    metadata JSONB DEFAULT '{}',
+    metadata JSONB NOT NULL DEFAULT '{}',
     version BIGINT NOT NULL,
     global_position BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     CONSTRAINT unique_stream_version UNIQUE (stream_id, version)
 );
 
 -- Index for stream queries
 CREATE INDEX idx_events_stream_id ON events(stream_id, version);
-
--- Index for global subscription
-CREATE INDEX idx_events_global_position ON events(global_position);
 
 -- Index for event type queries
 CREATE INDEX idx_events_event_type ON events(event_type);
@@ -38,14 +35,14 @@ CREATE TABLE snapshots (
     stream_type TEXT NOT NULL,
     snapshot_data JSONB NOT NULL,
     version BIGINT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Subscriptions checkpoint table
 CREATE TABLE subscription_checkpoints (
     subscription_id TEXT PRIMARY KEY,
     last_position BIGINT NOT NULL DEFAULT 0,
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
 
@@ -55,7 +52,7 @@ CREATE TABLE subscription_checkpoints (
 import asyncio
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Optional, List
 from uuid import UUID, uuid4
 
@@ -70,7 +67,7 @@ class Event:
     event_id: UUID = field(default_factory=uuid4)
     version: Optional[int] = None
     global_position: Optional[int] = None
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 class EventStore:
@@ -280,16 +277,16 @@ def read_stream(stream_name: str, from_revision: int = 0):
         for event in events
     ]
 
-# Subscribe to all
-async def subscribe_to_all(handler, from_position: int = 0):
-    subscription = client.subscribe_to_all(commit_position=from_position)
-    async for event in subscription:
-        await handler({
-            'type': event.type,
-            'data': json.loads(event.data),
-            'stream_id': event.stream_name,
-            'position': event.commit_position
-        })
+# Subscribe to all with the synchronous client
+def subscribe_to_all(handler, from_position: int = 0):
+    with client.subscribe_to_all(commit_position=from_position) as subscription:
+        for event in subscription:
+            handler({
+                'type': event.type,
+                'data': json.loads(event.data),
+                'stream_id': event.stream_name,
+                'position': event.commit_position
+            })
 
 # Category projection ($ce-Category)
 def read_category(category: str):
@@ -302,7 +299,7 @@ def read_category(category: str):
 ```python
 import boto3
 from boto3.dynamodb.conditions import Key
-from datetime import datetime
+from datetime import UTC, datetime
 import json
 import uuid
 
@@ -313,22 +310,28 @@ class DynamoEventStore:
 
     def append_events(self, stream_id: str, events: list, expected_version: int = None):
         """Append events with conditional write for concurrency."""
-        with self.table.batch_writer() as batch:
-            for i, event in enumerate(events):
-                version = (expected_version or 0) + i + 1
-                item = {
-                    'PK': f"STREAM#{stream_id}",
-                    'SK': f"VERSION#{version:020d}",
-                    'GSI1PK': 'EVENTS',
-                    'GSI1SK': datetime.utcnow().isoformat(),
-                    'event_id': str(uuid.uuid4()),
-                    'stream_id': stream_id,
-                    'event_type': event['type'],
-                    'event_data': json.dumps(event['data']),
-                    'version': version,
-                    'created_at': datetime.utcnow().isoformat()
-                }
-                batch.put_item(Item=item)
+        base_version = expected_version if expected_version is not None else 0
+        for i, event in enumerate(events):
+            version = base_version + i + 1
+            created_at = datetime.now(UTC).isoformat()
+            item = {
+                'PK': f"STREAM#{stream_id}",
+                'SK': f"VERSION#{version:020d}",
+                'GSI1PK': 'EVENTS',
+                'GSI1SK': created_at,
+                'event_id': str(uuid.uuid4()),
+                'stream_id': stream_id,
+                'event_type': event['type'],
+                'event_data': json.dumps(event['data']),
+                'version': version,
+                'created_at': created_at
+            }
+            self.table.put_item(
+                Item=item,
+                ConditionExpression=(
+                    "attribute_not_exists(PK) AND attribute_not_exists(SK)"
+                ),
+            )
         return events
 
     def read_stream(self, stream_id: str, from_version: int = 0):

@@ -299,12 +299,14 @@ Domain events decouple aggregates that need to react to each other's state chang
 
 ```python
 # domain/events/order_events.py
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import Protocol
 
 @dataclass
 class DomainEvent:
-    occurred_at: datetime = field(default_factory=datetime.utcnow)
+    occurred_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 @dataclass
 class OrderSubmittedEvent(DomainEvent):
@@ -312,6 +314,29 @@ class OrderSubmittedEvent(DomainEvent):
     customer_id: str = ""
     total_cents: int = 0
     currency: str = "USD"
+
+
+# application/ports.py
+class DatabaseConnection(Protocol):
+    async def execute(self, query: str, *args: object) -> object: ...
+
+
+class OrderRepositoryPort(Protocol):
+    async def save(self, order: Order, conn: DatabaseConnection) -> None: ...
+
+
+class EventPublisherPort(Protocol):
+    async def publish(
+        self,
+        conn: DatabaseConnection,
+        events: list[DomainEvent],
+    ) -> None: ...
+
+
+class TransactionManagerPort(Protocol):
+    def transaction(
+        self,
+    ) -> AbstractAsyncContextManager[DatabaseConnection]: ...
 
 
 # adapters/event_publisher/postgres_outbox.py
@@ -325,7 +350,11 @@ class PostgresOutboxPublisher:
     to the message broker. Guarantees at-least-once delivery.
     """
 
-    async def publish(self, conn, events: list[DomainEvent]):
+    async def publish(
+        self,
+        conn: DatabaseConnection,
+        events: list[DomainEvent],
+    ) -> None:
         for event in events:
             await conn.execute(
                 """
@@ -341,9 +370,9 @@ class PostgresOutboxPublisher:
 class PlaceOrderUseCase:
     def __init__(
         self,
-        order_repo: OrderRepository,
-        event_publisher: PostgresOutboxPublisher,
-        db,
+        order_repo: OrderRepositoryPort,
+        event_publisher: EventPublisherPort,
+        db: TransactionManagerPort,
     ):
         self.orders = order_repo
         self.publisher = event_publisher
