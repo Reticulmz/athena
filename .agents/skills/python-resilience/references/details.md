@@ -40,15 +40,20 @@ Create reusable timeout decorators for consistent timeout handling.
 ```python
 import asyncio
 from functools import wraps
-from typing import TypeVar, Callable
+from typing import Awaitable, Callable, ParamSpec, TypeVar
 
+P = ParamSpec("P")
 T = TypeVar("T")
 
-def with_timeout(seconds: float):
+def with_timeout(
+    seconds: float,
+) -> Callable[[Callable[P, Awaitable[T]]], Callable[P, Awaitable[T]]]:
     """Decorator to add timeout to async functions."""
-    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+    def decorator(
+        func: Callable[P, Awaitable[T]],
+    ) -> Callable[P, Awaitable[T]]:
         @wraps(func)
-        async def wrapper(*args, **kwargs) -> T:
+        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             return await asyncio.wait_for(
                 func(*args, **kwargs),
                 timeout=seconds,

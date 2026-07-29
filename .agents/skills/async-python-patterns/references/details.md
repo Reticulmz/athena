@@ -357,7 +357,7 @@ async def with_connection_pool():
     async with aiohttp.ClientSession(connector=connector) as session:
         tasks = [session.get(f"https://api.example.com/item/{i}") for i in range(50)]
         responses = await asyncio.gather(*tasks)
-        return responses
+        return [await response.json() for response in responses]
 ```
 
 ### 2. Batch Operations

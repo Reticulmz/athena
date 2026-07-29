@@ -52,11 +52,13 @@ CREATE TABLE subscription_checkpoints (
 ### Template 2: Python Event Store Implementation
 
 ```python
+import asyncio
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional, List
 from uuid import UUID, uuid4
-import json
+
 import asyncpg
 
 @dataclass

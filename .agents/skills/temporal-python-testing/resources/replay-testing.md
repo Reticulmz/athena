@@ -438,7 +438,7 @@ class MigratedWorkflow:
 
 **Non-Deterministic Error**:
 
-```
+```text
 WorkflowNonDeterministicError: Workflow command mismatch at position 5
 Expected: ScheduleActivityTask(activity_id='activity-1')
 Got: ScheduleActivityTask(activity_id='activity-2')
@@ -448,7 +448,7 @@ Got: ScheduleActivityTask(activity_id='activity-2')
 
 **Version Mismatch Error**:
 
-```
+```text
 WorkflowVersionError: Workflow version changed from 1 to 2 without using get_version()
 ```
 

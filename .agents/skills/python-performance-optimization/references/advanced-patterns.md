@@ -71,10 +71,11 @@ def fibonacci_fast(n):
 n = 30
 
 slow_time = timeit.timeit(lambda: fibonacci_slow(n), number=1)
-fast_time = timeit.timeit(lambda: fibonacci_fast(n), number=1000)
+fibonacci_fast.cache_clear()
+fast_time = timeit.timeit(lambda: fibonacci_fast(n), number=1)
 
 print(f"Without cache (1 run): {slow_time:.4f}s")
-print(f"With cache (1000 runs): {fast_time:.4f}s")
+print(f"With cache (1 run): {fast_time:.4f}s")
 
 # Cache info
 print(f"Cache info: {fibonacci_fast.cache_info()}")
@@ -101,19 +102,28 @@ class SlottedClass:
         self.y = y
         self.z = z
 
-# Memory comparison
+# Shallow instance-storage comparison
 regular = RegularClass(1, 2, 3)
 slotted = SlottedClass(1, 2, 3)
 
-print(f"Regular class size: {sys.getsizeof(regular)} bytes")
-print(f"Slotted class size: {sys.getsizeof(slotted)} bytes")
+regular_size = sys.getsizeof(regular) + sys.getsizeof(regular.__dict__)
+slotted_size = sys.getsizeof(slotted)
+
+print(f"Regular class instance storage: {regular_size} bytes")
+print(f"Slotted class instance storage: {slotted_size} bytes")
 
 # Significant savings with many instances
 regular_objects = [RegularClass(i, i+1, i+2) for i in range(10000)]
 slotted_objects = [SlottedClass(i, i+1, i+2) for i in range(10000)]
 
-print(f"\nMemory for 10000 regular objects: ~{sys.getsizeof(regular) * 10000} bytes")
-print(f"Memory for 10000 slotted objects: ~{sys.getsizeof(slotted) * 10000} bytes")
+regular_total = sum(
+    sys.getsizeof(obj) + sys.getsizeof(obj.__dict__)
+    for obj in regular_objects
+)
+slotted_total = sum(sys.getsizeof(obj) for obj in slotted_objects)
+
+print(f"\nInstance storage for 10000 regular objects: ~{regular_total} bytes")
+print(f"Instance storage for 10000 slotted objects: ~{slotted_total} bytes")
 ```
 
 ### Pattern 14: Multiprocessing for CPU-Bound Tasks

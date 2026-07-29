@@ -2,7 +2,7 @@
 
 ## Clean Architecture — Directory Structure
 
-```
+```text
 app/
 ├── domain/           # Entities, value objects, interfaces
 │   ├── entities/

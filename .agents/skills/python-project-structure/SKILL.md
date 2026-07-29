@@ -24,7 +24,7 @@ Group related code that changes together. A module should have a single, clear p
 
 ### 2. Explicit Interfaces
 
-Define what's public with `__all__`. Everything not listed is an internal implementation detail.
+Use `__all__` to control wildcard imports and communicate the intended public API to tooling. Names omitted from it are non-exported by convention, but direct imports remain possible.
 
 ### 3. Flat Hierarchies
 
@@ -36,7 +36,7 @@ Apply naming and organization patterns uniformly across the project.
 
 ## Quick Start
 
-```
+```text
 myproject/
 ├── src/
 │   └── myproject/
@@ -71,7 +71,7 @@ Each file should focus on a single concept or closely related set of functions. 
 
 ### Pattern 2: Explicit Public APIs with `__all__`
 
-Define the public interface for every module. Unlisted members are internal implementation details.
+Define the intended public interface for every module. `__all__` controls wildcard imports and related tooling; unlisted members remain directly importable but are treated as non-exported by convention.
 
 ```python
 # mypackage/services/__init__.py
@@ -94,7 +94,7 @@ __all__ = [
 
 Prefer minimal nesting. Deep hierarchies make imports verbose and navigation difficult.
 
-```
+```text
 # Preferred: Flat structure
 project/
 ├── api/
@@ -121,7 +121,7 @@ Choose one approach and apply it consistently throughout the project.
 
 **Option A: Colocated Tests**
 
-```
+```text
 src/
 ├── user_service.py
 ├── test_user_service.py
@@ -133,7 +133,7 @@ Benefits: Tests live next to the code they verify. Easy to see coverage gaps.
 
 **Option B: Parallel Test Directory**
 
-```
+```text
 src/
 ├── services/
 │   ├── user_service.py
@@ -181,7 +181,7 @@ from mypackage import MainClass, Settings
 
 Organize code by architectural layer for clear separation of concerns.
 
-```
+```text
 myapp/
 ├── api/           # HTTP handlers, request/response
 │   ├── routes/
@@ -199,7 +199,7 @@ Each layer should only depend on layers below it, never above.
 
 For complex applications, organize by business domain rather than technical layer.
 
-```
+```text
 ecommerce/
 ├── users/
 │   ├── models.py

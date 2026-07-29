@@ -12,11 +12,8 @@ packages:
   - "tools/*"
 ```
 
-```json
-// .npmrc
-# Hoist shared dependencies
-shamefully-hoist=true
-
+```ini
+# .npmrc
 # Strict peer dependencies
 auto-install-peers=true
 strict-peer-dependencies=true
@@ -24,6 +21,8 @@ strict-peer-dependencies=true
 # Performance
 store-dir=~/.pnpm-store
 ```
+
+Use isolated dependency resolution by default. Enable hoisting only as a documented compatibility escape hatch for packages that cannot yet declare or resolve their dependencies correctly.
 
 ### Dependency Management
 

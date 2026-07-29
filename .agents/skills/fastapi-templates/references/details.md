@@ -9,15 +9,16 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from app.core.database import engine
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
-    # Startup
-    await database.connect()
-    yield
-    # Shutdown
-    await database.disconnect()
+    try:
+        yield
+    finally:
+        # Shutdown
+        await engine.dispose()
 
 app = FastAPI(
     title="API Template",
@@ -164,6 +165,11 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         return False
 
 # repositories/user_repository.py
+from typing import Optional
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.repositories.base_repository import BaseRepository
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
@@ -380,6 +386,7 @@ from app.core.security import ALGORITHM
 from app.core.config import get_settings
 from app.repositories.user_repository import user_repository
 
+settings = get_settings()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
 
 async def get_current_user(

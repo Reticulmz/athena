@@ -315,8 +315,8 @@ docs = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     # Additional dev dependencies managed by uv
 ]
 

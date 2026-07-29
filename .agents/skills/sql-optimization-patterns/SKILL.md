@@ -187,14 +187,14 @@ FROM pg_stat_statements
 ORDER BY mean_time DESC
 LIMIT 10;
 
--- Find missing indexes (PostgreSQL)
+-- Find heuristic candidates for missing indexes (PostgreSQL)
 SELECT
     schemaname,
     tablename,
     seq_scan,
     seq_tup_read,
     idx_scan,
-    seq_tup_read / seq_scan AS avg_seq_tup_read
+    seq_tup_read::numeric / NULLIF(seq_scan, 0) AS avg_seq_tup_read
 FROM pg_stat_user_tables
 WHERE seq_scan > 0
 ORDER BY seq_tup_read DESC

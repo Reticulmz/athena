@@ -244,8 +244,8 @@ def test_sorted_list_properties(lst):
     # Same length
     assert len(sorted_lst) == len(lst)
 
-    # All elements present
-    assert set(sorted_lst) == set(lst)
+    # All elements and duplicate counts preserved
+    assert sorted_lst == sorted(lst)
 
     # Is ordered
     for i in range(len(sorted_lst) - 1):

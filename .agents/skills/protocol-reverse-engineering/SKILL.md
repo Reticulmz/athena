@@ -61,7 +61,7 @@ mitmdump -w traffic.mitm
 
 ### Wireshark Analysis
 
-```
+```text
 # Display filters
 tcp.port == 8080
 http.request.method == "POST"
@@ -128,7 +128,7 @@ send(pkt)
 
 ### Common Protocol Signatures
 
-```
+```text
 HTTP        - "HTTP/1." or "GET " or "POST " at start
 TLS/SSL     - 0x16 0x03 (record layer)
 DNS         - UDP port 53, specific header format
@@ -144,7 +144,7 @@ MongoDB     - BSON documents with specific header
 
 ### Protocol Header Patterns
 
-```
+```text
 +--------+--------+--------+--------+
 |  Magic number / Signature         |
 +--------+--------+--------+--------+
@@ -162,31 +162,31 @@ MongoDB     - BSON documents with specific header
 
 ### Structure Identification
 
-```python
-# Common patterns in binary protocols
+```c
+// Common patterns in binary protocols
 
-# Length-prefixed message
+// Length-prefixed message
 struct Message {
-    uint32_t length;      # Total message length
-    uint16_t msg_type;    # Message type identifier
-    uint8_t  flags;       # Flags/options
-    uint8_t  reserved;    # Padding/alignment
-    uint8_t  payload[];   # Variable-length payload
+    uint32_t length;      // Total message length
+    uint16_t msg_type;    // Message type identifier
+    uint8_t  flags;       // Flags/options
+    uint8_t  reserved;    // Padding/alignment
+    uint8_t  payload[];   // Variable-length payload
 };
 
-# Type-Length-Value (TLV)
+// Type-Length-Value (TLV)
 struct TLV {
-    uint8_t  type;        # Field type
-    uint16_t length;      # Field length
-    uint8_t  value[];     # Field data
+    uint8_t  type;        // Field type
+    uint16_t length;      // Field length
+    uint8_t  value[];     // Field data
 };
 
-# Fixed header + variable payload
+// Fixed header + variable payload
 struct Packet {
-    uint8_t  magic[4];    # "ABCD" signature
+    uint8_t  magic[4];    // "ABCD" signature
     uint32_t version;
     uint32_t payload_len;
-    uint32_t checksum;    # CRC32 or similar
+    uint32_t checksum;    // CRC32 or similar
     uint8_t  payload[];
 };
 ```
@@ -368,7 +368,7 @@ Brief description of protocol purpose and design.
 | 6      | var  | Extensions | TLV-encoded extensions   |
 
 ## State Machine
-```
+```text
 
 [INIT] --HELLO--> [WAIT_ACK] --HELLO_ACK--> [CONNECTED]
 |
@@ -380,13 +380,11 @@ DATA/DATA
 
 ## Examples
 ### Connection Establishment
-```
+```text
 
 Client -> Server: HELLO (ClientID=0x12345678)
 Server -> Client: HELLO_ACK (Status=OK)
 Client -> Server: DATA (payload)
-
-```
 
 ```
 

@@ -30,6 +30,23 @@ function useAccordionContext() {
   return context;
 }
 
+interface AccordionItemContextValue {
+  id: string;
+}
+
+const AccordionItemContext =
+  React.createContext<AccordionItemContextValue | null>(null);
+
+function useAccordionItemContext() {
+  const context = React.useContext(AccordionItemContext);
+  if (!context) {
+    throw new Error(
+      "Accordion item components must be used within an AccordionItem",
+    );
+  }
+  return context;
+}
+
 // Root component
 interface AccordionProps {
   children: React.ReactNode;
@@ -353,6 +370,7 @@ function useListbox<T>({
 
   const select = React.useCallback(
     (index: number) => {
+      if (index < 0 || index >= items.length) return;
       setSelectedIndex(index);
       onSelect?.(items[index], index);
     },

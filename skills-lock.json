@@ -17,7 +17,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/backend-development/skills/architecture-patterns/SKILL.md",
-      "computedHash": "a66aaa5aa49b75bec12b6270dcde8794b1f0cc75fbb9ecb999e43f8b723b461f"
+      "computedHash": "ba9dbacd7bdf00a1ea6913497f83190ba1b7ea5da53ac99b92f76940405314f5"
     },
     "ask-matt": {
       "source": "mattpocock/skills",
@@ -29,7 +29,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/python-development/skills/async-python-patterns/SKILL.md",
-      "computedHash": "e0f03523d989848310c93a599541948474f24ccaa04c8d52ed1b45cc5adaebde"
+      "computedHash": "ee36a03781b88d884cc9e80409f96564f7676a305478ef598945971ea93329e5"
     },
     "attack-tree-construction": {
       "source": "wshobson/agents",
@@ -77,13 +77,13 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/backend-development/skills/cqrs-implementation/SKILL.md",
-      "computedHash": "a03ac44d1fdf9f58d5516cd0609cb80f8cd4c06182fb3704710872afb5f84e6d"
+      "computedHash": "dc62904afc5dd01e312bfb9ae20ba6348ef6a700c2c30457383f07e1a6c64325"
     },
     "database-migration": {
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/framework-migration/skills/database-migration/SKILL.md",
-      "computedHash": "1ad0f4a5b20a21e2114a4f32e014bc9f4fe528fda612c39433fe82ed245ee0df"
+      "computedHash": "d7f1b8bf1b1bf8e8d3c8b064416432937a2331c8e333dad676b227f636462bbe"
     },
     "debugging-strategies": {
       "source": "wshobson/agents",
@@ -101,7 +101,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/ui-design/skills/design-system-patterns/SKILL.md",
-      "computedHash": "e1d2631eab1a7113fb60e6df3ace05aac0ddce6207bceec87721119a8e1a1c78"
+      "computedHash": "cb5318848f76cf4c80b9213942e4c3d04853c1567f1ebcbe3260a3781491790c"
     },
     "diagnosing-bugs": {
       "source": "mattpocock/skills",
@@ -119,7 +119,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/developer-essentials/skills/e2e-testing-patterns/SKILL.md",
-      "computedHash": "6daed3254a84348588532aca327ec82a57cafefd7c97c50e75879788f7c1a18d"
+      "computedHash": "6dc0f85438514468de96d26fca6d072bd21e390d20c50f658137ff577e58d7f9"
     },
     "error-handling-patterns": {
       "source": "wshobson/agents",
@@ -131,13 +131,13 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/backend-development/skills/event-store-design/SKILL.md",
-      "computedHash": "69ef518c047d7d9f630f022d60ace329f353a3b3b19193c8b4f11b0faf6c3348"
+      "computedHash": "498cebc804affa1b5f8dd83c9f2818ec348479e9c7c58c2a2650ea456a39d59a"
     },
     "fastapi-templates": {
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/api-scaffolding/skills/fastapi-templates/SKILL.md",
-      "computedHash": "629e7e404a3627790138127508b889bf38de3e7fad3647f2bb4367e5bfd19bd1"
+      "computedHash": "c128afafea88fc9ae75b8bb8ed962d46ac430c746068324438e8729ead72f9a9"
     },
     "git-advanced-workflows": {
       "source": "wshobson/agents",
@@ -191,7 +191,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/developer-essentials/skills/monorepo-management/SKILL.md",
-      "computedHash": "0a0f4a9860b7d12b914fa2d167c322fbe8328fe53679210439023cd5ef95bfe8"
+      "computedHash": "51a9eb033acf036e144dbb01bcd350a598b19c44b09a75a150d2a155def7fead"
     },
     "multi-reviewer-patterns": {
       "source": "wshobson/agents",
@@ -227,7 +227,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/reverse-engineering/skills/protocol-reverse-engineering/SKILL.md",
-      "computedHash": "9937cd621efd79a150ee15df6b6532fd08688b09484989466845b692271dd7ac"
+      "computedHash": "fbec06f0af66bd2c4118751f7dda1a748b7116082697fbb9083a64d7cb1bb5ce"
     },
     "prototype": {
       "source": "mattpocock/skills",
@@ -239,7 +239,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/python-development/skills/python-anti-patterns/SKILL.md",
-      "computedHash": "5a6d1c378bbfc859a12fe08dda1e2b856af725ff3cc46ee38cea8bd03736abdb"
+      "computedHash": "8e74897cec815465d7155205af15ae9e096667bbf0d1ac034050e400991095df"
     },
     "python-background-jobs": {
       "source": "wshobson/agents",
@@ -251,7 +251,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/python-development/skills/python-code-style/SKILL.md",
-      "computedHash": "35ed0c437f33462187b0a89da8e5bfe9ac259dbc8731257c5445f1a5e1229acf"
+      "computedHash": "b43cd91371b9a46bdd0fb67b485cae2cbf1b3553bbb9e2ebf9141c1b4c99e1a8"
     },
     "python-configuration": {
       "source": "wshobson/agents",
@@ -263,7 +263,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/python-development/skills/python-design-patterns/SKILL.md",
-      "computedHash": "593f109cffd8f81019e364102ee239053c7f4477c8ad901b9551fc4afaf22bd0"
+      "computedHash": "31a3fd636c239d3a55764515b0317d957269a62f66f49950b7e7cb5cac80a04d"
     },
     "python-error-handling": {
       "source": "wshobson/agents",
@@ -281,37 +281,37 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/python-development/skills/python-packaging/SKILL.md",
-      "computedHash": "f909306678a23ce30ce7f792e86fb721a6d339d7a01ace7acd3b122781f55a31"
+      "computedHash": "d7432da4b7f4548a52663a25df30783fc73fe2c93d53f295d09f6e34c4cb2d11"
     },
     "python-performance-optimization": {
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/python-development/skills/python-performance-optimization/SKILL.md",
-      "computedHash": "5a0e5ccd00cd8e850e1068707e042339e182190eb89f8a300f58c18f53876059"
+      "computedHash": "88d1d80042fc61d0b5d2b419333ae27457f898b625668ca0f85412d5487e315b"
     },
     "python-project-structure": {
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/python-development/skills/python-project-structure/SKILL.md",
-      "computedHash": "2f4f560964af8ecad4d54666c044baa54671d0abd1136c848b539befe24db170"
+      "computedHash": "243419ce31bd3e251ef98b3a04df483736f55185dc3ec1c4b1106e997a057f21"
     },
     "python-resilience": {
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/python-development/skills/python-resilience/SKILL.md",
-      "computedHash": "f7a19b3542c2a18ed33a1d64f6a95b3eae88eb5a3f18439ca0414cf496a12c1b"
+      "computedHash": "dec137ab119c0db1dca2ca867b0c23e1eb07e0383e49d89935c52002a52d9035"
     },
     "python-resource-management": {
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/python-development/skills/python-resource-management/SKILL.md",
-      "computedHash": "255030ac16b4b20207a8916a8580551144bfdff851410b1f4bc2bedcd5cc41d9"
+      "computedHash": "fb975e527e128e39fad815ddaf43a3dbda8720fe4dae4baf2dc198554bdc0415"
     },
     "python-testing-patterns": {
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/python-development/skills/python-testing-patterns/SKILL.md",
-      "computedHash": "1306eea409e7eff2288d7658806cb508f18339a0ee9a686d324a0fd2570eae55"
+      "computedHash": "ea23c6fb872662b980d7674d7d7f267d94f04ca563065cae9d3d2737bcff45e4"
     },
     "python-type-safety": {
       "source": "wshobson/agents",
@@ -365,7 +365,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/developer-essentials/skills/sql-optimization-patterns/SKILL.md",
-      "computedHash": "19ff8ce86d20aa39cace441e15d23feb9b91be5fbed95526b5bd9ee3bffb6411"
+      "computedHash": "26621a0f907c9b637ae1ce4a8acd35a6ae8a79f6c40b7f4afa6014e875835797"
     },
     "tdd": {
       "source": "mattpocock/skills",
@@ -383,7 +383,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/backend-development/skills/temporal-python-testing/SKILL.md",
-      "computedHash": "b377094ba2b4d7fd9a1c6e7313bc54e07570f5ba802c62ad81d83d722ecc8539"
+      "computedHash": "e07cb287e4404cc96f0317cd5299a94d9ddb48599e15bb19f738c812b9881489"
     },
     "threat-mitigation-mapping": {
       "source": "wshobson/agents",
@@ -413,7 +413,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/python-development/skills/uv-package-manager/SKILL.md",
-      "computedHash": "c2bf8833d6c3ffa283171ef3b8da90274451605e170077f1ee6529cc38aa6438"
+      "computedHash": "d3f42578117e260ca6a64c31338564d53a1ac97e076321ef26667d89a60263a0"
     },
     "visual-design-foundations": {
       "source": "wshobson/agents",

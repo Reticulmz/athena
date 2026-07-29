@@ -52,12 +52,12 @@ import time
 
 def measure_time():
     """Simple timing measurement."""
-    start = time.time()
+    start = time.perf_counter()
 
     # Your code here
     result = sum(range(1000000))
 
-    elapsed = time.time() - start
+    elapsed = time.perf_counter() - start
     print(f"Execution time: {elapsed:.4f} seconds")
     return result
 

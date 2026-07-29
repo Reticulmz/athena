@@ -96,7 +96,7 @@ Now HTTP changes don't affect business logic, and vice versa.
 
 Organize code into distinct layers with clear responsibilities.
 
-```
+```text
 ┌─────────────────────────────────────────────────────┐
 │  API Layer (handlers)                                │
 │  - Parse requests                                    │
@@ -184,7 +184,7 @@ class NotificationService:
         message: str,
         channels: set[str] | None = None,
     ) -> None:
-        channels = channels or {"email"}
+        channels = {"email"} if channels is None else channels
 
         if "email" in channels:
             await self._email.send(user.email, message)

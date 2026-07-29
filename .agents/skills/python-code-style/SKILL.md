@@ -39,7 +39,9 @@ Modern Python code should include type hints for all public APIs.
 ```bash
 # Install modern tooling
 pip install ruff mypy
+```
 
+```toml
 # Configure in pyproject.toml
 [tool.ruff]
 line-length = 120
@@ -279,7 +281,7 @@ def create_user(
 # Good: Chain method calls clearly
 result = (
     db.query(User)
-    .filter(User.active == True)
+    .filter(User.active.is_(True))
     .order_by(User.created_at.desc())
     .limit(10)
     .all()

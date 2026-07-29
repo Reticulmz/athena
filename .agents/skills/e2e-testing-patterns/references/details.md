@@ -126,9 +126,14 @@ export const test = base.extend<TestData>({
   },
 
   adminUser: async ({}, use) => {
+    const password = process.env.ADMIN_PASSWORD;
+    if (!password) {
+      throw new Error("ADMIN_PASSWORD must be set for admin E2E tests");
+    }
+
     await use({
       email: "admin@example.com",
-      password: process.env.ADMIN_PASSWORD!,
+      password,
     });
   },
 });

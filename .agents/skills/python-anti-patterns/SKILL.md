@@ -233,7 +233,7 @@ async def fetch_data():
 async def fetch_data():
     await asyncio.sleep(1)
     async with httpx.AsyncClient() as client:
-        response = await client.get(url)
+        response = await client.get(url, timeout=10.0)
 ```
 
 ## Type Safety Anti-Patterns

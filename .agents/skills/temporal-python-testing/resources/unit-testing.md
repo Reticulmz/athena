@@ -184,21 +184,36 @@ async def test_activity_heartbeat():
 **Cancellation Testing**:
 
 ```python
+import asyncio
+
+from temporalio import activity
+from temporalio.testing import ActivityEnvironment
+
 async def test_activity_cancellation():
     """Test activity cancellation handling"""
 
+    started = asyncio.Event()
+
     @activity.defn
     async def cancellable_activity() -> str:
+        started.set()
         try:
             while True:
                 if activity.is_cancelled():
                     return "cancelled"
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0)
         except asyncio.CancelledError:
             return "cancelled"
 
-    env = ActivityEnvironment(cancellation_reason="test-cancel")
-    result = await env.run(cancellable_activity)
+    env = ActivityEnvironment()
+    task = asyncio.create_task(env.run(cancellable_activity))
+    await started.wait()
+    env.cancel(
+        cancellation_details=activity.ActivityCancellationDetails(
+            cancel_requested=True,
+        ),
+    )
+    result = await task
     assert result == "cancelled"
 ```
 
@@ -235,7 +250,7 @@ async def test_activity_error():
 ```python
 # conftest.py
 import pytest
-from temporalio.testing import WorkflowEnvironment
+from temporalio.testing import ActivityEnvironment, WorkflowEnvironment
 
 @pytest.fixture(scope="module")
 async def workflow_env():

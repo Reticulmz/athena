@@ -52,7 +52,7 @@ Comprehensive guide to creating, structuring, and distributing Python packages u
 
 ### Minimal Package Structure
 
-```
+```text
 my-package/
 ├── pyproject.toml
 ├── README.md
@@ -94,7 +94,7 @@ dev = [
 
 ### Pattern 1: Source Layout (Recommended)
 
-```
+```text
 my-package/
 ├── pyproject.toml
 ├── README.md
@@ -129,7 +129,7 @@ where = ["src"]
 
 ### Pattern 2: Flat Layout
 
-```
+```text
 my-package/
 ├── pyproject.toml
 ├── README.md
@@ -147,7 +147,7 @@ my-package/
 
 ### Pattern 3: Multi-Package Project
 
-```
+```text
 project/
 ├── pyproject.toml
 ├── packages/

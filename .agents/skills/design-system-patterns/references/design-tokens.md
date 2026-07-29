@@ -244,7 +244,7 @@ Design tokens are the atomic values of a design system - the smallest pieces tha
 
 ### Recommended Structure
 
-```
+```text
 [category]-[property]-[variant]-[state]
 
 Examples:

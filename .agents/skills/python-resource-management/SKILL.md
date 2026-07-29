@@ -137,7 +137,11 @@ class AsyncDatabasePool:
 
     async def execute(self, query: str, *args) -> list[dict]:
         """Execute query using pooled connection."""
-        async with self._pool.acquire() as conn:
+        pool = self._pool
+        if pool is None:
+            raise RuntimeError("Database pool is not initialized")
+
+        async with pool.acquire() as conn:
             return await conn.fetch(query, *args)
 
 # Usage

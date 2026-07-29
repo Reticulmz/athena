@@ -21,7 +21,7 @@ Production-ready FastAPI project structures with async patterns, dependency inje
 
 **Recommended Layout:**
 
-```
+```text
 app/
 ├── api/                    # API routes
 │   ├── v1/

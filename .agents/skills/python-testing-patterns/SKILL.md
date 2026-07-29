@@ -217,6 +217,8 @@ def test_with_time_travel():
 
 ```python
 # test_markers.py
+import os
+
 import pytest
 
 @pytest.mark.slow
@@ -236,8 +238,6 @@ def test_database_integration():
 def test_future_feature():
     """Skip tests temporarily."""
     pass
-
-
 @pytest.mark.skipif(os.name == "nt", reason="Unix only test")
 def test_unix_specific():
     """Conditional skip."""

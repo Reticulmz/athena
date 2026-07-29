@@ -20,7 +20,7 @@ Comprehensive guide to implementing CQRS (Command Query Responsibility Segregati
 
 ### 1. CQRS Architecture
 
-```
+```text
                     ┌─────────────┐
                     │   Client    │
                     └──────┬──────┘

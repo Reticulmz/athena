@@ -399,7 +399,7 @@ async def test_activity_edge_cases(activity_env, input, expected):
 
 ### Test Structure
 
-```
+```text
 tests/
 ├── integration/
 │   ├── conftest.py              # Shared fixtures

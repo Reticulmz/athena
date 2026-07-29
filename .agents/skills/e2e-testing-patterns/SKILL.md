@@ -41,7 +41,7 @@ Build reliable, fast, and maintainable end-to-end test suites that provide confi
 
 **The Testing Pyramid:**
 
-```
+```text
         /\
        /E2E\         ← Few, focused on critical paths
       /─────\

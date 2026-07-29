@@ -10,6 +10,7 @@
   --color-blue-500: #3b82f6;
   --color-blue-600: #2563eb;
   --color-gray-50: #fafafa;
+  --color-gray-600: #525252;
   --color-gray-900: #171717;
 
   --space-1: 0.25rem;
@@ -63,7 +64,14 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window !== "undefined") {
-      return (localStorage.getItem("theme") as Theme) || "system";
+      const storedTheme = localStorage.getItem("theme");
+      if (
+        storedTheme === "light" ||
+        storedTheme === "dark" ||
+        storedTheme === "system"
+      ) {
+        return storedTheme;
+      }
     }
     return "system";
   });

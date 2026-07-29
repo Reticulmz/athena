@@ -8,7 +8,7 @@ Deep-dive implementation examples for DDD bounded contexts, Onion Architecture, 
 
 A realistic e-commerce system organised by bounded context, each context is a deployable service:
 
-```
+```text
 ecommerce/
 ├── services/
 │   ├── identity/                    # Bounded context: users & auth
@@ -200,7 +200,7 @@ class StubCatalogClient(CatalogClientPort):
 
 ## Context Map — Relationships Between Bounded Contexts
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                        E-Commerce System                         │
 │                                                                  │
@@ -362,7 +362,7 @@ class PlaceOrderUseCase:
 
 Common symptoms and their structural fixes:
 
-```
+```text
 Symptom: use_cases/create_order.py imports from adapters/email_sender.py
 Fix:     Create domain/interfaces/notification_service.py (abstract port).
          use_cases imports the port. adapters implements it.

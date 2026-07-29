@@ -20,7 +20,7 @@ Comprehensive guide to designing event stores for event-sourced applications.
 
 ### 1. Event Store Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────┐
 │                    Event Store                       │
 ├─────────────────────────────────────────────────────┤

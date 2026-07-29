@@ -123,7 +123,7 @@ if __name__ == "__main__":
 
 ### Project Structure
 
-```
+```text
 temporal-project/
 ├── docker-compose.yml
 ├── pyproject.toml
@@ -249,7 +249,7 @@ pytest-xdist>=3.3.0  # Parallel test execution
 # pyproject.toml
 [build-system]
 requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "temporal-project"
@@ -324,7 +324,7 @@ pytest --cov=src --cov-fail-under=80
 
 ### Coverage Report Example
 
-```
+```text
 ---------- coverage: platform darwin, python 3.11.5 -----------
 Name                                Stmts   Miss  Cover   Missing
 -----------------------------------------------------------------
