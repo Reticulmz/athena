@@ -515,10 +515,8 @@ def test_docstrings_command_runs_only_active_quality_tools() -> None:
     """
     script = CI_SCRIPT_PATH.read_text(encoding="utf-8")
 
-    assert 'uv run ruff check --select D -- "${FIRST_PARTY_PYTHON_FILES[@]}"' in script
-    assert (
-        'uv run interrogate --config pyproject.toml -- "${FIRST_PARTY_PYTHON_FILES[@]}"' in script
-    )
+    assert "run_first_party_python_tool uv run ruff check --select D" in script
+    assert "run_first_party_python_tool uv run interrogate --config pyproject.toml" in script
     assert "uv run pydoclint" not in script
 
 
@@ -537,19 +535,16 @@ def test_quality_and_fix_commands_share_the_first_party_python_inventory() -> No
     fix_body = _shell_function_body(script, "run_fix")
 
     assert "collect_first_party_python_files || return 1" in quality_body
-    assert 'uv run ruff format --check -- "${FIRST_PARTY_PYTHON_FILES[@]}"' in quality_body
-    assert 'uv run ruff check -- "${FIRST_PARTY_PYTHON_FILES[@]}"' in quality_body
-    assert (
-        'uv run interrogate --config pyproject.toml -- "${FIRST_PARTY_PYTHON_FILES[@]}"'
-        in quality_body
-    )
+    assert "run_first_party_python_tool uv run ruff format --check" in quality_body
+    assert "run_first_party_python_tool uv run ruff check" in quality_body
+    assert "run_first_party_python_tool uv run interrogate --config pyproject.toml" in quality_body
     assert "uv run basedpyright src/ tests/" in quality_body
     assert "uv run lint-imports" in quality_body
     assert "uv run ruff format --check src/ tests/" not in quality_body
     assert "uv run ruff check src/ tests/" not in quality_body
     assert "collect_first_party_python_files || return 1" in fix_body
-    lint_fix_command = 'uv run ruff check --fix -- "${FIRST_PARTY_PYTHON_FILES[@]}"'
-    format_command = 'uv run ruff format -- "${FIRST_PARTY_PYTHON_FILES[@]}"'
+    lint_fix_command = "run_first_party_python_tool uv run ruff check --fix"
+    format_command = "run_first_party_python_tool uv run ruff format"
     assert lint_fix_command in fix_body
     assert format_command in fix_body
     assert fix_body.index(lint_fix_command) < fix_body.index(format_command)
@@ -563,14 +558,84 @@ def test_first_party_python_paths_follow_cli_option_terminators() -> None:
             assertionで失敗する.
     """
     script = CI_SCRIPT_PATH.read_text(encoding="utf-8")
+    execution_body = _shell_function_body(script, "run_first_party_python_tool")
     inventory_tool_lines = [
         line.strip()
         for line in script.splitlines()
-        if "uv run " in line and '"${FIRST_PARTY_PYTHON_FILES[@]}"' in line
+        if "run_first_party_python_tool uv run " in line
     ]
 
     assert len(inventory_tool_lines) == 7
-    assert all(' -- "${FIRST_PARTY_PYTHON_FILES[@]}"' in line for line in inventory_tool_lines)
+    assert 'xargs -0 -n "${FIRST_PARTY_PYTHON_BATCH_SIZE}" -- "$@" --' in execution_body
+
+
+def test_first_party_python_tools_execute_the_inventory_in_bounded_batches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ruffとinterrogateへ全inventoryを一つのargvで渡さないことを検証する.
+
+    Args:
+        tmp_path (Path): 一時Git worktreeとfake uv executableを作るdirectory.
+        monkeypatch (pytest.MonkeyPatch): fake executable用のenvironmentを設定するfixture.
+
+    Returns:
+        None: 1001件のinventoryが1000件以下のbatchへ分割されない場合はassertionで失敗する.
+
+    Raises:
+        AssertionError: fixture fileのstagingまたはdocstrings command実行に失敗した場合.
+    """
+    repository_root = tmp_path / "batched repository"
+    _initialize_temporary_git_repository(repository_root)
+    source_paths = [f"source_{index:04d}.py" for index in range(1001)]
+    for source_path in source_paths:
+        _ = (repository_root / source_path).write_text(
+            '"""Batch fixture module."""\n',
+            encoding="utf-8",
+        )
+
+    staging_process = subprocess.run(
+        ["git", "add", "--", *source_paths],
+        cwd=repository_root,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=_environment_without_git_local_context(),
+    )
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    invocation_log = tmp_path / "uv-invocations.log"
+    fake_uv = fake_bin / "uv"
+    _ = fake_uv.write_text(
+        """#!/usr/bin/env bash
+tool="$2"
+path_count=0
+after_terminator=false
+for argument in "$@"; do
+    if [ "${after_terminator}" = true ]; then
+        path_count=$((path_count + 1))
+    elif [ "${argument}" = "--" ]; then
+        after_terminator=true
+    fi
+done
+printf '%s %s\\n' "${tool}" "${path_count}" >> "${ATHENA_TEST_UV_LOG}"
+""",
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o755)
+    monkeypatch.setenv("ATHENA_TEST_UV_LOG", str(invocation_log))
+    monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ['PATH']}")
+
+    assert staging_process.returncode == 0, staging_process.stderr
+    completed_process = _run_ci_command("docstrings", cwd=repository_root)
+
+    assert completed_process.returncode == 0, completed_process.stderr
+    assert invocation_log.read_text(encoding="utf-8").splitlines() == [
+        "ruff 1000",
+        "ruff 1",
+        "interrogate 1000",
+        "interrogate 1",
+    ]
 
 
 def test_first_party_python_inventory_does_not_require_bash_nameref() -> None:

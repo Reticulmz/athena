@@ -3,6 +3,7 @@ set -euo pipefail
 
 declare -a FIRST_PARTY_PYTHON_FILES=()
 FIRST_PARTY_REPOSITORY_ROOT=""
+FIRST_PARTY_PYTHON_BATCH_SIZE=1000
 
 # athena Local CI Script
 
@@ -33,11 +34,11 @@ run_quality() {
 
         echo "=== Running quality checks ==="
         echo "--> Ruff format check"
-        uv run ruff format --check -- "${FIRST_PARTY_PYTHON_FILES[@]}"
+        run_first_party_python_tool uv run ruff format --check
         echo "--> Ruff lint check"
-        uv run ruff check -- "${FIRST_PARTY_PYTHON_FILES[@]}"
+        run_first_party_python_tool uv run ruff check
         echo "--> Interrogate docstring coverage"
-        uv run interrogate --config pyproject.toml -- "${FIRST_PARTY_PYTHON_FILES[@]}"
+        run_first_party_python_tool uv run interrogate --config pyproject.toml
         echo "--> Basedpyright type check"
         uv run basedpyright src/ tests/
         echo "--> Import linter"
@@ -53,9 +54,9 @@ run_fix() {
 
         echo "=== Applying fixes ==="
         echo "--> Ruff lint fix"
-        uv run ruff check --fix -- "${FIRST_PARTY_PYTHON_FILES[@]}"
+        run_first_party_python_tool uv run ruff check --fix
         echo "--> Ruff format"
-        uv run ruff format -- "${FIRST_PARTY_PYTHON_FILES[@]}"
+        run_first_party_python_tool uv run ruff format
     )
 }
 
@@ -101,6 +102,11 @@ collect_first_party_python_files() {
     fi
 }
 
+run_first_party_python_tool() {
+    printf '%s\0' "${FIRST_PARTY_PYTHON_FILES[@]}" \
+        | xargs -0 -n "${FIRST_PARTY_PYTHON_BATCH_SIZE}" -- "$@" --
+}
+
 run_python_files() {
     collect_first_party_python_files || return 1
     printf '%s\n' "${FIRST_PARTY_PYTHON_FILES[@]}"
@@ -116,12 +122,12 @@ run_docstrings() {
 
         echo "=== Running docstring quality checks ==="
         echo "--> Ruff docstring lint"
-        if ! uv run ruff check --select D -- "${FIRST_PARTY_PYTHON_FILES[@]}"; then
+        if ! run_first_party_python_tool uv run ruff check --select D; then
             status=1
         fi
 
         echo "--> interrogate docstring coverage"
-        if ! uv run interrogate --config pyproject.toml -- "${FIRST_PARTY_PYTHON_FILES[@]}"; then
+        if ! run_first_party_python_tool uv run interrogate --config pyproject.toml; then
             status=1
         fi
 

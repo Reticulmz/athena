@@ -386,6 +386,7 @@ pre-commit、CI quality統合を有効化する。
 - `docstrings`はRuff `D`と`interrogate`だけを実行する。
 - `python-files`は全toolが受け取るinventoryを1 path 1行で出力し、scope auditを可能にする。
 - 既存`fix`も同じinventoryへRuff format/check fixを適用し、対象scopeを`quality`と一致させる。
+- RuffとinterrogateへはNUL-safeなbounded batchでinventoryを渡し、全pathを一つのargvへ展開しない。
 - pre-commit Ruff entryを`uv run ruff`へ統一し、first-party Python変更時にfull docstring gateを
   呼び出す。`typings/`変更はdocstring gateを起動しない。
 - CI workflowは既存`quality` entryを維持する。
