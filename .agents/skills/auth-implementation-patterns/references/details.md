@@ -244,9 +244,67 @@ app.post("/api/auth/logout", (req, res) => {
 
 ```typescript
 import { createHash, timingSafeEqual } from "node:crypto";
+import type { NextFunction, Request, Response } from "express";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { Strategy as GitHubStrategy } from "passport-github2";
+
+const OAUTH_STATE_TTL_SECONDS = 300;
+const AUTHORIZATION_CODE_TTL_SECONDS = 60;
+const PKCE_SHA256_CHALLENGE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+
+interface OAuthLoginState {
+  codeChallenge: string;
+}
+
+interface AuthorizationGrant {
+  userId: string;
+  email: string;
+  role: string;
+  codeChallenge: string;
+}
+
+interface ExpiringSingleUseStore<T> {
+  issue(value: T & { ttlSeconds: number }): Promise<string>;
+  consume(token: string): Promise<T>;
+}
+
+// Bind these ports to a shared Valkey/DB adapter during composition. issue()
+// generates a cryptographically random token and stores its hash with the TTL;
+// consume() atomically gets and deletes one live value, rejecting missing,
+// expired, or previously consumed tokens.
+declare const oauthStateStore: ExpiringSingleUseStore<OAuthLoginState>;
+declare const authorizationCodeStore: ExpiringSingleUseStore<AuthorizationGrant>;
+
+function requireString(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${field} must be a non-empty string`);
+  }
+  return value;
+}
+
+function requirePkceChallenge(value: unknown): string {
+  const challenge = requireString(value, "code_challenge");
+  if (!PKCE_SHA256_CHALLENGE_PATTERN.test(challenge)) {
+    throw new Error("code_challenge must be an S256 base64url value");
+  }
+  return challenge;
+}
+
+async function consumeOAuthState(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    res.locals.oauthState = await oauthStateStore.consume(
+      requireString(req.query.state, "state"),
+    );
+    next();
+  } catch {
+    res.status(400).json({ error: "Invalid or expired OAuth state" });
+  }
+}
 
 // Google OAuth
 passport.use(
@@ -287,7 +345,7 @@ app.get("/api/auth/google", async (req, res, next) => {
   const codeChallenge = requirePkceChallenge(req.query.code_challenge);
   const state = await oauthStateStore.issue({
     codeChallenge,
-    ttlSeconds: 300,
+    ttlSeconds: OAUTH_STATE_TTL_SECONDS,
   });
 
   passport.authenticate("google", {
@@ -298,17 +356,16 @@ app.get("/api/auth/google", async (req, res, next) => {
 
 app.get(
   "/api/auth/google/callback",
+  consumeOAuthState,
   passport.authenticate("google", { session: false }),
   async (req, res) => {
-    const loginState = await oauthStateStore.consume(
-      requireString(req.query.state),
-    );
+    const loginState = res.locals.oauthState as OAuthLoginState;
     const code = await authorizationCodeStore.issue({
       userId: req.user.id,
       email: req.user.email,
       role: req.user.role,
       codeChallenge: loginState.codeChallenge,
-      ttlSeconds: 60,
+      ttlSeconds: AUTHORIZATION_CODE_TTL_SECONDS,
     });
 
     // Redirect only with a short-lived, single-use authorization code.
@@ -320,10 +377,10 @@ app.get(
 
 app.post("/api/auth/token", async (req, res) => {
   const grant = await authorizationCodeStore.consume(
-    requireString(req.body.code),
+    requireString(req.body.code, "code"),
   );
   const actualChallenge = createHash("sha256")
-    .update(requireString(req.body.codeVerifier))
+    .update(requireString(req.body.codeVerifier, "codeVerifier"))
     .digest("base64url");
   const actual = Buffer.from(actualChallenge);
   const expected = Buffer.from(grant.codeChallenge);

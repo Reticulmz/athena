@@ -247,6 +247,9 @@ class CheckpointStore(Protocol):
 
     def save(self, subscription_id: str, position: int) -> None: ...
 
+
+DEFAULT_CHECKPOINT_INTERVAL = 100
+
 # Connect
 client = EventStoreDBClient(uri="esdb://localhost:2113?tls=false")
 
@@ -297,19 +300,36 @@ def subscribe_to_all(
     handler,
     checkpoint_store: CheckpointStore,
     from_position: int = 0,
+    checkpoint_interval: int = DEFAULT_CHECKPOINT_INTERVAL,
 ):
+    if checkpoint_interval < 1:
+        raise ValueError("checkpoint_interval must be positive")
+
     checkpoint = checkpoint_store.load(subscription_id)
     start_position = checkpoint if checkpoint is not None else from_position
+    last_processed_position: int | None = None
+    events_since_checkpoint = 0
 
-    with client.subscribe_to_all(commit_position=start_position) as subscription:
-        for event in subscription:
-            handler({
-                'type': event.type,
-                'data': json.loads(event.data),
-                'stream_id': event.stream_name,
-                'position': event.commit_position
-            })
-            checkpoint_store.save(subscription_id, event.commit_position)
+    # Batched checkpoints provide at-least-once delivery. Handlers must be
+    # idempotent because an abrupt stop can replay the uncheckpointed tail.
+    try:
+        with client.subscribe_to_all(commit_position=start_position) as subscription:
+            for event in subscription:
+                handler({
+                    'type': event.type,
+                    'data': json.loads(event.data),
+                    'stream_id': event.stream_name,
+                    'position': event.commit_position
+                })
+                last_processed_position = event.commit_position
+                events_since_checkpoint += 1
+
+                if events_since_checkpoint >= checkpoint_interval:
+                    checkpoint_store.save(subscription_id, last_processed_position)
+                    events_since_checkpoint = 0
+    finally:
+        if last_processed_position is not None and events_since_checkpoint > 0:
+            checkpoint_store.save(subscription_id, last_processed_position)
 
 # Category projection ($ce-Category)
 def read_category(category: str):

@@ -41,7 +41,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/developer-essentials/skills/auth-implementation-patterns/SKILL.md",
-      "computedHash": "04e5070f078267d1f829721d6c413ab02ba515f45f835d1e8490e5b13b87769c"
+      "computedHash": "1474a2f50c40b6754ce454576c5dbf338076219d4bf2e48c1af84f061ae99fee"
     },
     "binary-analysis-patterns": {
       "source": "wshobson/agents",
@@ -131,7 +131,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/backend-development/skills/event-store-design/SKILL.md",
-      "computedHash": "b3e52ec0a1ffe56b53185f39e0395104cfe6a130f84ae3e7cf66039f132b249a"
+      "computedHash": "e035181f0f32a83c26a7cda5bbcd9ba81e2e7124cfa6edb06939238a3802c98e"
     },
     "fastapi-templates": {
       "source": "wshobson/agents",
