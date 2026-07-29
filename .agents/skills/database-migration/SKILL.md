@@ -207,7 +207,27 @@ module.exports = {
 module.exports = {
   up: async (queryInterface, Sequelize) => {
     await queryInterface.sequelize.transaction(async (transaction) => {
-      // PostgreSQL set-based transformation avoids loading every row in memory.
+      const invalidAddresses = await queryInterface.sequelize.query(
+        `SELECT address_string
+         FROM users
+         WHERE address_string IS NOT NULL
+           AND (
+             ARRAY_LENGTH(STRING_TO_ARRAY(address_string, ','), 1) <> 3
+             OR BTRIM(SPLIT_PART(address_string, ',', 1)) = ''
+             OR BTRIM(SPLIT_PART(address_string, ',', 2)) = ''
+             OR BTRIM(SPLIT_PART(address_string, ',', 3)) = ''
+           )
+         LIMIT 1`,
+        { transaction, type: Sequelize.QueryTypes.SELECT },
+      );
+
+      if (invalidAddresses.length > 0) {
+        throw new Error(
+          "Migration aborted: address_string must contain street, city, and state",
+        );
+      }
+
+      // Transform only after every source row satisfies the required shape.
       await queryInterface.sequelize.query(
         `UPDATE users
          SET street = NULLIF(BTRIM(SPLIT_PART(address_string, ',', 1)), ''),
@@ -217,7 +237,7 @@ module.exports = {
         { transaction },
       );
 
-      // Drop old column only after every row is transformed.
+      // Drop the source only after validation and transformation succeed.
       await queryInterface.removeColumn("users", "address_string", {
         transaction,
       });

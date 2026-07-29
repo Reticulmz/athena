@@ -269,16 +269,19 @@ interface ExpiringSingleUseStore<T> {
   consume(token: string): Promise<T>;
 }
 
+class InvalidOAuthRequestError extends Error {}
+class InvalidSingleUseTokenError extends Error {}
+
 // Bind these ports to a shared Valkey/DB adapter during composition. issue()
 // generates a cryptographically random token and stores its hash with the TTL;
 // consume() atomically gets and deletes one live value, rejecting missing,
-// expired, or previously consumed tokens.
+// expired, or previously consumed tokens with InvalidSingleUseTokenError.
 declare const oauthStateStore: ExpiringSingleUseStore<OAuthLoginState>;
 declare const authorizationCodeStore: ExpiringSingleUseStore<AuthorizationGrant>;
 
 function requireString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`${field} must be a non-empty string`);
+    throw new InvalidOAuthRequestError(`${field} must be a non-empty string`);
   }
   return value;
 }
@@ -286,9 +289,18 @@ function requireString(value: unknown, field: string): string {
 function requirePkceChallenge(value: unknown): string {
   const challenge = requireString(value, "code_challenge");
   if (!PKCE_SHA256_CHALLENGE_PATTERN.test(challenge)) {
-    throw new Error("code_challenge must be an S256 base64url value");
+    throw new InvalidOAuthRequestError(
+      "code_challenge must be an S256 base64url value",
+    );
   }
   return challenge;
+}
+
+function isOAuthClientError(error: unknown): boolean {
+  return (
+    error instanceof InvalidOAuthRequestError ||
+    error instanceof InvalidSingleUseTokenError
+  );
 }
 
 async function consumeOAuthState(
@@ -300,9 +312,12 @@ async function consumeOAuthState(
     res.locals.oauthState = await oauthStateStore.consume(
       requireString(req.query.state, "state"),
     );
-    next();
-  } catch {
-    res.status(400).json({ error: "Invalid or expired OAuth state" });
+    return next();
+  } catch (error) {
+    if (isOAuthClientError(error)) {
+      return res.status(400).json({ error: "Invalid or expired OAuth state" });
+    }
+    return next(error);
   }
 }
 
@@ -342,54 +357,75 @@ passport.use(
 // with short TTLs. The frontend creates code_verifier and sends its S256
 // code_challenge when starting login.
 app.get("/api/auth/google", async (req, res, next) => {
-  const codeChallenge = requirePkceChallenge(req.query.code_challenge);
-  const state = await oauthStateStore.issue({
-    codeChallenge,
-    ttlSeconds: OAUTH_STATE_TTL_SECONDS,
-  });
+  try {
+    const codeChallenge = requirePkceChallenge(req.query.code_challenge);
+    const state = await oauthStateStore.issue({
+      codeChallenge,
+      ttlSeconds: OAUTH_STATE_TTL_SECONDS,
+    });
 
-  passport.authenticate("google", {
-    scope: ["profile", "email"],
-    state,
-  })(req, res, next);
+    return passport.authenticate("google", {
+      scope: ["profile", "email"],
+      state,
+    })(req, res, next);
+  } catch (error) {
+    if (error instanceof InvalidOAuthRequestError) {
+      return res.status(400).json({ error: error.message });
+    }
+    return next(error);
+  }
 });
 
 app.get(
   "/api/auth/google/callback",
   consumeOAuthState,
   passport.authenticate("google", { session: false }),
-  async (req, res) => {
-    const loginState = res.locals.oauthState as OAuthLoginState;
-    const code = await authorizationCodeStore.issue({
-      userId: req.user.id,
-      email: req.user.email,
-      role: req.user.role,
-      codeChallenge: loginState.codeChallenge,
-      ttlSeconds: AUTHORIZATION_CODE_TTL_SECONDS,
-    });
+  async (req, res, next) => {
+    try {
+      const loginState = res.locals.oauthState as OAuthLoginState;
+      const code = await authorizationCodeStore.issue({
+        userId: req.user.id,
+        email: req.user.email,
+        role: req.user.role,
+        codeChallenge: loginState.codeChallenge,
+        ttlSeconds: AUTHORIZATION_CODE_TTL_SECONDS,
+      });
 
-    // Redirect only with a short-lived, single-use authorization code.
-    res.redirect(
-      `${process.env.FRONTEND_URL}/auth/callback?code=${encodeURIComponent(code)}`,
-    );
+      // Redirect only with a short-lived, single-use authorization code.
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/auth/callback?code=${encodeURIComponent(code)}`,
+      );
+    } catch (error) {
+      return next(error);
+    }
   },
 );
 
-app.post("/api/auth/token", async (req, res) => {
-  const grant = await authorizationCodeStore.consume(
-    requireString(req.body.code, "code"),
-  );
-  const actualChallenge = createHash("sha256")
-    .update(requireString(req.body.codeVerifier, "codeVerifier"))
-    .digest("base64url");
-  const actual = Buffer.from(actualChallenge);
-  const expected = Buffer.from(grant.codeChallenge);
+app.post("/api/auth/token", async (req, res, next) => {
+  try {
+    const grant = await authorizationCodeStore.consume(
+      requireString(req.body.code, "code"),
+    );
+    const actualChallenge = createHash("sha256")
+      .update(requireString(req.body.code_verifier, "code_verifier"))
+      .digest("base64url");
+    const actual = Buffer.from(actualChallenge);
+    const expected = Buffer.from(grant.codeChallenge);
 
-  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
-    return res.status(400).json({ error: "Invalid PKCE verifier" });
+    if (
+      actual.length !== expected.length ||
+      !timingSafeEqual(actual, expected)
+    ) {
+      return res.status(400).json({ error: "Invalid PKCE verifier" });
+    }
+
+    return res.json(generateTokens(grant.userId, grant.email, grant.role));
+  } catch (error) {
+    if (isOAuthClientError(error)) {
+      return res.status(400).json({ error: "Invalid authorization grant" });
+    }
+    return next(error);
   }
-
-  return res.json(generateTokens(grant.userId, grant.email, grant.role));
 });
 ```
 

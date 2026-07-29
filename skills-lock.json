@@ -41,7 +41,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/developer-essentials/skills/auth-implementation-patterns/SKILL.md",
-      "computedHash": "1474a2f50c40b6754ce454576c5dbf338076219d4bf2e48c1af84f061ae99fee"
+      "computedHash": "9d289bdf219e52c36354bf04bae27fdfd1a5db761fb2924e358655ea39c59e02"
     },
     "binary-analysis-patterns": {
       "source": "wshobson/agents",
@@ -83,7 +83,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/framework-migration/skills/database-migration/SKILL.md",
-      "computedHash": "4cd49c11baefea6001c3be8314640640a4d39d9ebd5ebe8ac17d0b0fb2a54932"
+      "computedHash": "c92948b3871ccc94a054b9a67688d4c1a31aafe7eda70a62d83004a65b36b7b4"
     },
     "debugging-strategies": {
       "source": "wshobson/agents",
@@ -131,7 +131,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/backend-development/skills/event-store-design/SKILL.md",
-      "computedHash": "e035181f0f32a83c26a7cda5bbcd9ba81e2e7124cfa6edb06939238a3802c98e"
+      "computedHash": "efedb9ede6959db7c2050ec7cb860bd212e479a68be2b9580022acead7c6b052"
     },
     "fastapi-templates": {
       "source": "wshobson/agents",
@@ -191,7 +191,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/developer-essentials/skills/monorepo-management/SKILL.md",
-      "computedHash": "a94bc917b57132e53fff35b9a0b6faafae81930e44573b1eb5ba2dd0d7dc8858"
+      "computedHash": "c7e6aae4c6fca4415b39e2daf5da9e12b084ec4f77b601058cce144c733f21a3"
     },
     "multi-reviewer-patterns": {
       "source": "wshobson/agents",

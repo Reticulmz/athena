@@ -109,14 +109,14 @@ cd my-monorepo
 {
   "name": "my-monorepo",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
     "test": "turbo run test",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "clean": "turbo run clean && rm -rf node_modules"
+    "clean": "turbo run clean && rm -rf node_modules",
+    "release": "changeset publish"
   },
   "devDependencies": {
     "turbo": "^2.10.6",
@@ -132,6 +132,7 @@ cd my-monorepo
 packages:
   - "apps/*"
   - "packages/*"
+  - "tools/*"
 ```
 
 ### Package Structure
