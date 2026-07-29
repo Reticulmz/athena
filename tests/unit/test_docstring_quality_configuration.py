@@ -515,8 +515,10 @@ def test_docstrings_command_runs_only_active_quality_tools() -> None:
     """
     script = CI_SCRIPT_PATH.read_text(encoding="utf-8")
 
-    assert 'uv run ruff check --select D "${FIRST_PARTY_PYTHON_FILES[@]}"' in script
-    assert 'uv run interrogate --config pyproject.toml "${FIRST_PARTY_PYTHON_FILES[@]}"' in script
+    assert 'uv run ruff check --select D -- "${FIRST_PARTY_PYTHON_FILES[@]}"' in script
+    assert (
+        'uv run interrogate --config pyproject.toml -- "${FIRST_PARTY_PYTHON_FILES[@]}"' in script
+    )
     assert "uv run pydoclint" not in script
 
 
@@ -535,10 +537,10 @@ def test_quality_and_fix_commands_share_the_first_party_python_inventory() -> No
     fix_body = _shell_function_body(script, "run_fix")
 
     assert "collect_first_party_python_files || return 1" in quality_body
-    assert 'uv run ruff format --check "${FIRST_PARTY_PYTHON_FILES[@]}"' in quality_body
-    assert 'uv run ruff check "${FIRST_PARTY_PYTHON_FILES[@]}"' in quality_body
+    assert 'uv run ruff format --check -- "${FIRST_PARTY_PYTHON_FILES[@]}"' in quality_body
+    assert 'uv run ruff check -- "${FIRST_PARTY_PYTHON_FILES[@]}"' in quality_body
     assert (
-        'uv run interrogate --config pyproject.toml "${FIRST_PARTY_PYTHON_FILES[@]}"'
+        'uv run interrogate --config pyproject.toml -- "${FIRST_PARTY_PYTHON_FILES[@]}"'
         in quality_body
     )
     assert "uv run basedpyright src/ tests/" in quality_body
@@ -546,11 +548,29 @@ def test_quality_and_fix_commands_share_the_first_party_python_inventory() -> No
     assert "uv run ruff format --check src/ tests/" not in quality_body
     assert "uv run ruff check src/ tests/" not in quality_body
     assert "collect_first_party_python_files || return 1" in fix_body
-    lint_fix_command = 'uv run ruff check --fix "${FIRST_PARTY_PYTHON_FILES[@]}"'
-    format_command = 'uv run ruff format "${FIRST_PARTY_PYTHON_FILES[@]}"'
+    lint_fix_command = 'uv run ruff check --fix -- "${FIRST_PARTY_PYTHON_FILES[@]}"'
+    format_command = 'uv run ruff format -- "${FIRST_PARTY_PYTHON_FILES[@]}"'
     assert lint_fix_command in fix_body
     assert format_command in fix_body
     assert fix_body.index(lint_fix_command) < fix_body.index(format_command)
+
+
+def test_first_party_python_paths_follow_cli_option_terminators() -> None:
+    """Tracked Python pathをCLI optionとして解釈させない契約を検証する.
+
+    Returns:
+        None: Ruffまたはinterrogateへinventoryを渡すcommandがoption terminatorを欠く場合は
+            assertionで失敗する.
+    """
+    script = CI_SCRIPT_PATH.read_text(encoding="utf-8")
+    inventory_tool_lines = [
+        line.strip()
+        for line in script.splitlines()
+        if "uv run " in line and '"${FIRST_PARTY_PYTHON_FILES[@]}"' in line
+    ]
+
+    assert len(inventory_tool_lines) == 7
+    assert all(' -- "${FIRST_PARTY_PYTHON_FILES[@]}"' in line for line in inventory_tool_lines)
 
 
 def test_first_party_python_inventory_does_not_require_bash_nameref() -> None:

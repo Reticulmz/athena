@@ -33,11 +33,11 @@ run_quality() {
 
         echo "=== Running quality checks ==="
         echo "--> Ruff format check"
-        uv run ruff format --check "${FIRST_PARTY_PYTHON_FILES[@]}"
+        uv run ruff format --check -- "${FIRST_PARTY_PYTHON_FILES[@]}"
         echo "--> Ruff lint check"
-        uv run ruff check "${FIRST_PARTY_PYTHON_FILES[@]}"
+        uv run ruff check -- "${FIRST_PARTY_PYTHON_FILES[@]}"
         echo "--> Interrogate docstring coverage"
-        uv run interrogate --config pyproject.toml "${FIRST_PARTY_PYTHON_FILES[@]}"
+        uv run interrogate --config pyproject.toml -- "${FIRST_PARTY_PYTHON_FILES[@]}"
         echo "--> Basedpyright type check"
         uv run basedpyright src/ tests/
         echo "--> Import linter"
@@ -53,9 +53,9 @@ run_fix() {
 
         echo "=== Applying fixes ==="
         echo "--> Ruff lint fix"
-        uv run ruff check --fix "${FIRST_PARTY_PYTHON_FILES[@]}"
+        uv run ruff check --fix -- "${FIRST_PARTY_PYTHON_FILES[@]}"
         echo "--> Ruff format"
-        uv run ruff format "${FIRST_PARTY_PYTHON_FILES[@]}"
+        uv run ruff format -- "${FIRST_PARTY_PYTHON_FILES[@]}"
     )
 }
 
@@ -116,12 +116,12 @@ run_docstrings() {
 
         echo "=== Running docstring quality checks ==="
         echo "--> Ruff docstring lint"
-        if ! uv run ruff check --select D "${FIRST_PARTY_PYTHON_FILES[@]}"; then
+        if ! uv run ruff check --select D -- "${FIRST_PARTY_PYTHON_FILES[@]}"; then
             status=1
         fi
 
         echo "--> interrogate docstring coverage"
-        if ! uv run interrogate --config pyproject.toml "${FIRST_PARTY_PYTHON_FILES[@]}"; then
+        if ! uv run interrogate --config pyproject.toml -- "${FIRST_PARTY_PYTHON_FILES[@]}"; then
             status=1
         fi
 
