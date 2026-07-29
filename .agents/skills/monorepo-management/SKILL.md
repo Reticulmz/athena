@@ -69,6 +69,10 @@ cd my-monorepo
 #   ui/           - Shared UI components
 #   config/       - Shared configurations
 #   tsconfig/     - Shared TypeScript configs
+# tools/
+#   scripts/      - Shared automation packages
+# scripts/
+#   clean.mjs     - Portable workspace cleanup
 # turbo.json      - Turborepo configuration
 # package.json    - Root package.json
 ```
@@ -137,12 +141,41 @@ packages:
 
 ```javascript
 // scripts/clean.mjs
-import { rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 
-await rm(new URL("../node_modules", import.meta.url), {
-  recursive: true,
-  force: true,
-});
+const workspaceParents = ["apps", "packages", "tools"];
+const artifactDirectories = [
+  "node_modules",
+  "dist",
+  ".next",
+  "coverage",
+  ".turbo",
+];
+
+const workspaceDirectories = (
+  await Promise.all(
+    workspaceParents.map(async (parent) => {
+      const parentDirectory = new URL(`../${parent}/`, import.meta.url);
+      const entries = await readdir(parentDirectory, { withFileTypes: true });
+
+      return entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => new URL(`${entry.name}/`, parentDirectory));
+    }),
+  )
+).flat();
+
+const targets = [
+  new URL("../node_modules", import.meta.url),
+  new URL("../.turbo", import.meta.url),
+  ...workspaceDirectories.flatMap((directory) =>
+    artifactDirectories.map((artifact) => new URL(artifact, directory)),
+  ),
+];
+
+await Promise.all(
+  targets.map((target) => rm(target, { recursive: true, force: true })),
+);
 ```
 
 ### Package Structure
