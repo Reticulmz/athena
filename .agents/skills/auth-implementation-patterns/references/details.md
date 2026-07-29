@@ -244,6 +244,7 @@ app.post("/api/auth/logout", (req, res) => {
 
 ```typescript
 import { createHash, timingSafeEqual } from "node:crypto";
+import cookieParser from "cookie-parser";
 import type { NextFunction, Request, Response } from "express";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
@@ -251,7 +252,17 @@ import { Strategy as GitHubStrategy } from "passport-github2";
 
 const OAUTH_STATE_TTL_SECONDS = 300;
 const AUTHORIZATION_CODE_TTL_SECONDS = 60;
+const MILLISECONDS_PER_SECOND = 1_000;
+const AUTHORIZATION_CODE_COOKIE_NAME = "__Host-oauth_code";
 const PKCE_SHA256_CHALLENGE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const PKCE_VERIFIER_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
+// This cookie handoff assumes the frontend and API are same-site.
+const AUTHORIZATION_CODE_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: true,
+  sameSite: "strict" as const,
+  path: "/",
+};
 
 interface OAuthLoginState {
   codeChallenge: string;
@@ -279,6 +290,8 @@ class InvalidSingleUseTokenError extends Error {}
 declare const oauthStateStore: ExpiringSingleUseStore<OAuthLoginState>;
 declare const authorizationCodeStore: ExpiringSingleUseStore<AuthorizationGrant>;
 
+app.use(cookieParser());
+
 function requireString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.length === 0) {
     throw new InvalidOAuthRequestError(`${field} must be a non-empty string`);
@@ -294,6 +307,16 @@ function requirePkceChallenge(value: unknown): string {
     );
   }
   return challenge;
+}
+
+function requirePkceVerifier(value: unknown): string {
+  const verifier = requireString(value, "code_verifier");
+  if (!PKCE_VERIFIER_PATTERN.test(verifier)) {
+    throw new InvalidOAuthRequestError(
+      "code_verifier must be 43-128 RFC 7636 unreserved characters",
+    );
+  }
+  return verifier;
 }
 
 function isOAuthClientError(error: unknown): boolean {
@@ -391,10 +414,12 @@ app.get(
         ttlSeconds: AUTHORIZATION_CODE_TTL_SECONDS,
       });
 
-      // Redirect only with a short-lived, single-use authorization code.
-      return res.redirect(
-        `${process.env.FRONTEND_URL}/auth/callback?code=${encodeURIComponent(code)}`,
-      );
+      // Keep the code out of URLs, browser history, referrers, and access logs.
+      res.cookie(AUTHORIZATION_CODE_COOKIE_NAME, code, {
+        ...AUTHORIZATION_CODE_COOKIE_OPTIONS,
+        maxAge: AUTHORIZATION_CODE_TTL_SECONDS * MILLISECONDS_PER_SECOND,
+      });
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/callback`);
     } catch (error) {
       return next(error);
     }
@@ -403,11 +428,17 @@ app.get(
 
 app.post("/api/auth/token", async (req, res, next) => {
   try {
-    const grant = await authorizationCodeStore.consume(
-      requireString(req.body.code, "code"),
+    const code = requireString(
+      req.cookies[AUTHORIZATION_CODE_COOKIE_NAME],
+      "authorization code cookie",
+    );
+    const grant = await authorizationCodeStore.consume(code);
+    res.clearCookie(
+      AUTHORIZATION_CODE_COOKIE_NAME,
+      AUTHORIZATION_CODE_COOKIE_OPTIONS,
     );
     const actualChallenge = createHash("sha256")
-      .update(requireString(req.body.code_verifier, "code_verifier"))
+      .update(requirePkceVerifier(req.body.code_verifier))
       .digest("base64url");
     const actual = Buffer.from(actualChallenge);
     const expected = Buffer.from(grant.codeChallenge);
@@ -419,6 +450,8 @@ app.post("/api/auth/token", async (req, res, next) => {
       return res.status(400).json({ error: "Invalid PKCE verifier" });
     }
 
+    // The frontend sends only code_verifier in a credentialed POST. The
+    // HttpOnly authorization-code cookie is attached by the browser.
     return res.json(generateTokens(grant.userId, grant.email, grant.role));
   } catch (error) {
     if (isOAuthClientError(error)) {

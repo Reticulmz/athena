@@ -41,7 +41,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/developer-essentials/skills/auth-implementation-patterns/SKILL.md",
-      "computedHash": "9d289bdf219e52c36354bf04bae27fdfd1a5db761fb2924e358655ea39c59e02"
+      "computedHash": "19f0884686dca8941590e0db7a4a57b8a2a1ea264b420b1c01bd369160ae9358"
     },
     "binary-analysis-patterns": {
       "source": "wshobson/agents",
@@ -191,7 +191,7 @@
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/developer-essentials/skills/monorepo-management/SKILL.md",
-      "computedHash": "c7e6aae4c6fca4415b39e2daf5da9e12b084ec4f77b601058cce144c733f21a3"
+      "computedHash": "f38d95ae9b692abd12d4014f158db8da82d1e286e1a24f6edbc8a13dbec1f18d"
     },
     "multi-reviewer-patterns": {
       "source": "wshobson/agents",

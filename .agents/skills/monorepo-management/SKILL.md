@@ -115,7 +115,7 @@ cd my-monorepo
     "test": "turbo run test",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "clean": "turbo run clean && rm -rf node_modules",
+    "clean": "turbo run clean && node ./scripts/clean.mjs",
     "release": "changeset publish"
   },
   "devDependencies": {
@@ -133,6 +133,16 @@ packages:
   - "apps/*"
   - "packages/*"
   - "tools/*"
+```
+
+```javascript
+// scripts/clean.mjs
+import { rm } from "node:fs/promises";
+
+await rm(new URL("../node_modules", import.meta.url), {
+  recursive: true,
+  force: true,
+});
 ```
 
 ### Package Structure
