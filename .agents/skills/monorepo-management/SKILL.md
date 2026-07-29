@@ -115,7 +115,7 @@ cd my-monorepo
     "test": "turbo run test",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "clean": "turbo run clean && node ./scripts/clean.mjs",
+    "clean": "node ./scripts/clean.mjs",
     "release": "changeset publish"
   },
   "devDependencies": {
