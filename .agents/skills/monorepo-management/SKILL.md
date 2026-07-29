@@ -75,7 +75,7 @@ cd my-monorepo
 
 ### Configuration
 
-```json
+```jsonc
 // turbo.json
 {
   "$schema": "https://turbo.build/schema.json",
@@ -104,7 +104,7 @@ cd my-monorepo
 }
 ```
 
-```json
+```jsonc
 // package.json (root)
 {
   "name": "my-monorepo",
@@ -119,7 +119,7 @@ cd my-monorepo
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {
-    "turbo": "^1.10.0",
+    "turbo": "^2.10.6",
     "prettier": "^3.0.0",
     "typescript": "^5.0.0"
   },
@@ -127,35 +127,46 @@ cd my-monorepo
 }
 ```
 
+```yaml
+# pnpm-workspace.yaml
+packages:
+  - "apps/*"
+  - "packages/*"
+```
+
 ### Package Structure
 
-```json
+```jsonc
 // packages/ui/package.json
 {
   "name": "@repo/ui",
   "version": "0.0.0",
   "private": true,
-  "main": "./dist/index.js",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.cjs"
     },
     "./button": {
+      "types": "./dist/button.d.ts",
       "import": "./dist/button.js",
-      "types": "./dist/button.d.ts"
+      "require": "./dist/button.cjs"
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts",
-    "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
+    "build": "tsup src/index.ts src/button.ts --format esm,cjs --dts",
+    "dev": "tsup src/index.ts src/button.ts --format esm,cjs --dts --watch",
     "lint": "eslint src/",
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",
-    "tsup": "^7.0.0",
+    "tsup": "^8.5.1",
     "typescript": "^5.0.0"
   },
   "dependencies": {

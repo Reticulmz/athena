@@ -46,8 +46,8 @@ module.exports = {
   },
 };
 
-// Run: npx sequelize-cli db:migrate
-// Rollback: npx sequelize-cli db:migrate:undo
+// Run with the project-pinned dev dependency: pnpm exec sequelize-cli db:migrate
+// Rollback: pnpm exec sequelize-cli db:migrate:undo
 ```
 
 ### TypeORM Migrations
@@ -73,11 +73,13 @@ export class CreateUsers1701234567 implements MigrationInterface {
             name: "email",
             type: "text",
             isUnique: true,
+            isNullable: false,
           },
           {
             name: "created_at",
             type: "timestamptz",
             default: "CURRENT_TIMESTAMP",
+            isNullable: false,
           },
         ],
       }),
@@ -103,8 +105,8 @@ model User {
   createdAt DateTime @default(now())
 }
 
-// Generate migration: npx prisma migrate dev --name create_users
-// Apply: npx prisma migrate deploy
+// Generate migration: pnpm exec prisma migrate dev --name create_users
+// Apply: pnpm exec prisma migrate deploy
 ```
 
 ## Schema Transformations
@@ -205,33 +207,15 @@ module.exports = {
 module.exports = {
   up: async (queryInterface, Sequelize) => {
     await queryInterface.sequelize.transaction(async (transaction) => {
-      // Get all records
-      const [users] = await queryInterface.sequelize.query(
-        "SELECT id, address_string FROM users",
+      // PostgreSQL set-based transformation avoids loading every row in memory.
+      await queryInterface.sequelize.query(
+        `UPDATE users
+         SET street = NULLIF(BTRIM(SPLIT_PART(address_string, ',', 1)), ''),
+             city = NULLIF(BTRIM(SPLIT_PART(address_string, ',', 2)), ''),
+             state = NULLIF(BTRIM(SPLIT_PART(address_string, ',', 3)), '')
+         WHERE address_string IS NOT NULL`,
         { transaction },
       );
-
-      // Transform each record
-      for (const user of users) {
-        const addressParts = user.address_string.split(",");
-
-        await queryInterface.sequelize.query(
-          `UPDATE users
-           SET street = :street,
-               city = :city,
-               state = :state
-           WHERE id = :id`,
-          {
-            replacements: {
-              id: user.id,
-              street: addressParts[0]?.trim(),
-              city: addressParts[1]?.trim(),
-              state: addressParts[2]?.trim(),
-            },
-            transaction,
-          },
-        );
-      }
 
       // Drop old column only after every row is transformed.
       await queryInterface.removeColumn("users", "address_string", {
@@ -240,20 +224,10 @@ module.exports = {
     });
   },
 
-  down: async (queryInterface, Sequelize) => {
-    // Reconstruct original column
-    await queryInterface.addColumn("users", "address_string", {
-      type: Sequelize.STRING,
-    });
-
-    await queryInterface.sequelize.query(`
-      UPDATE users
-      SET address_string = CONCAT(street, ', ', city, ', ', state)
-    `);
-
-    await queryInterface.removeColumn("users", "street");
-    await queryInterface.removeColumn("users", "city");
-    await queryInterface.removeColumn("users", "state");
+  down: async () => {
+    throw new Error(
+      "Irreversible migration: restore address_string from a pre-migration backup",
+    );
   },
 };
 ```

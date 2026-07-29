@@ -243,6 +243,7 @@ app.post("/api/auth/logout", (req, res) => {
 ### Pattern 1: OAuth2 with Passport.js
 
 ```typescript
+import { createHash, timingSafeEqual } from "node:crypto";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { Strategy as GitHubStrategy } from "passport-github2";
@@ -279,26 +280,60 @@ passport.use(
   ),
 );
 
-// Routes
-app.get(
-  "/api/auth/google",
+// oauthStateStore and authorizationCodeStore keep single-use values server-side
+// with short TTLs. The frontend creates code_verifier and sends its S256
+// code_challenge when starting login.
+app.get("/api/auth/google", async (req, res, next) => {
+  const codeChallenge = requirePkceChallenge(req.query.code_challenge);
+  const state = await oauthStateStore.issue({
+    codeChallenge,
+    ttlSeconds: 300,
+  });
+
   passport.authenticate("google", {
     scope: ["profile", "email"],
-  }),
-);
+    state,
+  })(req, res, next);
+});
 
 app.get(
   "/api/auth/google/callback",
   passport.authenticate("google", { session: false }),
-  (req, res) => {
-    // Generate JWT
-    const tokens = generateTokens(req.user.id, req.user.email, req.user.role);
-    // Fragments are not sent in HTTP requests or Referer headers.
+  async (req, res) => {
+    const loginState = await oauthStateStore.consume(
+      requireString(req.query.state),
+    );
+    const code = await authorizationCodeStore.issue({
+      userId: req.user.id,
+      email: req.user.email,
+      role: req.user.role,
+      codeChallenge: loginState.codeChallenge,
+      ttlSeconds: 60,
+    });
+
+    // Redirect only with a short-lived, single-use authorization code.
     res.redirect(
-      `${process.env.FRONTEND_URL}/auth/callback#token=${encodeURIComponent(tokens.accessToken)}`,
+      `${process.env.FRONTEND_URL}/auth/callback?code=${encodeURIComponent(code)}`,
     );
   },
 );
+
+app.post("/api/auth/token", async (req, res) => {
+  const grant = await authorizationCodeStore.consume(
+    requireString(req.body.code),
+  );
+  const actualChallenge = createHash("sha256")
+    .update(requireString(req.body.codeVerifier))
+    .digest("base64url");
+  const actual = Buffer.from(actualChallenge);
+  const expected = Buffer.from(grant.codeChallenge);
+
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+    return res.status(400).json({ error: "Invalid PKCE verifier" });
+  }
+
+  return res.json(generateTokens(grant.userId, grant.email, grant.role));
+});
 ```
 
 ## Authorization Patterns
