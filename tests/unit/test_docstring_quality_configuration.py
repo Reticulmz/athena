@@ -550,6 +550,25 @@ def test_quality_and_fix_commands_share_the_first_party_python_inventory() -> No
     assert fix_body.index(lint_fix_command) < fix_body.index(format_command)
 
 
+def test_quality_usage_distinguishes_full_inventory_from_scoped_checks() -> None:
+    """Qualityの説明がtoolごとのscope差を隠さないことを検証する.
+
+    Returns:
+        None: 全quality toolがtracked Python全件を検査するという誤解を招く場合は
+            assertionで失敗する.
+    """
+    script = CI_SCRIPT_PATH.read_text(encoding="utf-8")
+    quality_body = _shell_function_body(script, "run_quality")
+    scope_description = (
+        "quality - Run Ruff/docstrings on tracked Python plus scoped type/import checks"
+    )
+
+    assert script.count(scope_description) == 2
+    assert "Run quality checks for all tracked first-party Python files" not in script
+    assert 'echo "--> Basedpyright type check (src/ tests/)"' in quality_body
+    assert "uv run basedpyright src/ tests/" in quality_body
+
+
 def test_first_party_python_paths_follow_cli_option_terminators() -> None:
     """Tracked Python pathをCLI optionとして解釈させない契約を検証する.
 

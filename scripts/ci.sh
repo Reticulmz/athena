@@ -8,7 +8,7 @@ FIRST_PARTY_PYTHON_BATCH_SIZE=1000
 # athena Local CI Script
 
 # Subcommands:
-#   quality - Run quality checks for all tracked first-party Python files
+#   quality - Run Ruff/docstrings on tracked Python plus scoped type/import checks
 #   fix     - Apply automatic fixes (formatting, lint)
 #   test    - Run tests
 #   python-files - List tracked first-party Python source files
@@ -17,7 +17,7 @@ FIRST_PARTY_PYTHON_BATCH_SIZE=1000
 
 usage() {
     echo "Usage: $0 {quality|fix|test|python-files|docstrings|all}"
-    echo "  quality - Run quality checks for all tracked first-party Python files"
+    echo "  quality - Run Ruff/docstrings on tracked Python plus scoped type/import checks"
     echo "  fix     - Apply automatic fixes (formatting, lint)"
     echo "  test    - Run tests"
     echo "  python-files - List tracked first-party Python source files"
@@ -39,7 +39,7 @@ run_quality() {
         run_first_party_python_tool uv run ruff check
         echo "--> Interrogate docstring coverage"
         run_first_party_python_tool uv run interrogate --config pyproject.toml
-        echo "--> Basedpyright type check"
+        echo "--> Basedpyright type check (src/ tests/)"
         uv run basedpyright src/ tests/
         echo "--> Import linter"
         uv run lint-imports
