@@ -90,10 +90,15 @@ Every log entry should include standard fields for filtering and correlation.
 
 ```python
 import time
-import structlog
 from contextvars import ContextVar
+from http import HTTPStatus
+
+import structlog
 from starlette.requests import Request
 from starlette.responses import Response
+
+MILLISECONDS_PER_SECOND = 1_000
+DURATION_DECIMAL_PLACES = 2
 
 # Store correlation ID in context
 correlation_id: ContextVar[str] = ContextVar("correlation_id", default="")
@@ -116,8 +121,11 @@ def process_request(request: Request) -> Response:
         logger.info(
             "Request completed",
             correlation_id=correlation_id.get(),
-            status_code=200,
-            duration_ms=round((time.perf_counter() - start) * 1000, 2),
+            status_code=HTTPStatus.OK.value,
+            duration_ms=round(
+                (time.perf_counter() - start) * MILLISECONDS_PER_SECOND,
+                DURATION_DECIMAL_PLACES,
+            ),
         )
         return result
     except Exception as e:

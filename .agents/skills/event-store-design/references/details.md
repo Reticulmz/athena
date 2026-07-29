@@ -26,6 +26,10 @@ CREATE INDEX idx_events_stream_id ON events(stream_id, version);
 -- Index for event type queries
 CREATE INDEX idx_events_event_type ON events(event_type);
 
+-- GIN indexes for JSONB attribute and containment queries
+CREATE INDEX idx_events_event_data_gin ON events USING GIN (event_data);
+CREATE INDEX idx_events_metadata_gin ON events USING GIN (metadata);
+
 -- Index for time-based queries
 CREATE INDEX idx_events_created_at ON events(created_at);
 
@@ -37,6 +41,8 @@ CREATE TABLE snapshots (
     version BIGINT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX idx_snapshots_data_gin ON snapshots USING GIN (snapshot_data);
 
 -- Subscriptions checkpoint table
 CREATE TABLE subscription_checkpoints (
@@ -230,8 +236,16 @@ class ConcurrencyError(Exception):
 ### Template 3: EventStoreDB Usage
 
 ```python
-from esdbclient import EventStoreDBClient, NewEvent, StreamState
 import json
+from typing import Protocol
+
+from esdbclient import EventStoreDBClient, NewEvent, StreamState
+
+
+class CheckpointStore(Protocol):
+    def load(self, subscription_id: str) -> int | None: ...
+
+    def save(self, subscription_id: str, position: int) -> None: ...
 
 # Connect
 client = EventStoreDBClient(uri="esdb://localhost:2113?tls=false")
@@ -278,8 +292,16 @@ def read_stream(stream_name: str, from_revision: int = 0):
     ]
 
 # Subscribe to all with the synchronous client
-def subscribe_to_all(handler, from_position: int = 0):
-    with client.subscribe_to_all(commit_position=from_position) as subscription:
+def subscribe_to_all(
+    subscription_id: str,
+    handler,
+    checkpoint_store: CheckpointStore,
+    from_position: int = 0,
+):
+    checkpoint = checkpoint_store.load(subscription_id)
+    start_position = checkpoint if checkpoint is not None else from_position
+
+    with client.subscribe_to_all(commit_position=start_position) as subscription:
         for event in subscription:
             handler({
                 'type': event.type,
@@ -287,6 +309,7 @@ def subscribe_to_all(handler, from_position: int = 0):
                 'stream_id': event.stream_name,
                 'position': event.commit_position
             })
+            checkpoint_store.save(subscription_id, event.commit_position)
 
 # Category projection ($ce-Category)
 def read_category(category: str):

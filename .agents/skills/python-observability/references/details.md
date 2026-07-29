@@ -43,6 +43,8 @@ Instrument your endpoints:
 ```python
 import time
 from functools import wraps
+from http import HTTPStatus
+
 from starlette.requests import Request
 
 def track_request(func):
@@ -52,14 +54,15 @@ def track_request(func):
         method = request.method
         endpoint = request.url.path
         start = time.perf_counter()
-        status = "500"
+        error_status = str(HTTPStatus.INTERNAL_SERVER_ERROR.value)
+        status = error_status
 
         try:
             response = await func(request, *args, **kwargs)
             status = str(response.status_code)
             return response
         except Exception as e:
-            status = "500"
+            status = error_status
             ERROR_COUNT.labels(
                 method=method,
                 endpoint=endpoint,

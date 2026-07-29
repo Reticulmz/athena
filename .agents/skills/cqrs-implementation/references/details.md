@@ -102,7 +102,7 @@ class CreateOrderHandler(CommandHandler[CreateOrder]):
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TypeVar, Generic, List, Optional
+from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
 
 # Query base
 @dataclass
@@ -402,7 +402,7 @@ class ReadModelSynchronizer:
                     await projection.apply(event)
                 except Exception as e:
                     logger.exception("Projection error: %s", e)
-                    continue
+                    raise
 
             await self._save_checkpoint(projection.name, event.global_position)
 
