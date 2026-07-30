@@ -1,0 +1,224 @@
+# Implementation Plan
+
+- [ ] 1. Python workspace cutoverの基盤を確立する
+- [ ] 1.1 移行前の互換contractとcleanup inventoryを固定する
+  - Runtime import namespace、app/worker entrypoint、worker task名、CLI command/confirmation/exit behaviorのbaselineを取得する。
+  - Alembic revision identifierとcurrent/head、server/crypto build、現在のquality/test対象を記録する。
+  - Legacy task capability、generated state、tracked template、normative stale path、Kiro/TODO statusのinventoryを作る。
+  - Baselineを再実行すると、移行前のobservable contractが機械的に確認できる状態を完了条件とする。
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 9.5, 9.6, 9.7, 10.1, 10.3_
+
+- [ ] 1.2 Crypto artifactをpackage ownerへ移管する
+  - Native extension source、Python tests、Rust/Python manifestsをcrypto workspaceへ集約する。
+  - Distribution/import/module nameと既存crypto behaviorを維持する。
+  - Public typing sourceをpackage ownershipへ移し、root private stubから独立させる。
+  - Crypto workspace単独でbuild、test、type artifact検査を実行できる状態を完了条件とする。
+  - _Requirements: 2.3, 2.6, 2.7, 6.1, 6.2, 6.4_
+
+- [ ] 1.3 Server runtimeと管理CLIを単一productへ移管する
+  - Server runtimeと管理CLIのsourceをserver workspaceへ集約し、single distribution metadataを確立する。
+  - App、worker、console commandとPython namespaceを変更せず、新しいphysical ownerから解決させる。
+  - CLIからserverへの依存だけを許可し、serverからCLIへの依存禁止を維持する。
+  - Installed artifactでapp、worker、CLI entrypointがbaselineと同じ結果を返す状態を完了条件とする。
+  - _Requirements: 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.4, 2.5_
+
+- [ ] 1.4 Rootをsingle-lock orchestration workspaceへ切り替える
+  - Root distribution ownershipを除き、serverとcryptoを含むrepository-wide Python workspaceを定義する。
+  - Runtime dependencyとbuild metadataを各ownerへ分け、repository-wide development policyだけをrootに残す。
+  - Member lockを廃止してauthoritative lockを1つに再生成し、lock driftを失敗として扱う。
+  - Clean locked syncで全initial memberが解決され、rootがruntime artifactを生成しない状態を完了条件とする。
+  - _Requirements: 2.3, 2.4, 3.1, 3.2, 3.3, 3.4_
+
+- [ ] 1.5 Python workspace artifactを統合検証する
+  - Serverとcryptoのbuild contractをroot workflowから実行し、installed importsとconsole entrypointを検証する。
+  - Crypto wheelにpublic typing artifactが含まれ、editable installだけに依存しないことを確認する。
+  - Server workspaceがfrontend workspaceなしでsync、build、quality、testできることを確認する。
+  - Single lock、server artifact、crypto artifactのintegration smokeがすべて成功する状態を完了条件とする。
+  - _Depends: 1.2, 1.3, 1.4_
+  - _Requirements: 1.2, 1.3, 1.4, 2.1, 2.2, 2.3, 2.4, 2.5, 2.7, 3.1, 3.2, 3.3_
+
+- [ ] 2. Server-owned artifactsとcompatibility evidenceをcutoverする
+- [ ] 2.1 Server、worker、CLI test assetsをowner workspaceへ移管する
+  - Unit、integration、e2e、fixtures、factories、supportをserver productのtest ownershipへ集約する。
+  - Test import、fixture discovery、relative evidence pathを新しいowner基準へ更新する。
+  - Root test contractからserver、worker、CLIの全testが発見されることを検証する。
+  - 既存test countと重要test catalogに意図しない欠落がない状態を完了条件とする。
+  - _Requirements: 1.1, 1.5, 2.6, 6.2, 6.3, 6.4_
+
+- [ ] 2.2 Alembic lifecycleをserver productへ移管する
+  - Migration configurationとrevision chainをserver workspaceへ集約する。
+  - Revision identifier、head、schema semanticsを変更せず、新しいownerからupgrade可能にする。
+  - CLIとroot taskからmigration/test database operationのfailure codeを保持する。
+  - Empty test databaseがexisting headまでupgradeされ、移行前baselineと一致する状態を完了条件とする。
+  - _Requirements: 1.6, 2.6, 4.1, 6.6, 8.3_
+
+- [ ] 2.3 Server-specific stubsとtechnical evidenceをownerへ移管する
+  - Server/test-only third-party stubsをserver workspaceへ集約し、crypto public stubとのownershipを分離する。
+  - Architecture、Stable compatibility、server operation evidenceをserver ownerから参照できるようにする。
+  - Type checkerとcompatibility toolingが新しいstub/evidence locationを使用するよう更新する。
+  - Root private stubへの暗黙依存がなく、server type/compatibility checksが通る状態を完了条件とする。
+  - _Requirements: 2.6, 2.7, 6.1, 9.2, 10.1_
+
+- [ ] 2.4 Environment resolutionをserver project基準へ固定する
+  - Supported environmentのtyped nameとvalidationをserver config boundaryへ集約し、CLIが再利用する。
+  - Source checkoutではserver project基準のenvironment fileを解決し、current working directoryへの依存を除く。
+  - Process environment precedenceとenvironment-only installed startupを維持する。
+  - Root environment exampleはcross-workspace値だけ、server exampleはserver固有値だけを所有し、production secretを含めない。
+  - 隔離環境へserver wheelをinstallし、workspace environment fileがない状態でもprocess environmentだけからapp、worker、CLIが起動し、source checkoutの異なるworking directoryでも同じconfig outcomeになる状態を完了条件とする。
+  - _Requirements: 1.2, 1.3, 1.4, 1.5, 5.3, 5.5, 5.6_
+
+- [ ] 2.5 Moved path consumerを一括更新する
+  - Active fixture catalog、verification report、allowlist、tool configuration、current instructionのsource/test pathを新配置へ更新する。
+  - Normative/current pathとhistorical Kiro snapshotを区別する暫定audit ruleを用意する。
+  - Old pathをruntime/test/tooling consumerが参照していないことをtargeted scanで確認する。
+  - Path scanがhistorical exception以外のstale consumerを0件として報告する状態を完了条件とする。
+  - _Requirements: 9.7, 10.1, 10.3, 10.7_
+
+- [ ] 2.6 Boundary 1のruntime compatibility checkpointを通す
+  - App、worker、CLI、Stable/Lazer/API focused tests、crypto behavior、Alembic headをbaselineと比較する。
+  - Root locked sync、server/crypto build、quality、test、import-boundary checksを実行する。
+  - Failure時はtooling cutoverへ進まず、Python ownership boundary内で修復可能な状態を保つ。
+  - Baseline contractと全Python gateが一致してBoundary 1を完了できる状態を完了条件とする。
+  - _Depends: 2.1, 2.2, 2.3, 2.4, 2.5_
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 6.1, 6.2, 6.6, 10.1, 10.7_
+
+- [ ] 3. Development toolingとinfrastructureを構築する
+- [ ] 3.1 Side-effect-free Nix compositionを構築する (P)
+  - Root environment compositionからserver/crypto固有toolchain、build、checkをworkspace moduleへ分離する。
+  - Shell entryはtoolとworktree-relative path variableだけを提供し、sync、state、hook、certificate、trust changeを実行しない。
+  - Root-only Flake/lockからdefault shell、workspace checks、reproducible validationを評価できるようにする。
+  - Environment entry前後でrepository stateに差分がなく、Nix checksが成功する状態を完了条件とする。
+  - _Depends: 2.6_
+  - _Requirements: 3.5, 3.6, 5.1, 5.2, 8.2, 8.5_
+  - _Boundary: Nix Composition_
+
+- [ ] 3.2 Explicit setupとdevelopment task gatewayを構築する (P)
+  - Root task catalogへlocked sync、worktree state、hook、certificate/trust setupを明示的に提供する。
+  - Core developmentとtunnel developmentのpreflightを分け、setup不足をactionable failureとして返す。
+  - Database migration/test database operationとspecialized worktree helperへの導線を維持する。
+  - Setupを再実行して同じ利用可能状態へ収束し、devがsetupを暗黙実行しない状態を完了条件とする。
+  - _Depends: 2.6_
+  - _Requirements: 3.4, 3.5, 3.6, 4.1, 4.3, 4.4, 7.1, 7.2, 7.3_
+  - _Boundary: Root Task Gateway_
+
+- [ ] 3.3 Worktree-local process graphとingress profileを構築する (P)
+  - Database、initialization、state service、app、worker、reverse proxyのreadiness/dependency/shutdownを維持する。
+  - Tracked ingress templateとgenerated certificate、actual proxy/tunnel config、credentialを分離する。
+  - Core profileをcredential-free named HTTPSとして提供し、同じapplication routingを使用するtunnelをoptional profileへ分離する。
+  - App loopback portはhealth check/internal debugging専用とし、通常client向けcanonical URLとして案内しない。
+  - Frontend processとapex Web catch-allを追加せず、core profileがreadyになる状態を完了条件とする。
+  - _Depends: 2.6_
+  - _Requirements: 5.1, 5.2, 5.4, 5.5, 5.6, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 10.4, 10.5_
+  - _Boundary: Process Graph, Development Infra_
+
+- [ ] 3.4 Repository-wide validation policyとtool ownershipを構築する (P)
+  - Format、lint、docstring、type、import-boundary、testの対象をserver、crypto、repository toolsへ明示する。
+  - Workspace/test omissionを機械的に検出し、future empty system-test memberを要求しない。
+  - Gitlint rule/testをrepository tooling ownerへ移し、root configurationからloadする。
+  - Root validation contractがserver、crypto、toolsをすべて列挙して成功する状態を完了条件とする。
+  - _Depends: 2.6_
+  - _Requirements: 4.1, 4.3, 6.1, 6.2, 6.3, 6.4, 6.5, 8.4_
+  - _Boundary: Validation Policy_
+
+- [ ] 3.5 Task、process、validation contractをroot interfaceへ統合する
+  - Quality、docstring、test、build、migration、aggregate CI、monorepo auditをpublic root recipeとして接続する。
+  - Legacy quality/test/database helperのcapabilityとmeaningful exit propagationを移管する。
+  - Process profileとvalidation policyをroot taskから同じworkspace/state resolutionで実行する。
+  - Public task listから全canonical workflowが発見でき、legacy scriptなしで同じoutcomeを得られる状態を完了条件とする。
+  - _Depends: 3.1, 3.2, 3.3, 3.4_
+  - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 6.1, 6.2, 7.1, 7.2, 8.1, 8.6_
+
+- [ ] 4. CI、governance、cleanupを統合する
+- [ ] 4.1 CIをcanonical task contractへ切り替える
+  - Native dependency/tool setupとservice containerを維持し、quality/test/build/migration/auditをroot recipeから実行する。
+  - Quality、test、build、migration、Nix、auditをdistinct statusとして報告する。
+  - Test jobはmigration head適用後に全workspace testを実行する。
+  - CIがlocal certificate、tunnel credential、trust-store、developer hookを要求せず全jobを開始できる状態を完了条件とする。
+  - _Depends: 3.5_
+  - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6_
+
+- [ ] 4.2 Boundary 2のtooling compatibility checkpointを通す
+  - Environment entry前後にrepository、state、hook、certificate、trust storeの差分がないことを検証する。
+  - Explicit setupのidempotencyと、2 linked worktree間のvirtual environment、runtime state、certificate、proxy/tunnel config、hook stateの隔離を検証する。
+  - Credential-free core ingress、optional tunnel、process readiness/dependency/graceful shutdownを検証する。
+  - Root quality/test/build/migration/NixとBoundary 2時点のprovisional auditがdistinct CI statusと同じsuccess/failure contractを返すことを検証し、old pathを拒否する完成版auditはTask 4.5/4.6後の成功条件へ限定する。
+  - Tooling compatibilityとprovisional auditが成功し、Boundary 3へ進める状態を完了条件とする。
+  - _Depends: 4.1_
+  - _Requirements: 3.4, 3.5, 3.6, 4.2, 5.1, 5.2, 5.4, 5.5, 7.1, 7.2, 7.3, 7.4, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6_
+
+- [ ] 4.3 Repositoryとworkspaceのtechnical authorityを切り替える
+  - Root overview/common agent policyとserver/crypto runbook/delta guidanceを新ownershipへ分ける。
+  - ADR single sequenceを維持し、server architecture/compatibility/operation evidenceをownerから参照可能にする。
+  - Canonical command、worktree state、environment、test ownershipのinstructionをroot task/layoutと一致させ、Markdown link auditを通す。
+  - Humanとagentがold command/pathを参照せず新workflowへ到達できる状態を完了条件とする。
+  - _Depends: 4.2_
+  - _Requirements: 4.5, 9.1, 9.2, 9.3, 9.4, 9.7_
+
+- [ ] 4.4 Kiro lifecycleとbacklog authorityを整合させる
+  - Current behavior、ADR、feature specのauthorityとactive/completed/superseded/abandoned lifecycleを明文化する。
+  - Active/current specのphase、task、implementation evidenceを監査し、historical path exceptionをcurrent instructionから区別する。
+  - TODO backlogをroadmap/specへ照合し、未登録durable itemだけを移管する。
+  - Completed specを失わず、TODO削除後も全durable itemのownerを辿れる状態を完了条件とする。
+  - _Requirements: 9.5, 9.6, 9.7, 10.3_
+
+- [ ] 4.5 Monorepo cutover auditを完成させる
+  - Old canonical directory、member lock、legacy helper、root generated infra path、stale normative referenceを検出する。
+  - Unexpected frontend workspace、JavaScript workspace files、Web process、system-test workspace、PP binding decisionを検出する。
+  - Repository guide、validation policy、package layout、public task interfaceのownership一致とMarkdown link integrityを検査する。
+  - Historical exceptionをallowし、pre-cleanupではinventory済みの削除予定artifactだけをexpected findingとしてnon-zeroで報告する。
+  - 完成版auditがexpected deletion setを正確に識別し、それ以外のunexpected findingを0件として報告する状態を完了条件とする。
+  - _Depends: 4.3, 4.4_
+  - _Requirements: 6.3, 9.7, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7_
+
+- [ ] 4.6 Legacy artifactをconsumer-free状態で削除する
+  - Capability移管が完了し、pre-cleanup auditのunexpected findingが0件でexpected deletion setが固定された後だけlegacy scripts、old directories、member lock、moved root templatesを削除する。
+  - Generated/machine-specific stateをsource treeから除き、per-worktree locationだけを残す。
+  - Deprecated command/pathをcanonical sourceとして残さず、specialized worktree helperだけを維持する。
+  - Cleanup後のauditがunexpected old/new duplicateを0件として報告する状態を完了条件とする。
+  - _Depends: 4.2, 4.5_
+  - _Requirements: 4.3, 4.4, 4.5, 5.4, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6_
+
+- [ ] 5. Cross-boundary validationでmigrationを完了する
+- [ ] 5.1 Runtime artifactとmigration compatibilityを最終検証する (P)
+  - Installed server/crypto artifacts、import namespaces、app/worker/CLI entrypoints、CLI behaviorをpreflight baselineと比較する。
+  - Existing Stable/Lazer/API focused regressionを実行し、worker task名とobservable outcomeの両方をpreflight baselineと比較する。
+  - Alembic revision chain、current/head、test database upgradeを比較する。
+  - Baseline差分が0件、または別specで明示された差分だけになる状態を完了条件とする。
+  - _Depends: 4.6_
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 2.2, 2.3, 2.7, 6.6_
+  - _Boundary: Server Workspace, Crypto Workspace_
+
+- [ ] 5.2 Explicit setupとlinked worktree isolationを最終検証する (P)
+  - Environment entryがrepository、state、hooks、certificate、trust storeを変更しないことを検証する。
+  - Setupのidempotencyとactionable failure contractを検証する。
+  - 2 linked worktreeの`.venv`、state、certificate、proxy/tunnel config、hook stateが独立しfallbackしないことを検証する。
+  - 片方のsetup/test/cleanupが他方を変更しないことが観測できる状態を完了条件とする。
+  - _Depends: 4.6_
+  - _Requirements: 3.4, 3.5, 3.6, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6_
+  - _Boundary: Nix Composition, Root Task Gateway_
+
+- [ ] 5.3 Core/tunnel ingressとprocess lifecycleを最終検証する (P)
+  - Credentialなしでcore profileを起動し、named HTTPS、readiness、health/debug routeを検証する。
+  - Missing tunnel stateがcore profileを停止せず、tunnel profileだけactionable failureになり、設定済みtunnelがcoreと同じapplication routingを使用することを検証する。
+  - Database/state serviceより後にapp/workerが起動し、逆順にgraceful shutdownすることを検証する。
+  - Loopback app portをcanonical URLとして案内せず、Web process/apex catch-allなしでreal-client向けcore routingが利用できる状態を完了条件とする。
+  - _Depends: 4.6_
+  - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 10.5_
+  - _Boundary: Process Graph, Development Infra_
+
+- [ ] 5.4 Repository-wide quality、test、build、CI parityを最終検証する (P)
+  - Root quality/docstring/type/import contractとserver/crypto/tools testを実行する。
+  - Server/crypto artifact build、migration status、Nix validation、audit statusをCI-equivalent contractで実行する。
+  - Workspace/test omission detectorが既知memberをすべて認識することを検証する。
+  - Local aggregate gateとCI job contractが同じsuccess/failureを返す状態を完了条件とする。
+  - _Depends: 4.6_
+  - _Requirements: 4.1, 4.2, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6_
+  - _Boundary: Validation Policy, CI Workflow_
+
+- [ ] 5.5 Final ownership、scope、cleanup auditを通す
+  - Root/workspace technical authority、Kiro lifecycle、TODO reconciliation、historical exceptionをreviewする。
+  - Old canonical path、legacy command、duplicate lock/template、unexpected frontend/system-test/PP artifactがないことを確認する。
+  - Requirements traceabilityと全checkpoint evidenceを最終diffへ照合する。
+  - Guide、validation、layout、task interfaceが同じownership boundaryを示し、全gateが成功する状態をmigration完了条件とする。
+  - _Depends: 5.1, 5.2, 5.3, 5.4_
+  - _Requirements: 4.5, 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7_

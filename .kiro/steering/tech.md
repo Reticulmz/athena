@@ -45,7 +45,7 @@ private、`__init__`、dunderを生成する場合のinclude optionもexternal r
 |------|------|------|
 | パスワードハッシュ | argon2-cffi (argon2id) | stable は MD5 送信 → サーバーで argon2id(md5) 保存。passlib はメンテ停滞 |
 | Valkey クライアント | valkey-glide | Valkey 公式クライアント、async ネイティブ、Redis プロトコル互換 |
-| 統合 Web App | Next.js App Router + HeroUI | Public / User / Admin / Ops workflows を統合する first-party Web App として成熟度と運用実績を優先する。Athena backend の source of truth は Python の Starlette + FastAPI に置き、Next.js は Web App / BFF 補助層として扱う |
+| 統合 Web App | Next.js App Router | Public / User / Admin / Ops workflows を統合する first-party Web App として成熟度と運用実績を優先する。Athena backend の source of truth は Python の Starlette + FastAPI に置き、Next.js は Web App / BFF 補助層として扱う。UI component systemはWeb実装開始時に別途決定する |
 | Web App API 接続 | OpenAPI generated client / WebUI 専用 API contract | Python backend の API contract を明示し、Web App は domain service や repository を直接 import しない |
 | Next.js backend features | Thin frontend / BFF 補助層に限定 | Route Handler / Server Actions は cookie、session、CSRF、軽い response shaping など Web App 固有の補助処理に限定する。Domain mutation の正規経路や public API contract は FastAPI + OpenAPI に置く |
 | API surface policy | Public API / Web App API / Admin-Ops API を分離 | Web App API は first-party 専用だが browser から露出する前提で設計する。隠されていることを security boundary にせず、認証・認可・CSRF・audit によって保護する。Public API とは互換性保証とドキュメント公開範囲を分ける |
