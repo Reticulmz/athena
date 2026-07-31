@@ -1,7 +1,7 @@
 # Implementation Plan
 
 - [ ] 1. Python workspace cutoverの基盤を確立する
-- [ ] 1.1 移行前の互換contractとcleanup inventoryを固定する
+- [x] 1.1 移行前の互換contractとcleanup inventoryを固定する
   - Runtime import namespace、app/worker entrypoint、worker task名、CLI command/confirmation/exit behaviorのbaselineを取得する。
   - Alembic revision identifierとcurrent/head、server/crypto build、現在のquality/test対象を記録する。
   - Legacy task capability、generated state、tracked template、normative stale path、Kiro/TODO statusのinventoryを作る。
@@ -222,3 +222,7 @@
   - Guide、validation、layout、task interfaceが同じownership boundaryを示し、全gateが成功する状態をmigration完了条件とする。
   - _Depends: 5.1, 5.2, 5.3, 5.4_
   - _Requirements: 4.5, 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7_
+
+## Implementation Notes
+
+- Task 1.1のpost-cutover verifierはrelocation semantic contractだけを検証する。root task gatewayの実行内容とfailure propagationはTasks 3.4/3.5で検証する。
