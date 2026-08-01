@@ -8,7 +8,7 @@
   - Baselineを再実行すると、移行前のobservable contractが機械的に確認できる状態を完了条件とする。
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 9.5, 9.6, 9.7, 10.1, 10.3_
 
-- [ ] 1.2 Crypto artifactをpackage ownerへ移管する
+- [x] 1.2 Crypto artifactをpackage ownerへ移管する
   - Native extension source、Python tests、Rust/Python manifestsをcrypto workspaceへ集約する。
   - Distribution/import/module nameと既存crypto behaviorを維持する。
   - Public typing sourceをpackage ownershipへ移し、root private stubから独立させる。
@@ -226,3 +226,4 @@
 ## Implementation Notes
 
 - Task 1.1のpost-cutover verifierはrelocation semantic contractだけを検証する。root task gatewayの実行内容とfailure propagationはTasks 3.4/3.5で検証する。
+- Task 1.2のpre-cutover fixtureはTask 1.1 commit SHAへ固定し、CI test checkoutはそのhistorical objectを取得できるfull historyを使用する。

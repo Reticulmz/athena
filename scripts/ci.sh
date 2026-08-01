@@ -39,8 +39,13 @@ run_quality() {
         run_first_party_python_tool uv run ruff check
         echo "--> Interrogate docstring coverage"
         run_first_party_python_tool uv run interrogate --config pyproject.toml
-        echo "--> Basedpyright type check (src/ tests/)"
-        uv run basedpyright src/ tests/
+        echo "--> Basedpyright type check (server and crypto Python sources)"
+        uv run basedpyright \
+            src/ \
+            tests/ \
+            packages/athena_crypto/typings/ \
+            packages/athena_crypto/scripts/ \
+            packages/athena_crypto/tests/
         echo "--> Import linter"
         uv run lint-imports
     )
@@ -93,11 +98,16 @@ collect_first_party_python_files() {
 
     FIRST_PARTY_PYTHON_FILES=()
     while IFS= read -r -d '' source_path; do
-        FIRST_PARTY_PYTHON_FILES+=("${source_path}")
-    done < <(git -C "${FIRST_PARTY_REPOSITORY_ROOT}" ls-files --cached -z -- '*.py')
+        if [ -f "${FIRST_PARTY_REPOSITORY_ROOT}/${source_path}" ]; then
+            FIRST_PARTY_PYTHON_FILES+=("${source_path}")
+        fi
+    done < <(
+        git -C "${FIRST_PARTY_REPOSITORY_ROOT}" \
+            ls-files --cached -z -- '*.py'
+    )
 
     if [ "${#FIRST_PARTY_PYTHON_FILES[@]}" -eq 0 ]; then
-        echo "Git index contains no tracked first-party Python files" >&2
+        echo "Git worktree contains no active tracked first-party Python files" >&2
         return 1
     fi
 }

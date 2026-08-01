@@ -48,7 +48,7 @@ dev = [
 package = true
 
 [tool.uv.sources]
-athena-crypto = { path = "athena-crypto", editable = true }
+athena-crypto = { path = "packages/athena_crypto", editable = true }
 
 [build-system]
 requires = ["hatchling"]

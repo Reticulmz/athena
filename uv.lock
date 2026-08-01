@@ -248,7 +248,7 @@ requires-dist = [
     { name = "alembic" },
     { name = "argon2-cffi" },
     { name = "asyncpg" },
-    { name = "athena-crypto", editable = "athena-crypto" },
+    { name = "athena-crypto", editable = "packages/athena_crypto" },
     { name = "caterpillar-py", specifier = ">=2.8.1" },
     { name = "dishka" },
     { name = "httpx", specifier = ">=0.28.1" },
@@ -283,7 +283,7 @@ dev = [
 
 [[package]]
 name = "athena-crypto"
-source = { editable = "athena-crypto" }
+source = { editable = "packages/athena_crypto" }
 
 [[package]]
 name = "attrs"

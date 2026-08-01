@@ -23,7 +23,8 @@ FIRST_PARTY_PYTHON_ROOTS = (
     PROJECT_ROOT / "tests",
     PROJECT_ROOT / "alembic",
     PROJECT_ROOT / "gitlint_rules",
-    PROJECT_ROOT / "athena-crypto/tests",
+    PROJECT_ROOT / "packages/athena_crypto/scripts",
+    PROJECT_ROOT / "packages/athena_crypto/tests",
     PROJECT_ROOT / ".agents",
 )
 DOCSTRING_NOQA_PATTERN = re.compile(
@@ -110,14 +111,14 @@ def _shell_function_body(script: str, function_name: str) -> str:
     return match["body"]
 
 
-def _git_indexed_python_files(repository_root: Path) -> list[str]:
-    """Git indexにあるPython source pathをNUL区切りで取得する.
+def _git_tracked_python_files(repository_root: Path) -> list[str]:
+    """存在するtracked first-party Python sourceをGit inventoryから取得する.
 
     Args:
         repository_root (Path): inventoryを取得するGit worktreeのroot directory.
 
     Returns:
-        list[str]: index内の`.py` pathをGitの順序で並べたlist.
+        list[str]: 削除済みindex pathを除いた`.py` pathのGit順list.
 
     Raises:
         AssertionError: Git inventory commandが正常終了しない場合.
@@ -136,7 +137,11 @@ def _git_indexed_python_files(repository_root: Path) -> list[str]:
     assert stderr is not None
     assert completed_process.returncode == 0, stderr.decode(encoding="utf-8")
 
-    return [path.decode(encoding="utf-8") for path in stdout.split(b"\0") if path]
+    return [
+        path.decode(encoding="utf-8")
+        for path in stdout.split(b"\0")
+        if path and (repository_root / path.decode(encoding="utf-8")).is_file()
+    ]
 
 
 def _docstring_section_entries(docstring: str, section_name: str) -> list[str]:
@@ -475,7 +480,7 @@ def test_docstrings_follow_semantic_section_contracts() -> None:
     broad_exceptions: list[str] = []
     pseudo_attributes: list[str] = []
 
-    for source_path in _git_indexed_python_files(PROJECT_ROOT):
+    for source_path in _git_tracked_python_files(PROJECT_ROOT):
         path = PROJECT_ROOT / source_path
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=source_path)
         for node in ast.walk(tree):
@@ -521,10 +526,10 @@ def test_docstrings_command_runs_only_active_quality_tools() -> None:
 
 
 def test_quality_and_fix_commands_share_the_first_party_python_inventory() -> None:
-    """Qualityとfixがdocstring gateと同じfirst-party Python inventoryを使うことを検証する.
+    """Qualityとfixがdocstring gateと同じtracked first-party Python inventoryを使うことを検証する.
 
-    Ruff format/lint/fixの対象を`src/ tests/`に限定せず,Git indexから収集した`.py`へ統一する.
-    BasedPyrightとimport-linterの既存scopeは変更しない.
+    Ruff format/lint/fixの対象を`src/ tests/`に限定せず、tracked `.py`へ統一する.
+    BasedPyrightはserver source/testとcrypto ownerのpublic stub、script、testを検査する.
 
     Returns:
         None: qualityまたはfixが異なるinventoryを使うか,qualityにinterrogateが含まれない場合は
@@ -538,7 +543,9 @@ def test_quality_and_fix_commands_share_the_first_party_python_inventory() -> No
     assert "run_first_party_python_tool uv run ruff format --check" in quality_body
     assert "run_first_party_python_tool uv run ruff check" in quality_body
     assert "run_first_party_python_tool uv run interrogate --config pyproject.toml" in quality_body
-    assert "uv run basedpyright src/ tests/" in quality_body
+    assert "packages/athena_crypto/typings/" in quality_body
+    assert "packages/athena_crypto/scripts/" in quality_body
+    assert "packages/athena_crypto/tests/" in quality_body
     assert "uv run lint-imports" in quality_body
     assert "uv run ruff format --check src/ tests/" not in quality_body
     assert "uv run ruff check src/ tests/" not in quality_body
@@ -565,8 +572,8 @@ def test_quality_usage_distinguishes_full_inventory_from_scoped_checks() -> None
 
     assert script.count(scope_description) == 2
     assert "Run quality checks for all tracked first-party Python files" not in script
-    assert 'echo "--> Basedpyright type check (src/ tests/)"' in quality_body
-    assert "uv run basedpyright src/ tests/" in quality_body
+    assert 'echo "--> Basedpyright type check (server and crypto Python sources)"' in quality_body
+    assert "packages/athena_crypto/typings/" in quality_body
 
 
 def test_first_party_python_paths_follow_cli_option_terminators() -> None:
@@ -694,8 +701,8 @@ def test_precommit_runs_ruff_fixes_before_ruff_format() -> None:
     assert int(ruff_fix["priority"]) < int(ruff_format["priority"])
 
 
-def test_python_files_matches_the_git_index() -> None:
-    """python-filesが現worktreeのGit indexと同じPython inventoryを返すことを検証する.
+def test_python_files_matches_existing_tracked_python_sources() -> None:
+    """python-filesが削除済みpathを除いたGit indexのPython inventoryを返すことを検証する.
 
     Returns:
         None: commandのexit statusまたはpathの順序と内容がindexと異なる場合はassertionで失敗する.
@@ -705,7 +712,7 @@ def test_python_files_matches_the_git_index() -> None:
 
     assert stdout is not None
     assert completed_process.returncode == 0, completed_process.stderr
-    assert stdout.splitlines() == _git_indexed_python_files(PROJECT_ROOT)
+    assert stdout.splitlines() == _git_tracked_python_files(PROJECT_ROOT)
 
 
 def test_python_files_uses_staged_sources_from_an_isolated_git_index_despite_hook_context(
@@ -719,8 +726,8 @@ def test_python_files_uses_staged_sources_from_an_isolated_git_index_despite_hoo
         monkeypatch (pytest.MonkeyPatch): hook由来のGit environmentを一時的に設定するfixture.
 
     Returns:
-        None: staged `.py`が欠落するか,親Git contextを参照するか,`.pyi`,ignored,untracked
-            pathが含まれる場合はassertionで失敗する.
+        None: staged `.py`が欠落するか、親Git contextを参照するか、`.pyi`、ignored pathが
+            含まれる場合はassertionで失敗する.
 
     Raises:
         AssertionError: fixture fileのstagingまたはcommand実行に失敗した場合.
@@ -794,7 +801,6 @@ def test_python_files_uses_staged_sources_from_an_isolated_git_index_despite_hoo
 
     assert stdout is not None
     assert completed_process.returncode == 0, completed_process.stderr
-    assert _git_indexed_python_files(repository_root) == ["new root.py", "tests/new test.py"]
     assert stdout.splitlines() == ["new root.py", "tests/new test.py"]
 
 
@@ -814,8 +820,8 @@ def test_python_files_rejects_directories_outside_a_git_worktree(tmp_path: Path)
     assert completed_process.stderr == "python-files must be run inside a Git worktree\n"
 
 
-def test_python_files_rejects_an_empty_git_index(tmp_path: Path) -> None:
-    """python-filesがPython sourceを持たないGit indexを拒否することを検証する.
+def test_python_files_rejects_an_empty_git_worktree(tmp_path: Path) -> None:
+    """python-filesがtracked Python sourceを持たないGit worktreeを拒否することを検証する.
 
     Args:
         tmp_path (Path): 空のGit worktreeを作るための一時directory.
@@ -829,4 +835,5 @@ def test_python_files_rejects_an_empty_git_index(tmp_path: Path) -> None:
 
     assert completed_process.returncode != 0
     assert completed_process.stdout == ""
-    assert completed_process.stderr == "Git index contains no tracked first-party Python files\n"
+    expected_error = "Git worktree contains no active tracked first-party Python files\n"
+    assert completed_process.stderr == expected_error

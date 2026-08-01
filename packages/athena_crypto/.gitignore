@@ -1,0 +1,7 @@
+target/
+Cargo.lock
+
+# Maturin places editable-build extensions beside the package-owned typing.
+typings/athena_crypto/*.so
+typings/athena_crypto/*.pyd
+typings/athena_crypto/*.dylib

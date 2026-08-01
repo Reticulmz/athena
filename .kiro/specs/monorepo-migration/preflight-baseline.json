@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "verification": {
+    "pre_cutover_source_revision": "fde4dfb191a36928cd7e0473a8fb977ac36b3d7b",
     "command": [
       "nix",
       "develop",
@@ -36,6 +37,19 @@
       ".kiro/specs/monorepo-migration/preflight-baseline.json",
       "--mode",
       "post-cutover"
+    ],
+    "crypto_cutover_command": [
+      "nix",
+      "develop",
+      "--command",
+      "uv",
+      "run",
+      "python",
+      "tools/monorepo_migration/verify_preflight_baseline.py",
+      "--baseline",
+      ".kiro/specs/monorepo-migration/preflight-baseline.json",
+      "--mode",
+      "crypto-cutover"
     ]
   },
   "post_cutover_compatibility": {
@@ -46,7 +60,21 @@
       "alembic.ini": "apps/athena_server/alembic.ini",
       "pyproject.toml": "apps/athena_server/pyproject.toml",
       "athena-crypto": "packages/athena_crypto"
-    }
+    },
+    "retired_paths": ["src", "alembic", "alembic.ini", "athena-crypto"]
+  },
+  "crypto_cutover_compatibility": {
+    "legacy_root_paths": [
+      "src",
+      "alembic",
+      "alembic.ini",
+      "pyproject.toml"
+    ],
+    "relocations": {
+      "athena-crypto": "packages/athena_crypto"
+    },
+    "retired_paths": ["athena-crypto"],
+    "forbidden_paths": ["apps/athena_server"]
   },
   "required_files": [
     "pyproject.toml",

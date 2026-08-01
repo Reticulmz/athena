@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import shutil
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -25,6 +27,7 @@ if TYPE_CHECKING:
 REPOSITORY_ROOT = Path(__file__).parents[2]
 BASELINE_PATH = REPOSITORY_ROOT / ".kiro/specs/monorepo-migration/preflight-baseline.json"
 VERIFIER_PATH = REPOSITORY_ROOT / "tools/monorepo_migration/verify_preflight_baseline.py"
+GIT_SHA1_HEX_LENGTH = 40
 
 
 def _load_baseline_document() -> dict[str, object]:
@@ -180,7 +183,8 @@ def _run_checker(
     Args:
         baseline_path (Path): checkerへ渡すbaseline JSON file.
         alembic_current (bool): Alembic current checkも実行するか.
-        environment (dict[str, str] | None): child processへ渡す環境変数. Noneなら継承する.
+        environment (dict[str, str] | None): child processへ渡す環境変数. Noneなら現在の環境を
+            使用し、いずれの場合も親Git repositoryのlocal contextは除去する.
         mode (str | None): verifierへ渡すphysical layout mode. NoneならCLI既定値を使う.
         repository_root (Path): checkerを実行する検証対象repository root.
 
@@ -202,10 +206,88 @@ def _run_checker(
         cwd=repository_root,
         check=False,
         capture_output=True,
-        env=environment,
+        env=_git_environment_without_parent_repository(environment),
         text=True,
         timeout=30,
     )
+
+
+def _recorded_pre_cutover_source_revision() -> str:
+    """Baselineを採取したpre-cutover Git revisionを返す.
+
+    Returns:
+        str: 40文字のlowercase SHA-1 object IDとして記録されたsource revision.
+
+    Raises:
+        TypeError: verification fieldまたはsource revisionが期待するJSON型でない場合.
+        ValueError: source revisionが完全なlowercase SHA-1 object IDでない場合.
+    """
+    verification = _nested_mapping(_load_baseline_document(), "verification")
+    revision = verification["pre_cutover_source_revision"]
+    if not isinstance(revision, str):
+        raise TypeError("verification.pre_cutover_source_revision must be a string")
+    if len(revision) != GIT_SHA1_HEX_LENGTH or any(
+        character not in "0123456789abcdef" for character in revision
+    ):
+        raise ValueError(
+            "verification.pre_cutover_source_revision must be a full lowercase SHA-1 object ID"
+        )
+    return revision
+
+
+def _make_immutable_pre_cutover_repository(tmp_path: Path) -> Path:
+    """Task 1.1の記録済みtreeをGit index付きtemporary repositoryへ展開する.
+
+    現在のHEADやworktreeが後続taskで変化しても、Task 1.1が固定したpre-cutover inventoryを
+    記録済みcommitのsourceとindexに対して検証できるfixtureを作る.
+
+    Args:
+        tmp_path (Path): archiveを展開してtemporary Git repositoryにするdirectory.
+
+    Returns:
+        Path: immutable Task 1.1 snapshotをindexへ登録済みのrepository root.
+
+    Raises:
+        AssertionError: Git archiveの取得、展開後repositoryの初期化、またはindex登録に失敗した場合.
+    """
+    source_revision = _recorded_pre_cutover_source_revision()
+    git_environment = _git_environment_without_parent_repository()
+    archive_process = subprocess.run(
+        ["git", "archive", "--format=tar", source_revision],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        env=git_environment,
+    )
+
+    assert archive_process.returncode == 0, archive_process.stderr.decode(encoding="utf-8")
+    with tarfile.open(fileobj=io.BytesIO(archive_process.stdout), mode="r:") as archive:
+        archive.extractall(tmp_path, filter="data")
+
+    initialize_process = subprocess.run(
+        ["git", "init", "--quiet"],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        env=git_environment,
+        text=True,
+    )
+    index_process = subprocess.run(
+        ["git", "add", "--all"],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        env=git_environment,
+        text=True,
+    )
+
+    assert initialize_process.returncode == 0, initialize_process.stderr
+    assert index_process.returncode == 0, index_process.stderr
+    # `git check-ignore`がdirectory-only patternを検証するには実pathが必要である.
+    # これらはTask 1.1のhistorical generated-state inventoryに含まれる.
+    (tmp_path / ".state").mkdir()
+    (tmp_path / "certs").mkdir()
+    return tmp_path
 
 
 def _make_post_cutover_repository(tmp_path: Path) -> Path:
@@ -230,7 +312,11 @@ def _make_post_cutover_repository(tmp_path: Path) -> Path:
         REPOSITORY_ROOT / "src/athena_cli", server_root / "src/athena_cli", ignore=ignored_paths
     )
     _ = shutil.copytree(REPOSITORY_ROOT / "alembic", server_root / "alembic", ignore=ignored_paths)
-    _ = shutil.copytree(REPOSITORY_ROOT / "athena-crypto", crypto_root, ignore=ignored_paths)
+    _ = shutil.copytree(
+        REPOSITORY_ROOT / "packages/athena_crypto",
+        crypto_root,
+        ignore=ignored_paths,
+    )
     _ = shutil.copy2(REPOSITORY_ROOT / "pyproject.toml", server_root / "pyproject.toml")
     _ = shutil.copy2(REPOSITORY_ROOT / "alembic.ini", server_root / "alembic.ini")
     _ = shutil.copy2(REPOSITORY_ROOT / ".gitignore", tmp_path / ".gitignore")
@@ -240,21 +326,349 @@ def _make_post_cutover_repository(tmp_path: Path) -> Path:
         cwd=tmp_path,
         check=True,
         capture_output=True,
+        env=_git_environment_without_parent_repository(),
         text=True,
     )
     return tmp_path
 
 
-def test_preflight_baseline_matches_current_repository_contract() -> None:
-    """移行前snapshotが現在のruntimeとcleanup inventoryを機械的に検証する契約を確認する.
+def _make_crypto_cutover_repository(tmp_path: Path) -> Path:
+    """Cryptoだけを移設しserverはlegacy rootに残すtemporary repositoryを作る.
 
-    source treeを移動する前にcheckerを実行し、runtime namespace、entrypoint、task名、CLI、
-    Alembic、build、quality/test対象、cleanup inventoryの差分がないことを確認する.
+    Args:
+        tmp_path (Path): fixture repositoryを作成する一時directory.
+
+    Returns:
+        Path: legacy server pathと`packages/athena_crypto`を含むrepository root.
+    """
+    crypto_root = tmp_path / "packages/athena_crypto"
+    ignored_paths = shutil.ignore_patterns("__pycache__", ".pytest_cache", "target")
+    _ = shutil.copytree(REPOSITORY_ROOT / "src", tmp_path / "src", ignore=ignored_paths)
+    _ = shutil.copytree(REPOSITORY_ROOT / "alembic", tmp_path / "alembic", ignore=ignored_paths)
+    _ = shutil.copytree(
+        REPOSITORY_ROOT / "packages/athena_crypto",
+        crypto_root,
+        ignore=ignored_paths,
+    )
+    _ = shutil.copy2(REPOSITORY_ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
+    _ = shutil.copy2(REPOSITORY_ROOT / "alembic.ini", tmp_path / "alembic.ini")
+    return tmp_path
+
+
+def _git_environment_without_parent_repository(
+    environment: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """任意のrepositoryをcwdで選べるよう親Git local contextを除いた環境を返す.
+
+    Args:
+        environment (Mapping[str, str] | None): 隔離前のprocess環境. Noneなら現在の環境を使う.
+
+    Returns:
+        dict[str, str]: caller指定値を維持し、Gitが列挙したrepository-local variablesだけを
+            除いたprocess環境.
+
+    Raises:
+        AssertionError: Gitがlocal environment variable名を列挙できない場合.
+    """
+    discovery_environment = {
+        variable_name: value
+        for variable_name, value in os.environ.items()
+        if not variable_name.startswith("GIT_")
+    }
+    local_variables_process = subprocess.run(
+        ["git", "rev-parse", "--local-env-vars"],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        env=discovery_environment,
+        text=True,
+    )
+    assert local_variables_process.returncode == 0, local_variables_process.stderr
+
+    isolated_environment = dict(os.environ if environment is None else environment)
+    for variable_name in local_variables_process.stdout.splitlines():
+        _ = isolated_environment.pop(variable_name, None)
+    return isolated_environment
+
+
+def test_pre_cutover_fixture_uses_recorded_revision_after_head_advances(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Current HEADが進んでも記録済みpre-cutover revisionを展開することを検証する.
+
+    2つのcommitを持つtemporary repositoryでTask 1.1相当のrevisionをbaselineへ記録し、HEADを
+    後続commitへ進めた後もhistorical fixtureが最初のsource内容を復元することを確認する.
+
+    Args:
+        tmp_path (Path): source repository、baseline、展開先を隔離する一時directory.
+        monkeypatch (pytest.MonkeyPatch): fixtureが参照するrepositoryとbaseline pathを差し替える
+            pytest helper.
+
+    Returns:
+        None: 記録済みrevisionのsource内容を検証して完了し、呼び出し側へ値を返さない.
+    """
+    source_repository = tmp_path / "source"
+    source_repository.mkdir()
+    tracked_path = source_repository / "layout.txt"
+    _ = tracked_path.write_text("pre-cutover\n", encoding="utf-8")
+    git_environment = _git_environment_without_parent_repository()
+    initialize_process = subprocess.run(
+        ["git", "init", "--quiet"],
+        cwd=source_repository,
+        check=False,
+        capture_output=True,
+        env=git_environment,
+        text=True,
+    )
+    add_process = subprocess.run(
+        ["git", "add", "layout.txt"],
+        cwd=source_repository,
+        check=False,
+        capture_output=True,
+        env=git_environment,
+        text=True,
+    )
+    first_commit_process = subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Athena Tests",
+            "-c",
+            "user.email=tests@athena.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--no-verify",
+            "--quiet",
+            "-m",
+            "pre-cutover",
+        ],
+        cwd=source_repository,
+        check=False,
+        capture_output=True,
+        env=git_environment,
+        text=True,
+    )
+    revision_process = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=source_repository,
+        check=False,
+        capture_output=True,
+        env=git_environment,
+        text=True,
+    )
+
+    assert initialize_process.returncode == 0, initialize_process.stderr
+    assert add_process.returncode == 0, add_process.stderr
+    assert first_commit_process.returncode == 0, first_commit_process.stderr
+    assert revision_process.returncode == 0, revision_process.stderr
+    pre_cutover_revision = revision_process.stdout.strip()
+
+    _ = tracked_path.write_text("current\n", encoding="utf-8")
+    second_add_process = subprocess.run(
+        ["git", "add", "layout.txt"],
+        cwd=source_repository,
+        check=False,
+        capture_output=True,
+        env=git_environment,
+        text=True,
+    )
+    second_commit_process = subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Athena Tests",
+            "-c",
+            "user.email=tests@athena.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--no-verify",
+            "--quiet",
+            "-m",
+            "current",
+        ],
+        cwd=source_repository,
+        check=False,
+        capture_output=True,
+        env=git_environment,
+        text=True,
+    )
+    assert second_add_process.returncode == 0, second_add_process.stderr
+    assert second_commit_process.returncode == 0, second_commit_process.stderr
+
+    baseline_path = tmp_path / "preflight-baseline.json"
+    _ = baseline_path.write_text(
+        json.dumps(
+            {
+                "verification": {
+                    "pre_cutover_source_revision": pre_cutover_revision,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setitem(globals(), "REPOSITORY_ROOT", source_repository)
+    monkeypatch.setitem(globals(), "BASELINE_PATH", baseline_path)
+    snapshot_root = tmp_path / "snapshot"
+    snapshot_root.mkdir()
+
+    repository_root = _make_immutable_pre_cutover_repository(snapshot_root)
+
+    assert (repository_root / "layout.txt").read_text(encoding="utf-8") == "pre-cutover\n"
+
+
+def test_pre_cutover_mode_accepts_recorded_revision_inventory(tmp_path: Path) -> None:
+    """Pre-cutover modeが記録済みrevision上のhistorical inventoryを受理することを検証する.
+
+    Task 1.2のcrypto relocationによる中間treeをcurrent repositoryで検証する代わりに、Task 1.1が
+    baselineへ記録したpre-cutover sourceとGit indexを展開し、historical cleanup contractの
+    coverageをHEADから独立して維持する.
+
+    Args:
+        tmp_path (Path): immutable pre-cutover fixtureを隔離する一時directory.
+
+    Returns:
+        None: pre-cutover checkerが差分なしで完了することを検証して完了する.
+    """
+    repository_root = _make_immutable_pre_cutover_repository(tmp_path)
+
+    result = _run_checker(
+        BASELINE_PATH,
+        mode="pre-cutover",
+        repository_root=repository_root,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_crypto_cutover_mode_accepts_relocated_crypto_with_legacy_server_layout(
+    tmp_path: Path,
+) -> None:
+    """Crypto-cutover modeがcryptoだけを移設した中間layoutを受理することを検証する.
+
+    server productの`src`、Alembic、root manifestはlegacy pathに残し、crypto artifactだけを
+    `packages/athena_crypto`へ配置したtreeを検証する.
+
+    Args:
+        tmp_path (Path): crypto-only relocation fixtureを隔離する一時directory.
+
+    Returns:
+        None: crypto-only semantic preflightが差分なしで完了することを検証する.
+    """
+    repository_root = _make_crypto_cutover_repository(tmp_path)
+
+    result = _run_checker(
+        BASELINE_PATH,
+        mode="crypto-cutover",
+        repository_root=repository_root,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (repository_root / "src/osu_server/__main__.py").is_file()
+    assert (repository_root / "packages/athena_crypto/Cargo.toml").is_file()
+    assert not (repository_root / "apps/athena_server").exists()
+
+
+def test_crypto_cutover_mode_rejects_missing_relocated_crypto(tmp_path: Path) -> None:
+    """Crypto-cutover modeがcrypto relocation targetの欠落を拒否することを検証する.
+
+    legacy server rootだけが残り`packages/athena_crypto`がないtreeを検証し、semantic viewを作る前に
+    relocation targetの欠落をoperatorが識別できるmismatchとして報告することを確認する.
+
+    Args:
+        tmp_path (Path): crypto-only relocation fixtureを隔離する一時directory.
+
+    Returns:
+        None: relocation targetの欠落がnon-zero exitになることを検証して完了する.
+    """
+    repository_root = _make_crypto_cutover_repository(tmp_path)
+    _ = (repository_root / "packages/athena_crypto").rename(repository_root / "unavailable-crypto")
+
+    result = _run_checker(
+        BASELINE_PATH,
+        mode="crypto-cutover",
+        repository_root=repository_root,
+    )
+
+    assert result.returncode != 0
+    assert (
+        "BASELINE MISMATCH: Crypto-cutover relocation target is missing: packages/athena_crypto"
+        in result.stderr
+    )
+
+
+def test_crypto_cutover_mode_rejects_retained_legacy_crypto_path(tmp_path: Path) -> None:
+    """Crypto-cutover modeが移設後も残ったlegacy crypto pathを拒否することを検証する.
+
+    crypto packageを新旧両方のpathに置いたtreeを検証し、二重のartifact authorityを許容せず
+    `athena-crypto`のretired stateをmismatchとして報告することを確認する.
+
+    Args:
+        tmp_path (Path): crypto-only relocation fixtureを隔離する一時directory.
+
+    Returns:
+        None: legacy crypto pathがnon-zero exitになることを検証して完了する.
+    """
+    repository_root = _make_crypto_cutover_repository(tmp_path)
+    _ = shutil.copytree(
+        repository_root / "packages/athena_crypto",
+        repository_root / "athena-crypto",
+    )
+
+    result = _run_checker(
+        BASELINE_PATH,
+        mode="crypto-cutover",
+        repository_root=repository_root,
+    )
+
+    assert result.returncode != 0
+    assert (
+        "BASELINE MISMATCH: Crypto-cutover retired path is still present: athena-crypto"
+        in result.stderr
+    )
+
+
+def test_crypto_cutover_mode_rejects_premature_server_workspace(tmp_path: Path) -> None:
+    """Crypto-cutover modeがserver workspaceの早期移設を拒否することを検証する.
+
+    server sourceがlegacy rootにも`apps/athena_server`にも存在するtreeを検証し、server移設は
+    crypto-only cutoverの範囲外としてmismatchになることを確認する.
+
+    Args:
+        tmp_path (Path): crypto-only relocation fixtureを隔離する一時directory.
+
+    Returns:
+        None: premature server workspaceがnon-zero exitになることを検証して完了する.
+    """
+    repository_root = _make_crypto_cutover_repository(tmp_path)
+    (repository_root / "apps/athena_server").mkdir(parents=True)
+
+    result = _run_checker(
+        BASELINE_PATH,
+        mode="crypto-cutover",
+        repository_root=repository_root,
+    )
+
+    assert result.returncode != 0
+    assert (
+        "BASELINE MISMATCH: Crypto-cutover forbidden path is present: apps/athena_server"
+        in result.stderr
+    )
+
+
+def test_preflight_baseline_matches_current_repository_contract() -> None:
+    """Crypto-cutover snapshotが現在の中間layoutを機械的に検証する契約を確認する.
+
+    Server root pathを維持しつつcrypto artifactだけをpackage ownerへ移設したtreeにcheckerを実行し、
+    runtime namespace、entrypoint、task名、CLI、Alembic、build、quality/test対象の差分がないことを
+    確認する.
 
     Returns:
         None: checkerの成功終了を検証して完了し、呼び出し側へ値を返さない.
     """
-    result = _run_checker(BASELINE_PATH)
+    result = _run_checker(BASELINE_PATH, mode="crypto-cutover")
 
     assert result.returncode == 0, result.stderr
     assert "Alembic current was not checked." in result.stdout
@@ -294,6 +708,63 @@ def test_post_cutover_mode_accepts_relocated_contract_without_pre_cutover_invent
     assert "Baseline verification could not complete" not in pre_cutover_result.stderr
     assert "Required baseline path is missing" in pre_cutover_result.stderr
     assert "Pre-cutover cleanup inventory path is missing" in pre_cutover_result.stderr
+
+
+def test_post_cutover_mode_rejects_retained_legacy_server_source(tmp_path: Path) -> None:
+    """Post-cutover modeが移設後も残るlegacy server sourceを拒否することを検証する.
+
+    `apps/athena_server`へ移設済みのfixtureへ旧root `src`を追加し、server workspaceの二重
+    authorityをpost-cutover semantic contractが許容しないことを確認する.
+
+    Args:
+        tmp_path (Path): relocation済みfixtureを隔離する一時directory.
+
+    Returns:
+        None: legacy server sourceの併存がnon-zero exitになることを検証して完了する.
+    """
+    repository_root = _make_post_cutover_repository(tmp_path)
+    ignored_paths = shutil.ignore_patterns("__pycache__", ".pytest_cache", "target")
+    _ = shutil.copytree(REPOSITORY_ROOT / "src", repository_root / "src", ignore=ignored_paths)
+
+    result = _run_checker(
+        BASELINE_PATH,
+        mode="post-cutover",
+        repository_root=repository_root,
+    )
+
+    assert result.returncode != 0
+    assert "BASELINE MISMATCH: Post-cutover retired path is still present: src" in result.stderr
+
+
+def test_post_cutover_mode_rejects_retained_legacy_crypto_package(tmp_path: Path) -> None:
+    """Post-cutover modeが移設後も残るlegacy crypto packageを拒否することを検証する.
+
+    `packages/athena_crypto`へ移設済みのfixtureへ旧`athena-crypto`を追加し、native artifactの
+    二重authorityをpost-cutover semantic contractが許容しないことを確認する.
+
+    Args:
+        tmp_path (Path): relocation済みfixtureを隔離する一時directory.
+
+    Returns:
+        None: legacy crypto packageの併存がnon-zero exitになることを検証して完了する.
+    """
+    repository_root = _make_post_cutover_repository(tmp_path)
+    ignored_paths = shutil.ignore_patterns("__pycache__", ".pytest_cache", "target")
+    _ = shutil.copytree(
+        REPOSITORY_ROOT / "packages/athena_crypto",
+        repository_root / "athena-crypto",
+        ignore=ignored_paths,
+    )
+
+    result = _run_checker(
+        BASELINE_PATH,
+        mode="post-cutover",
+        repository_root=repository_root,
+    )
+
+    assert result.returncode != 0
+    expected = "BASELINE MISMATCH: Post-cutover retired path is still present: athena-crypto"
+    assert expected in result.stderr
 
 
 def test_post_cutover_mode_preserves_exact_alembic_current_contract(tmp_path: Path) -> None:
@@ -454,12 +925,12 @@ def test_alembic_current_cli_forwards_post_cutover_mode(
     assert collected_modes == [VerificationMode.POST_CUTOVER]
 
 
-def test_post_cutover_alembic_current_on_pre_cutover_tree_reports_mismatches() -> None:
-    """移行前treeのpost-cutover Alembic currentを診断可能なmismatchとして返すことを検証する.
+def test_post_cutover_alembic_current_on_crypto_cutover_tree_reports_mismatches() -> None:
+    """Crypto-cutover treeのpost-cutover Alembic current mismatchを検証する.
 
-    旧root layoutから`--mode post-cutover --alembic-current`を実行し、relocation不足と
-    server workspace不足をouter CLI errorではなく同じbaseline mismatch reportへ収集することを
-    確認する.
+    Serverがrootに残る中間layoutから`--mode post-cutover --alembic-current`を実行し、server
+    relocation不足とserver workspace不足をouter CLI errorではなく同じbaseline mismatch reportへ
+    収集することを確認する.
 
     Returns:
         None: physical layoutとAlembic command rootの差分がstderrへ報告されることを検証して
@@ -480,7 +951,7 @@ def test_post_cutover_alembic_current_on_pre_cutover_tree_reports_mismatches() -
 def test_alembic_current_runner_oserror_is_reported_as_mismatch() -> None:
     """Alembic runnerのOS errorをbaseline mismatchへ変換することを検証する.
 
-    実行可能なpre-cutover rootへOS errorを送出するrunnerを注入し、runner failureがchecker全体の
+    実行可能なcrypto-cutover rootへOS errorを送出するrunnerを注入し、runner failureがchecker全体の
     例外ではなくoperatorが対処可能なAlembic current差分になることを確認する.
 
     Returns:
@@ -501,6 +972,7 @@ def test_alembic_current_runner_oserror_is_reported_as_mismatch() -> None:
     differences = collect_alembic_current_difference(
         REPOSITORY_ROOT,
         Baseline(document=_load_baseline_document()),
+        mode=VerificationMode.CRYPTO_CUTOVER,
         run_current=run_current,
     )
 
@@ -526,6 +998,7 @@ def test_preflight_baseline_uses_recorded_migration_head_for_alembic_current() -
     differences = collect_alembic_current_difference(
         REPOSITORY_ROOT,
         Baseline(document=document),
+        mode=VerificationMode.CRYPTO_CUTOVER,
         run_current=_successful_alembic_current,
     )
 
@@ -553,7 +1026,10 @@ def test_preflight_baseline_rejects_divergent_recorded_current_at_head(tmp_path:
     migrations["current_at_head"] = "incompatible-recorded-current"
     document["migrations"] = migrations
 
-    result = _run_checker(_write_mutated_baseline(tmp_path, document))
+    result = _run_checker(
+        _write_mutated_baseline(tmp_path, document),
+        mode="crypto-cutover",
+    )
 
     assert result.returncode != 0
     assert "Recorded Alembic current_at_head differs from recorded head" in result.stderr
@@ -568,6 +1044,7 @@ def test_preflight_baseline_accepts_exact_single_alembic_head() -> None:
     differences = collect_alembic_current_difference(
         REPOSITORY_ROOT,
         Baseline(document=_load_baseline_document()),
+        mode=VerificationMode.CRYPTO_CUTOVER,
         run_current=_successful_alembic_current,
     )
 
@@ -611,6 +1088,7 @@ def test_preflight_baseline_rejects_ambiguous_or_partial_alembic_current_output(
     differences = collect_alembic_current_difference(
         REPOSITORY_ROOT,
         Baseline(document=_load_baseline_document()),
+        mode=VerificationMode.CRYPTO_CUTOVER,
         run_current=_alembic_current_runner_with_output(output),
     )
 
@@ -779,8 +1257,13 @@ def test_preflight_baseline_uses_recorded_manifest_paths(tmp_path: Path) -> None
     """
     baseline = _load_baseline_document()
     _mutate_manifest_paths(baseline)
+    repository_root = _make_immutable_pre_cutover_repository(tmp_path)
 
-    result = _run_checker(_write_mutated_baseline(tmp_path, baseline))
+    result = _run_checker(
+        _write_mutated_baseline(tmp_path, baseline),
+        mode="pre-cutover",
+        repository_root=repository_root,
+    )
 
     assert result.returncode != 0
     assert "BASELINE MISMATCH: Build manifest is missing for server" in result.stderr
@@ -947,8 +1430,13 @@ def test_preflight_baseline_rejects_mutated_enforced_contracts(tmp_path: Path) -
     _mutate_migration_contract(baseline)
     _mutate_build_and_validation_contract(baseline)
     _mutate_cleanup_inventory(baseline)
+    repository_root = _make_immutable_pre_cutover_repository(tmp_path)
 
-    result = _run_checker(_write_mutated_baseline(tmp_path, baseline))
+    result = _run_checker(
+        _write_mutated_baseline(tmp_path, baseline),
+        mode="pre-cutover",
+        repository_root=repository_root,
+    )
 
     assert result.returncode != 0
     _assert_expected_mismatch_markers(result.stderr)
@@ -966,7 +1454,12 @@ def test_preflight_baseline_rejects_unreachable_alembic_current() -> None:
     environment = os.environ.copy()
     environment["DATABASE_URL"] = "postgresql+asyncpg://user:pass@127.0.0.1:1/athena"
 
-    result = _run_checker(BASELINE_PATH, alembic_current=True, environment=environment)
+    result = _run_checker(
+        BASELINE_PATH,
+        alembic_current=True,
+        environment=environment,
+        mode="crypto-cutover",
+    )
 
     assert result.returncode != 0
     assert "BASELINE MISMATCH" in result.stderr

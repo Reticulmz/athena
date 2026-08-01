@@ -28,10 +28,13 @@ class VerificationMode(StrEnum):
 
     Attributes:
         PRE_CUTOVER (str): 旧root pathとcleanup inventoryが存在する移行前treeを検証するmode.
+        CRYPTO_CUTOVER (str): cryptoだけをpackage ownerへ移設し、serverが旧rootに残る中間treeを
+            検証するmode.
         POST_CUTOVER (str): owner workspaceへ移設済みの意味的互換contractだけを検証するmode.
     """
 
     PRE_CUTOVER = "pre-cutover"
+    CRYPTO_CUTOVER = "crypto-cutover"
     POST_CUTOVER = "post-cutover"
 
 
@@ -134,7 +137,9 @@ def _parse_arguments() -> ParsedArguments:
         "--mode",
         choices=[mode.value for mode in VerificationMode],
         default=VerificationMode.PRE_CUTOVER.value,
-        help="Check pre-cutover inventory or post-cutover semantic compatibility.",
+        help=(
+            "Check pre-cutover inventory, crypto-cutover compatibility, or post-cutover semantics."
+        ),
     )
     namespace = parser.parse_args()
     parsed_values: object = vars(namespace)
@@ -186,7 +191,8 @@ def _collect_differences(
     Args:
         repository_root (Path): 検証対象repositoryのroot directory.
         baseline (Baseline): 比較するpreflight snapshot.
-        mode (VerificationMode): pre-cutover inventoryまたはpost-cutover semantic contractのmode.
+        mode (VerificationMode): pre-cutover inventory、crypto-cutover、またはpost-cutoverの
+            検証mode.
 
     Returns:
         list[str]: 検出した差分の人間が確認できる説明. 差分がない場合は空list.
@@ -206,6 +212,24 @@ def _collect_differences(
                 mode=mode,
             )
         )
+        return differences
+
+    if mode is VerificationMode.CRYPTO_CUTOVER:
+        differences = _check_verification_contract(baseline)
+        with tempfile.TemporaryDirectory(prefix="athena-preflight-semantic-") as directory:
+            semantic_root = Path(directory)
+            differences.extend(
+                _populate_crypto_cutover_semantic_view(repository_root, semantic_root, baseline)
+            )
+            if differences:
+                return differences
+            differences.extend(
+                _collect_semantic_differences(
+                    semantic_root,
+                    baseline,
+                    mode=mode,
+                )
+            )
         return differences
 
     differences = _check_verification_contract(baseline)
@@ -270,12 +294,17 @@ def _populate_post_cutover_semantic_view(
         baseline (Baseline): post-cutover relocation mapを含むsnapshot.
 
     Returns:
-        list[str]: relocation targetが存在しない場合の差分. 成功時は空list.
+        list[str]: relocation targetの欠落またはretired server pathの併存に関する差分. 成功時は
+            空list.
     """
     compatibility = _post_cutover_compatibility(baseline)
     relocations = _mapping(
         _field(compatibility, "relocations", "post_cutover_compatibility"),
         "post_cutover_compatibility.relocations",
+    )
+    retired_paths = _string_list(
+        _field(compatibility, "retired_paths", "post_cutover_compatibility"),
+        "post_cutover_compatibility.retired_paths",
     )
     differences: list[str] = []
     for pre_cutover_path, relocated_path in relocations.items():
@@ -289,6 +318,11 @@ def _populate_post_cutover_semantic_view(
         semantic_path = semantic_root / pre_cutover_path
         semantic_path.parent.mkdir(parents=True, exist_ok=True)
         semantic_path.symlink_to(target_path, target_is_directory=target_path.is_dir())
+    differences.extend(
+        f"Post-cutover retired path is still present: {retired_path}"
+        for retired_path in retired_paths
+        if (repository_root / retired_path).exists()
+    )
     return differences
 
 
@@ -299,12 +333,108 @@ def _post_cutover_compatibility(baseline: Baseline) -> JsonMapping:
         baseline (Baseline): post-cutover server ownerとrelocationを記録したsnapshot.
 
     Returns:
-        Mapping[str, object]: server workspaceとrelocationを含む設定.
+        Mapping[str, object]: server workspace、relocation、retired server pathを含む設定.
     """
     return _mapping(
         baseline.field("post_cutover_compatibility"),
         "post_cutover_compatibility",
     )
+
+
+def _populate_crypto_cutover_semantic_view(
+    repository_root: Path,
+    semantic_root: Path,
+    baseline: Baseline,
+) -> list[str]:
+    """Cryptoだけを移設したtreeを旧baseline pathで参照できるviewへ解決する.
+
+    Args:
+        repository_root (Path): legacy server rootとcrypto relocation targetを含むrepository root.
+        semantic_root (Path): 旧baseline pathを一時的に解決するdirectory.
+        baseline (Baseline): crypto-cutover layout contractを含むsnapshot.
+
+    Returns:
+        list[str]: 中間layoutの必須pathまたはretired/forbidden pathに関する差分. 成功時は空list.
+    """
+    compatibility = _crypto_cutover_compatibility(baseline)
+    legacy_root_paths = _string_list(
+        _field(compatibility, "legacy_root_paths", "crypto_cutover_compatibility"),
+        "crypto_cutover_compatibility.legacy_root_paths",
+    )
+    relocations = _mapping(
+        _field(compatibility, "relocations", "crypto_cutover_compatibility"),
+        "crypto_cutover_compatibility.relocations",
+    )
+    retired_paths = _string_list(
+        _field(compatibility, "retired_paths", "crypto_cutover_compatibility"),
+        "crypto_cutover_compatibility.retired_paths",
+    )
+    forbidden_paths = _string_list(
+        _field(compatibility, "forbidden_paths", "crypto_cutover_compatibility"),
+        "crypto_cutover_compatibility.forbidden_paths",
+    )
+    differences: list[str] = []
+
+    for legacy_root_path in legacy_root_paths:
+        source_path = repository_root / legacy_root_path
+        if not source_path.exists():
+            differences.append(f"Crypto-cutover legacy root path is missing: {legacy_root_path}")
+            continue
+        _symlink_semantic_path(semantic_root, legacy_root_path, source_path)
+
+    for pre_cutover_path, relocated_path in relocations.items():
+        relocation_path = _string(
+            relocated_path,
+            f"crypto_cutover_compatibility.relocations[{pre_cutover_path!r}]",
+        )
+        target_path = repository_root / relocation_path
+        if not target_path.exists():
+            differences.append(f"Crypto-cutover relocation target is missing: {relocation_path}")
+            continue
+        _symlink_semantic_path(semantic_root, pre_cutover_path, target_path)
+
+    differences.extend(
+        f"Crypto-cutover retired path is still present: {retired_path}"
+        for retired_path in retired_paths
+        if (repository_root / retired_path).exists()
+    )
+    differences.extend(
+        f"Crypto-cutover forbidden path is present: {forbidden_path}"
+        for forbidden_path in forbidden_paths
+        if (repository_root / forbidden_path).exists()
+    )
+    return differences
+
+
+def _crypto_cutover_compatibility(baseline: Baseline) -> JsonMapping:
+    """Baselineからcrypto-only relocationのlayout contractを取得する.
+
+    Args:
+        baseline (Baseline): crypto-cutover layoutを記録したsnapshot.
+
+    Returns:
+        Mapping[str, object]: legacy root path、crypto relocation、禁止pathを含む設定.
+    """
+    return _mapping(
+        baseline.field("crypto_cutover_compatibility"),
+        "crypto_cutover_compatibility",
+    )
+
+
+def _symlink_semantic_path(semantic_root: Path, relative_path: str, target_path: Path) -> None:
+    """一時semantic viewのrelative pathを実際のsource pathへsymbolic linkする.
+
+    Args:
+        semantic_root (Path): symbolic linkを作る一時semantic viewのroot.
+        relative_path (str): semantic view内で解決するrepository相対path.
+        target_path (Path): semantic pathが参照する存在確認済みsource path.
+
+    Returns:
+        None: symbolic linkを作成して完了し、呼び出し側へ値を返さない.
+    """
+    semantic_path = semantic_root / relative_path
+    semantic_path.parent.mkdir(parents=True, exist_ok=True)
+    semantic_path.symlink_to(target_path, target_is_directory=target_path.is_dir())
 
 
 def _check_required_files(repository_root: Path, baseline: Baseline) -> list[str]:
@@ -355,6 +485,10 @@ def _check_verification_contract(baseline: Baseline) -> list[str]:
         _field(verification, "post_cutover_command", "verification"),
         "post_cutover_command",
     )
+    crypto_cutover_command = _string_list(
+        _field(verification, "crypto_cutover_command", "verification"),
+        "crypto_cutover_command",
+    )
     differences: list[str] = []
     if current_command != base_command:
         differences.append("Baseline verification command changed")
@@ -362,6 +496,8 @@ def _check_verification_contract(baseline: Baseline) -> list[str]:
         differences.append("Baseline Alembic-current command changed")
     if post_cutover_command != [*base_command, "--mode", VerificationMode.POST_CUTOVER.value]:
         differences.append("Baseline post-cutover verification command changed")
+    if crypto_cutover_command != [*base_command, "--mode", VerificationMode.CRYPTO_CUTOVER.value]:
+        differences.append("Baseline crypto-cutover verification command changed")
     return differences
 
 
@@ -1204,7 +1340,7 @@ def _check_validation_contract(
         differences.append(
             f"Pytest target paths changed: expected {expected_test_paths}, got {actual_test_paths}"
         )
-    if mode is VerificationMode.POST_CUTOVER:
+    if mode is not VerificationMode.PRE_CUTOVER:
         return differences
 
     runtime = _mapping(baseline.field("runtime"), "runtime")

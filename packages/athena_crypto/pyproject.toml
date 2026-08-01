@@ -13,3 +13,11 @@ dynamic = ["version"]
 
 [tool.maturin]
 module-name = "athena_crypto"
+python-source = "typings"
+exclude = [
+    "typings/athena_crypto/__pycache__/**",
+    "typings/athena_crypto/*.pyc",
+    "typings/athena_crypto/*.so",
+    "typings/athena_crypto/*.pyd",
+    "typings/athena_crypto/*.dylib",
+]
