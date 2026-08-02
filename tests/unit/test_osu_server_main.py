@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import uvicorn
@@ -71,6 +72,8 @@ def test_main_launches_uvicorn_from_app_config(monkeypatch: pytest.MonkeyPatch) 
 
     server_main.main()
 
+    source_root = Path(server_main.__file__).resolve().parents[1]
+
     assert calls == [
         (
             "osu_server.app:app",
@@ -78,7 +81,7 @@ def test_main_launches_uvicorn_from_app_config(monkeypatch: pytest.MonkeyPatch) 
                 "host": "0.0.0.0",
                 "port": 8765,
                 "reload": True,
-                "reload_dirs": ["src"],
+                "reload_dirs": [str(source_root)],
                 "access_log": False,
             },
         )

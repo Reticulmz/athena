@@ -29,10 +29,11 @@ from athena_cli.stable_verification.parsers import (
     GetscoresResponseKind,
     parse_getscores_response,
 )
+from athena_cli.stable_verification.source_checkout import source_checkout_path
 
 GETSCORES_WEB_LEGACY_PATH = "/web/osu-osz2-getscores.php"
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_PROJECT_ROOT = source_checkout_path(Path(__file__))
 _DEFAULT_WEB_LEGACY_FIXTURE_DIR = _PROJECT_ROOT / "tests" / "fixtures" / "web_legacy" / "getscores"
 _DEFAULT_COMPLETION_MANIFEST_ROOT = (
     _PROJECT_ROOT / "tests" / "fixtures" / "stable_compatibility" / "getscores"

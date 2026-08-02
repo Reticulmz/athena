@@ -20,6 +20,8 @@ PROJECT_ROOT = TEST_ROOT.parent
 FIXTURE_DIR = TEST_ROOT / "fixtures" / "stable_compatibility" / "replay_download"
 DOMAIN_MODULE = (
     PROJECT_ROOT
+    / "apps"
+    / "athena_server"
     / "src"
     / "osu_server"
     / "domain"
@@ -27,6 +29,28 @@ DOMAIN_MODULE = (
     / "stable"
     / "replay_download.py"
 )
+
+
+def test_replay_download_static_boundary_audit_reads_server_owned_module() -> None:
+    """Replay download domain AST監査がserver workspace moduleを読むことを検証する.
+
+    Stable compatibility domainの依存境界は移設後も同じmoduleを検査し、削除済みroot source pathを
+    fallbackとして利用しないことを確認する.
+
+    Returns:
+        None: domain moduleのphysical owner pathを検証して完了する.
+    """
+    assert DOMAIN_MODULE == (
+        PROJECT_ROOT
+        / "apps"
+        / "athena_server"
+        / "src"
+        / "osu_server"
+        / "domain"
+        / "compatibility"
+        / "stable"
+        / "replay_download.py"
+    )
 
 
 class BodyDecisionPayload(TypedDict):

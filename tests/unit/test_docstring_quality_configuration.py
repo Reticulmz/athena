@@ -19,7 +19,8 @@ FLAKE_PATH = PROJECT_ROOT / "flake.nix"
 PYPROJECT_PATH = PROJECT_ROOT / "pyproject.toml"
 UV_LOCK_PATH = PROJECT_ROOT / "uv.lock"
 FIRST_PARTY_PYTHON_ROOTS = (
-    PROJECT_ROOT / "src",
+    PROJECT_ROOT / "apps/athena_server/src",
+    PROJECT_ROOT / "apps/athena_server/scripts",
     PROJECT_ROOT / "tests",
     PROJECT_ROOT / "alembic",
     PROJECT_ROOT / "gitlint_rules",
@@ -699,6 +700,28 @@ def test_precommit_runs_ruff_fixes_before_ruff_format() -> None:
     assert ruff_fix is not None
     assert ruff_format is not None
     assert int(ruff_fix["priority"]) < int(ruff_format["priority"])
+
+
+def test_precommit_type_and_import_hooks_use_server_owned_validation_paths() -> None:
+    """Pre-commitのtype/import hookがserver ownerのvalidation pathを使うことを検証する.
+
+    Returns:
+        None: legacy root sourceまたはroot import-linter configを参照する場合はassertionで失敗する.
+    """
+    flake = FLAKE_PATH.read_text(encoding="utf-8")
+    expected_basedpyright_entry = (
+        'entry = "uv run basedpyright apps/athena_server/src/ '
+        "apps/athena_server/scripts/ tests/ packages/athena_crypto/typings/ "
+        'packages/athena_crypto/scripts/ packages/athena_crypto/tests/";'
+    )
+    expected_import_linter_entry = (
+        'entry = "uv run lint-imports --config apps/athena_server/pyproject.toml";'
+    )
+
+    assert expected_basedpyright_entry in flake
+    assert expected_import_linter_entry in flake
+    assert 'entry = "uv run basedpyright src/ tests/";' not in flake
+    assert 'entry = "uv run lint-imports";' not in flake
 
 
 def test_python_files_matches_existing_tracked_python_sources() -> None:

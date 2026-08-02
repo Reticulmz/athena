@@ -13,7 +13,7 @@ from osu_server.domain.identity.users import User
 from osu_server.services.queries.identity.permission_service import PermissionService
 
 PROJECT_ROOT = Path(__file__).parents[4]
-SOURCE_ROOT = PROJECT_ROOT / "src" / "osu_server"
+SOURCE_ROOT = PROJECT_ROOT / "apps" / "athena_server" / "src" / "osu_server"
 
 INTERNAL_AUTHORIZATION_MODULES = (
     SOURCE_ROOT / "services" / "queries" / "identity" / "permission_service.py",
@@ -31,6 +31,18 @@ OLD_FLAT_IDENTITY_MODULES = (
     SOURCE_ROOT / "domain" / "session_authorization.py",
     SOURCE_ROOT / "domain" / "user.py",
 )
+
+
+def test_identity_static_authorization_audit_reads_server_owned_sources() -> None:
+    """Identity authorizationのstatic auditがserver workspace sourceを読むことを検証する.
+
+    移設後もinternal authorization collaboratorのAST監査がrootの削除済みsource treeへ
+    fallbackせず、server productのphysical ownerを検査することを確認する.
+
+    Returns:
+        None: identity source rootのownershipを検証して完了する.
+    """
+    assert SOURCE_ROOT == PROJECT_ROOT / "apps" / "athena_server" / "src" / "osu_server"
 
 
 def test_identity_context_owns_server_authorization_language() -> None:

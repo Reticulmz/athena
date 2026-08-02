@@ -10,7 +10,8 @@ import osu_server.infrastructure.jobs as infrastructure_jobs
 import osu_server.jobs as application_jobs
 
 PROJECT_ROOT = Path(__file__).parents[2]
-PYPROJECT_PATH = PROJECT_ROOT / "pyproject.toml"
+SERVER_WORKSPACE_ROOT = PROJECT_ROOT / "apps" / "athena_server"
+PYPROJECT_PATH = SERVER_WORKSPACE_ROOT / "pyproject.toml"
 
 type TomlTable = dict[str, object]
 
@@ -74,6 +75,15 @@ def import_linter_contracts() -> list[object]:
     tool = require_table(pyproject["tool"])
     importlinter = require_table(tool["importlinter"])
     return require_list(importlinter["contracts"])
+
+
+def test_job_boundary_contract_reads_server_owned_import_linter_configuration() -> None:
+    """Job boundary contractがserver workspace import-linter設定を読むことを検証する.
+
+    Returns:
+        None: server productがarchitecture contractの唯一のownerであることを検証して完了する.
+    """
+    assert PYPROJECT_PATH == SERVER_WORKSPACE_ROOT / "pyproject.toml"
 
 
 def test_jobs_layer_is_part_of_import_linter_contract() -> None:

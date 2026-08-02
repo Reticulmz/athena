@@ -4,38 +4,41 @@
 - [x] 1.1 移行前の互換contractとcleanup inventoryを固定する
   - Runtime import namespace、app/worker entrypoint、worker task名、CLI command/confirmation/exit behaviorのbaselineを取得する。
   - Alembic revision identifierとcurrent/head、server/crypto build、現在のquality/test対象を記録する。
+  - `--alembic-current`はrecorded `migrations.head`と完全一致する単一current revisionだけを成功とし、空値、複数値、prefix/substr一致をrejectする。
   - Legacy task capability、generated state、tracked template、normative stale path、Kiro/TODO statusのinventoryを作る。
   - Baselineを再実行すると、移行前のobservable contractが機械的に確認できる状態を完了条件とする。
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 9.5, 9.6, 9.7, 10.1, 10.3_
+  - _Boundary: Preflight Baseline, Validation Policy_
 
 - [x] 1.2 Crypto artifactをpackage ownerへ移管する
   - Native extension source、Python tests、Rust/Python manifestsをcrypto workspaceへ集約する。
-  - Distribution/import/module nameと既存crypto behaviorを維持する。
-  - Public typing sourceをpackage ownershipへ移し、root private stubから独立させる。
+  - Distribution/import/module nameと既存crypto behaviorを維持し、public typing sourceをpackage ownershipへ移す。
+  - Package ownerのbuild/test/type artifact入口として、clean wheelをtemporary directoryへbuildし、archiveを検査してwheelのみをisolated consumer venvへinstallし、native testとtype-aware consumer checkを実行する。
+  - Root testはこのverifierを一度だけ実行し、package testはroot conftestまたはsource treeのnative build artifactをloadしない。
+  - Root quality inventoryは移設中のnon-ignored/untracked crypto Python source/testを検査し、削除済みindex pathをtoolへ渡さない。
   - Crypto workspace単独でbuild、test、type artifact検査を実行できる状態を完了条件とする。
-  - _Requirements: 2.3, 2.6, 2.7, 6.1, 6.2, 6.4_
+  - _Requirements: 2.3, 2.6, 2.7, 6.1, 6.2, 6.3, 6.4_
+  - _Boundary: Crypto Workspace, Validation Policy_
 
-- [ ] 1.3 Server runtimeと管理CLIを単一productへ移管する
-  - Server runtimeと管理CLIのsourceをserver workspaceへ集約し、single distribution metadataを確立する。
-  - App、worker、console commandとPython namespaceを変更せず、新しいphysical ownerから解決させる。
-  - CLIからserverへの依存だけを許可し、serverからCLIへの依存禁止を維持する。
-  - Installed artifactでapp、worker、CLI entrypointがbaselineと同じ結果を返す状態を完了条件とする。
-  - _Requirements: 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.4, 2.5_
+- [x] 1.3 Server runtime、管理CLI、root orchestrationをatomic cutoverする
+  - Server runtimeと管理CLIのsourceおよびsingle distribution metadataをserver workspaceへ集約する。
+  - 同じcutoverでroot distribution ownershipを除き、rootをserverとcryptoを含むnon-package uv workspaceへ切り替え、authoritative single lockを再生成する。
+  - App、worker、console commandとPython namespaceを維持し、`athena_cli -> osu_server`だけを許可するimport directionを保つ。
+  - Cutoverを阻害するruntime/test/tooling consumerを同じtaskで新しいsource rootとserver-owned import configurationへ更新し、canonical root quality/test gateをgreenに保つ。
+  - root packageとserver packageの二重distributionを残さず、clean locked sync、server artifact build、installed app/worker/CLI entrypoint smokeとcanonical root quality/testがbaselineと一致する状態を完了条件とする。
+  - _Depends: 1.1, 1.2_
+  - _Requirements: 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 3.2, 3.3, 3.4, 6.1, 6.2, 10.1, 10.7_
+  - _Boundary: Server Workspace, Workspace Manifests, Validation Policy_
 
-- [ ] 1.4 Rootをsingle-lock orchestration workspaceへ切り替える
-  - Root distribution ownershipを除き、serverとcryptoを含むrepository-wide Python workspaceを定義する。
-  - Runtime dependencyとbuild metadataを各ownerへ分け、repository-wide development policyだけをrootに残す。
-  - Member lockを廃止してauthoritative lockを1つに再生成し、lock driftを失敗として扱う。
-  - Clean locked syncで全initial memberが解決され、rootがruntime artifactを生成しない状態を完了条件とする。
-  - _Requirements: 2.3, 2.4, 3.1, 3.2, 3.3, 3.4_
-
-- [ ] 1.5 Python workspace artifactを統合検証する
+- [ ] 1.4 Python workspace artifactを統合検証する
   - Serverとcryptoのbuild contractをroot workflowから実行し、installed importsとconsole entrypointを検証する。
   - Crypto wheelにpublic typing artifactが含まれ、editable installだけに依存しないことを確認する。
+  - Root quality/testがserver、worker、管理CLI、crypto package、repository toolingを検査し、known workspace/test omissionを機械的に検出することを確認する。
   - Server workspaceがfrontend workspaceなしでsync、build、quality、testできることを確認する。
   - Single lock、server artifact、crypto artifactのintegration smokeがすべて成功する状態を完了条件とする。
-  - _Depends: 1.2, 1.3, 1.4_
-  - _Requirements: 1.2, 1.3, 1.4, 2.1, 2.2, 2.3, 2.4, 2.5, 2.7, 3.1, 3.2, 3.3_
+  - _Depends: 1.3_
+  - _Requirements: 1.2, 1.3, 1.4, 2.1, 2.2, 2.3, 2.4, 2.5, 2.7, 3.1, 3.2, 3.3, 6.1, 6.2, 6.3, 6.4_
+  - _Boundary: Workspace Manifests, Server Workspace, Crypto Workspace, Validation Policy_
 
 - [ ] 2. Server-owned artifactsとcompatibility evidenceをcutoverする
 - [ ] 2.1 Server、worker、CLI test assetsをowner workspaceへ移管する
@@ -68,7 +71,7 @@
   - _Requirements: 1.2, 1.3, 1.4, 1.5, 5.3, 5.5, 5.6_
 
 - [ ] 2.5 Moved path consumerを一括更新する
-  - Active fixture catalog、verification report、allowlist、tool configuration、current instructionのsource/test pathを新配置へ更新する。
+  - Task 1.3で更新したcutover-blocking consumerを含め、Active fixture catalog、verification report、allowlist、tool configuration、current instructionの残余source/test pathを新配置へ更新する。
   - Normative/current pathとhistorical Kiro snapshotを区別する暫定audit ruleを用意する。
   - Old pathをruntime/test/tooling consumerが参照していないことをtargeted scanで確認する。
   - Path scanがhistorical exception以外のstale consumerを0件として報告する状態を完了条件とする。
@@ -226,4 +229,7 @@
 ## Implementation Notes
 
 - Task 1.1のpost-cutover verifierはrelocation semantic contractだけを検証する。root task gatewayの実行内容とfailure propagationはTasks 3.4/3.5で検証する。
+- 2026-07-31: User approval後、Task 1.1/1.2のblockerを明示的な受入条件へ戻し、server physical moveとroot non-package workspace/single-lock切替をTask 1.3のatomic integration taskへ統合した。
+- 2026-08-02: User approval後、Task 1.3へcanonical root gateをgreenに保つcutover-blocking runtime/test/tooling consumer更新を移管した。Task 2.5は残余consumerの全量audit、historical exception、current instructionのreconciliationを所有する。
+- Task 1.2 debug round 1: stale `.venv` extensionはcaptured score vectorを通したが、clean wheelは`InvalidDataSize`で失敗した。source importをartifact evidenceにせず、captured vectorと確認済みstable crypto contractだけで修復を判断する。
 - Task 1.2のpre-cutover fixtureはTask 1.1 commit SHAへ固定し、CI test checkoutはそのhistorical objectを取得できるfull historyを使用する。

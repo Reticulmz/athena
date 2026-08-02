@@ -12,7 +12,7 @@ from osu_server.transports.stable.bancho.mappers.permissions import (
 )
 
 PROJECT_ROOT = Path(__file__).parents[6]
-SOURCE_ROOT = PROJECT_ROOT / "src" / "osu_server"
+SOURCE_ROOT = PROJECT_ROOT / "apps" / "athena_server" / "src" / "osu_server"
 
 INTERNAL_AUTHORIZATION_MODULES = (
     SOURCE_ROOT / "services" / "queries" / "identity" / "permission_service.py",
@@ -23,6 +23,18 @@ INTERNAL_AUTHORIZATION_MODULES = (
     SOURCE_ROOT / "services" / "commands" / "chat" / "bancho_bot" / "command_service.py",
 )
 CAPTURED_FULL_PRIVILEGES_MASK = 0x1FF
+
+
+def test_permission_static_audits_read_server_owned_sources() -> None:
+    """Stable permission boundary auditがserver workspace sourceを読むことを検証する.
+
+    Compatibility mapperとinternal authorization inputのAST監査は、cutover後の唯一の
+    `apps/athena_server` source rootを参照しなければならない.
+
+    Returns:
+        None: stable permission source rootのownershipを検証して完了する.
+    """
+    assert SOURCE_ROOT == PROJECT_ROOT / "apps" / "athena_server" / "src" / "osu_server"
 
 
 def test_stable_client_permission_values_match_bancho_reference() -> None:

@@ -26,6 +26,7 @@ from athena_cli.stable_verification.parsers import (
     GetscoresResponseKind,
     parse_getscores_response,
 )
+from athena_cli.stable_verification.source_checkout import source_checkout_path
 from osu_server.domain.beatmaps.models import BeatmapRankStatus
 from osu_server.domain.compatibility.stable.getscores import GetscoresParseWarning
 from osu_server.domain.scores.personal_best import LeaderboardCategory
@@ -37,7 +38,7 @@ _STATUS_CROSSWALK_FILE = "beatmap_status_crosswalk.json"
 _RESPONSE_SHAPES_SCHEMA = "athena.stable_compatibility.getscores.response_shapes.v1"
 _BRANCH_CASES_SCHEMA = "athena.stable_compatibility.getscores.branch_cases.v1"
 _STATUS_CROSSWALK_SCHEMA = "athena.stable_compatibility.getscores.beatmap_status_crosswalk.v1"
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+_REPOSITORY_ROOT = source_checkout_path(Path(__file__))
 
 _SAFE_IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9_.-]*$")
 

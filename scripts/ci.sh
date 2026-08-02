@@ -41,13 +41,14 @@ run_quality() {
         run_first_party_python_tool uv run interrogate --config pyproject.toml
         echo "--> Basedpyright type check (server and crypto Python sources)"
         uv run basedpyright \
-            src/ \
+            apps/athena_server/src/ \
+            apps/athena_server/scripts/ \
             tests/ \
             packages/athena_crypto/typings/ \
             packages/athena_crypto/scripts/ \
             packages/athena_crypto/tests/
         echo "--> Import linter"
-        uv run lint-imports
+        uv run lint-imports --config apps/athena_server/pyproject.toml
     )
 }
 

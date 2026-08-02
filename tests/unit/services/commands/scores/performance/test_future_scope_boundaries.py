@@ -3,19 +3,31 @@
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).parents[6]
+_SERVER_SOURCE_ROOT = Path("apps/athena_server/src")
 _BOUNDARY_FILES = (
-    Path("src/osu_server/services/commands/scores/performance/request_calculation.py"),
-    Path("src/osu_server/services/commands/scores/performance/execute_calculation.py"),
-    Path("src/osu_server/services/commands/scores/performance/create_recalculation_batch.py"),
-    Path("src/osu_server/services/commands/scores/performance/process_recalculation_batch.py"),
-    Path("src/osu_server/infrastructure/performance/interfaces.py"),
-    Path("src/osu_server/infrastructure/performance/rosu_calculator.py"),
+    _SERVER_SOURCE_ROOT / "osu_server/services/commands/scores/performance/request_calculation.py",
+    _SERVER_SOURCE_ROOT / "osu_server/services/commands/scores/performance/execute_calculation.py",
+    _SERVER_SOURCE_ROOT
+    / "osu_server/services/commands/scores/performance/create_recalculation_batch.py",
+    _SERVER_SOURCE_ROOT
+    / "osu_server/services/commands/scores/performance/process_recalculation_batch.py",
+    _SERVER_SOURCE_ROOT / "osu_server/infrastructure/performance/interfaces.py",
+    _SERVER_SOURCE_ROOT / "osu_server/infrastructure/performance/rosu_calculator.py",
 )
 _PROJECTION_SCOPE_TERMS = (
     "leaderboard",
     "user_rank",
     "rank_projection",
 )
+
+
+def test_performance_boundary_audit_reads_server_owned_sources() -> None:
+    """PP calculation静的監査がserver workspace sourceを読むことを検証する.
+
+    Returns:
+        None: 全boundary fileがserver productのphysical source owner配下にあることを検証する.
+    """
+    assert all(path.parts[:3] == ("apps", "athena_server", "src") for path in _BOUNDARY_FILES)
 
 
 def test_performance_paths_do_not_update_unowned_projection_scopes() -> None:

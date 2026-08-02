@@ -8,7 +8,20 @@ from pathlib import Path
 from types import ModuleType
 
 PROJECT_ROOT = Path(__file__).parents[2]
-SOURCE_ROOT = PROJECT_ROOT / "src" / "osu_server"
+SOURCE_ROOT = PROJECT_ROOT / "apps" / "athena_server" / "src" / "osu_server"
+
+
+def test_package_skeleton_audits_read_server_owned_sources() -> None:
+    """Package skeleton auditがserver workspaceのphysical sourceを読むことを検証する.
+
+    Namespace構造とinert packageのAST検査は、rootの削除済みsource treeではなくserver productの
+    source rootに対して実行されることを確認する.
+
+    Returns:
+        None: package skeleton source rootのownershipを検証して完了する.
+    """
+    assert SOURCE_ROOT == PROJECT_ROOT / "apps" / "athena_server" / "src" / "osu_server"
+
 
 PACKAGE_ROOTS = (
     # Composition providers are established before the rest of the refactor.

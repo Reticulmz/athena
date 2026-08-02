@@ -9,8 +9,9 @@ from pathlib import Path
 from typing import cast
 
 PROJECT_ROOT = Path(__file__).parents[2]
-PYPROJECT_PATH = PROJECT_ROOT / "pyproject.toml"
-SOURCE_ROOT = PROJECT_ROOT / "src" / "osu_server"
+SERVER_WORKSPACE_ROOT = PROJECT_ROOT / "apps" / "athena_server"
+PYPROJECT_PATH = SERVER_WORKSPACE_ROOT / "pyproject.toml"
+SOURCE_ROOT = SERVER_WORKSPACE_ROOT / "src" / "osu_server"
 TEST_ROOT = PROJECT_ROOT / "tests"
 DEPRECATED_IMPORT_BASELINE = (
     PROJECT_ROOT / "tests" / "fixtures" / "architecture" / "deprecated_imports.txt"
@@ -32,6 +33,21 @@ class BoundaryRule:
     name: str
     source_path: Path
     forbidden_roots: tuple[str, ...]
+
+
+def test_architecture_contract_reads_server_owned_source_and_import_policy() -> None:
+    """Architecture boundary verifierがcutover後の唯一のserver ownerを読むことを検証する.
+
+    Rootがorchestration-only workspaceへ切り替わった後も、architecture source scanと
+    import-linter contractが同じ`apps/athena_server` ownerを検証することを確認する.
+
+    Returns:
+        None: source rootとmanifest pathのownership一致を検証して完了する.
+    """
+    server_workspace_root = PROJECT_ROOT / "apps" / "athena_server"
+
+    assert server_workspace_root / "src" / "osu_server" == SOURCE_ROOT
+    assert server_workspace_root / "pyproject.toml" == PYPROJECT_PATH
 
 
 FUTURE_BOUNDARY_RULES = (

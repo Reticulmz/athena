@@ -290,6 +290,40 @@ def _make_immutable_pre_cutover_repository(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _extract_recorded_pre_cutover_paths(destination: Path, relative_paths: list[str]) -> None:
+    """Task 1.1の記録済みrevisionから指定pathだけを展開する.
+
+    Args:
+        destination (Path): historical sourceを展開する空directory.
+        relative_paths (list[str]): repository rootからの展開対象path.
+
+    Returns:
+        None: 記録済みrevisionの指定pathを展開し、呼び出し側へ値を返さない.
+
+    Raises:
+        AssertionError: Git archiveを取得できない場合.
+    """
+    destination.mkdir(parents=True, exist_ok=True)
+    archive_process = subprocess.run(
+        [
+            "git",
+            "archive",
+            "--format=tar",
+            _recorded_pre_cutover_source_revision(),
+            "--",
+            *relative_paths,
+        ],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        env=_git_environment_without_parent_repository(),
+    )
+
+    assert archive_process.returncode == 0, archive_process.stderr.decode(encoding="utf-8")
+    with tarfile.open(fileobj=io.BytesIO(archive_process.stdout), mode="r:") as archive:
+        archive.extractall(destination, filter="data")
+
+
 def _make_post_cutover_repository(tmp_path: Path) -> Path:
     """予定済みのserver/crypto relocationだけを再現するtemporary repositoryを作る.
 
@@ -302,14 +336,14 @@ def _make_post_cutover_repository(tmp_path: Path) -> Path:
     Returns:
         Path: `apps/athena_server`と`packages/athena_crypto`を含むrepository root.
     """
-    server_root = tmp_path / "apps/athena_server"
-    crypto_root = tmp_path / "packages/athena_crypto"
+    repository_root = tmp_path / "repository"
+    server_root = repository_root / "apps/athena_server"
+    crypto_root = repository_root / "packages/athena_crypto"
     ignored_paths = shutil.ignore_patterns("__pycache__", ".pytest_cache", "target")
     _ = shutil.copytree(
-        REPOSITORY_ROOT / "src/osu_server", server_root / "src/osu_server", ignore=ignored_paths
-    )
-    _ = shutil.copytree(
-        REPOSITORY_ROOT / "src/athena_cli", server_root / "src/athena_cli", ignore=ignored_paths
+        REPOSITORY_ROOT / "apps/athena_server/src",
+        server_root / "src",
+        ignore=ignored_paths,
     )
     _ = shutil.copytree(REPOSITORY_ROOT / "alembic", server_root / "alembic", ignore=ignored_paths)
     _ = shutil.copytree(
@@ -317,19 +351,26 @@ def _make_post_cutover_repository(tmp_path: Path) -> Path:
         crypto_root,
         ignore=ignored_paths,
     )
-    _ = shutil.copy2(REPOSITORY_ROOT / "pyproject.toml", server_root / "pyproject.toml")
+    _ = shutil.copy2(
+        REPOSITORY_ROOT / "apps/athena_server/pyproject.toml",
+        server_root / "pyproject.toml",
+    )
     _ = shutil.copy2(REPOSITORY_ROOT / "alembic.ini", server_root / "alembic.ini")
-    _ = shutil.copy2(REPOSITORY_ROOT / ".gitignore", tmp_path / ".gitignore")
-    _ = shutil.copy2(REPOSITORY_ROOT / "process-compose.yml", tmp_path / "process-compose.yml")
+    _ = shutil.copy2(REPOSITORY_ROOT / "pyproject.toml", repository_root / "pyproject.toml")
+    _ = shutil.copy2(REPOSITORY_ROOT / ".gitignore", repository_root / ".gitignore")
+    _ = shutil.copy2(
+        REPOSITORY_ROOT / "process-compose.yml",
+        repository_root / "process-compose.yml",
+    )
     _ = subprocess.run(
         ["git", "init", "--quiet"],
-        cwd=tmp_path,
+        cwd=repository_root,
         check=True,
         capture_output=True,
         env=_git_environment_without_parent_repository(),
         text=True,
     )
-    return tmp_path
+    return repository_root
 
 
 def _make_crypto_cutover_repository(tmp_path: Path) -> Path:
@@ -343,15 +384,15 @@ def _make_crypto_cutover_repository(tmp_path: Path) -> Path:
     """
     crypto_root = tmp_path / "packages/athena_crypto"
     ignored_paths = shutil.ignore_patterns("__pycache__", ".pytest_cache", "target")
-    _ = shutil.copytree(REPOSITORY_ROOT / "src", tmp_path / "src", ignore=ignored_paths)
-    _ = shutil.copytree(REPOSITORY_ROOT / "alembic", tmp_path / "alembic", ignore=ignored_paths)
+    _extract_recorded_pre_cutover_paths(
+        tmp_path,
+        ["src", "alembic", "alembic.ini", "pyproject.toml"],
+    )
     _ = shutil.copytree(
         REPOSITORY_ROOT / "packages/athena_crypto",
         crypto_root,
         ignore=ignored_paths,
     )
-    _ = shutil.copy2(REPOSITORY_ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
-    _ = shutil.copy2(REPOSITORY_ROOT / "alembic.ini", tmp_path / "alembic.ini")
     return tmp_path
 
 
@@ -658,17 +699,25 @@ def test_crypto_cutover_mode_rejects_premature_server_workspace(tmp_path: Path) 
     )
 
 
-def test_preflight_baseline_matches_current_repository_contract() -> None:
-    """Crypto-cutover snapshotが現在の中間layoutを機械的に検証する契約を確認する.
+def test_preflight_baseline_matches_current_repository_contract(tmp_path: Path) -> None:
+    """Server cutover後のruntimeとcurrent root validation policyを検証する.
 
-    Server root pathを維持しつつcrypto artifactだけをpackage ownerへ移設したtreeにcheckerを実行し、
-    runtime namespace、entrypoint、task名、CLI、Alembic、build、quality/test対象の差分がないことを
-    確認する.
+    現在のserver source/manifestとroot validation manifestを使い、後続Task 2.2で移すAlembicだけを
+    owner pathへ投影したfixtureにpost-cutover checkerを実行する. これによりruntime semantic viewと
+    repository-wide validation policyを別rootから検証できることを確認する.
+
+    Args:
+        tmp_path (Path): post-cutover semantic fixtureを隔離する一時directory.
 
     Returns:
         None: checkerの成功終了を検証して完了し、呼び出し側へ値を返さない.
     """
-    result = _run_checker(BASELINE_PATH, mode="crypto-cutover")
+    repository_root = _make_post_cutover_repository(tmp_path)
+    result = _run_checker(
+        BASELINE_PATH,
+        mode="post-cutover",
+        repository_root=repository_root,
+    )
 
     assert result.returncode == 0, result.stderr
     assert "Alembic current was not checked." in result.stdout
@@ -723,8 +772,10 @@ def test_post_cutover_mode_rejects_retained_legacy_server_source(tmp_path: Path)
         None: legacy server sourceの併存がnon-zero exitになることを検証して完了する.
     """
     repository_root = _make_post_cutover_repository(tmp_path)
-    ignored_paths = shutil.ignore_patterns("__pycache__", ".pytest_cache", "target")
-    _ = shutil.copytree(REPOSITORY_ROOT / "src", repository_root / "src", ignore=ignored_paths)
+    _ = shutil.copytree(
+        repository_root / "apps/athena_server/src",
+        repository_root / "src",
+    )
 
     result = _run_checker(
         BASELINE_PATH,
@@ -925,7 +976,9 @@ def test_alembic_current_cli_forwards_post_cutover_mode(
     assert collected_modes == [VerificationMode.POST_CUTOVER]
 
 
-def test_post_cutover_alembic_current_on_crypto_cutover_tree_reports_mismatches() -> None:
+def test_post_cutover_alembic_current_on_crypto_cutover_tree_reports_mismatches(
+    tmp_path: Path,
+) -> None:
     """Crypto-cutover treeのpost-cutover Alembic current mismatchを検証する.
 
     Serverがrootに残る中間layoutから`--mode post-cutover --alembic-current`を実行し、server
@@ -936,10 +989,12 @@ def test_post_cutover_alembic_current_on_crypto_cutover_tree_reports_mismatches(
         None: physical layoutとAlembic command rootの差分がstderrへ報告されることを検証して
             完了する.
     """
+    repository_root = _make_crypto_cutover_repository(tmp_path)
     result = _run_checker(
         BASELINE_PATH,
         mode="post-cutover",
         alembic_current=True,
+        repository_root=repository_root,
     )
 
     assert result.returncode != 0
@@ -1029,6 +1084,7 @@ def test_preflight_baseline_rejects_divergent_recorded_current_at_head(tmp_path:
     result = _run_checker(
         _write_mutated_baseline(tmp_path, document),
         mode="crypto-cutover",
+        repository_root=_make_crypto_cutover_repository(tmp_path / "repository"),
     )
 
     assert result.returncode != 0

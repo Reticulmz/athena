@@ -6,7 +6,19 @@ import re
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parents[2]
-SOURCE_ROOT = PROJECT_ROOT / "src" / "osu_server"
+SOURCE_ROOT = PROJECT_ROOT / "apps" / "athena_server" / "src" / "osu_server"
+
+
+def test_event_boundary_scans_server_owned_sources() -> None:
+    """Event boundary監査がcutover後のserver source rootを走査することを検証する.
+
+    Root `src`をcanonical sourceとして復元せず、event boundary contractがserver productの
+    sourceだけを検査することを確認する.
+
+    Returns:
+        None: source rootのphysical ownershipを検証して完了する.
+    """
+    assert SOURCE_ROOT == PROJECT_ROOT / "apps" / "athena_server" / "src" / "osu_server"
 
 
 def _source_files() -> list[Path]:

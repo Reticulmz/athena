@@ -23,7 +23,10 @@ from osu_server.infrastructure.performance.rosu_calculator import RosuPerformanc
 
 _NOW = datetime(2026, 6, 16, 0, 0, 0, tzinfo=UTC)
 _PROJECT_ROOT = Path(__file__).parents[4]
-_ROSU_ADAPTER_PATH = Path("src/osu_server/infrastructure/performance/rosu_calculator.py")
+_SERVER_SOURCE_ROOT = _PROJECT_ROOT / "apps" / "athena_server" / "src" / "osu_server"
+_ROSU_ADAPTER_PATH = Path(
+    "apps/athena_server/src/osu_server/infrastructure/performance/rosu_calculator.py"
+)
 _OSU_FILE = b"""osu file format v14
 
 [General]
@@ -56,6 +59,19 @@ SliderTickRate:1
 """
 
 
+def test_rosu_static_audit_reads_server_owned_source() -> None:
+    """Rosu adapter静的監査がserver workspace sourceを読むことを検証する.
+
+    Returns:
+        None: audit source rootとadapter pathのphysical ownerを検証して完了する.
+    """
+    assert _SERVER_SOURCE_ROOT == (_PROJECT_ROOT / "apps" / "athena_server" / "src" / "osu_server")
+    assert (
+        Path("apps/athena_server/src/osu_server/infrastructure/performance/rosu_calculator.py")
+        == _ROSU_ADAPTER_PATH
+    )
+
+
 def test_calculator_uses_package_version_metadata() -> None:
     """calculatorを生成しpackage metadata由来の名称とversionを検証する.
 
@@ -76,7 +92,7 @@ def test_rosu_pp_py_import_stays_inside_adapter() -> None:
     """
     importers = [
         path.relative_to(_PROJECT_ROOT)
-        for path in (_PROJECT_ROOT / "src" / "osu_server").rglob("*.py")
+        for path in _SERVER_SOURCE_ROOT.rglob("*.py")
         if _imports_rosu_pp_py(path)
     ]
 

@@ -1,4 +1,4 @@
-"""Athena CLI packageとquality tool設定のdistribution契約を検証する."""
+"""Athena server workspaceとroot orchestrationのdistribution契約を検証する."""
 
 from __future__ import annotations
 
@@ -10,15 +10,43 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+SERVER_WORKSPACE_ROOT = PROJECT_ROOT / "apps" / "athena_server"
+ROOT_MANIFEST_PATH = PROJECT_ROOT / "pyproject.toml"
+SERVER_MANIFEST_PATH = SERVER_WORKSPACE_ROOT / "pyproject.toml"
+RUNTIME_DEPENDENCIES = [
+    "starlette",
+    "uvicorn",
+    "pydantic-settings",
+    "sqlalchemy[asyncio]",
+    "asyncpg",
+    "alembic",
+    "valkey-glide>=2.1",
+    "argon2-cffi",
+    "caterpillar-py>=2.8.1",
+    "httpx>=0.28.1",
+    "python-multipart>=0.0.29",
+    "structlog>=25.5.0",
+    "taskiq>=0.11",
+    "taskiq-redis>=1.0",
+    "typer>=0.26.7",
+    "inquirerpy>=0.3.4",
+    "athena-crypto",
+    "dishka",
+    "starlette-dishka",
+    "rosu-pp-py==4.0.2",
+]
 
 
-def load_pyproject() -> Mapping[str, object]:
-    """Repository rootのpyproject.tomlをTOML mappingとして読み込む.
+def load_manifest(manifest_path: Path) -> Mapping[str, object]:
+    """指定したpyproject.tomlをTOML mappingとして読み込む.
+
+    Args:
+        manifest_path (Path): 読み込むworkspace manifestのpath.
 
     Returns:
-        Mapping[str, object]: pyproject.tomlのtop-level tableを表すmapping.
+        Mapping[str, object]: manifestのtop-level tableを表すmapping.
     """
-    return tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
+    return tomllib.loads(manifest_path.read_text(encoding="utf-8"))
 
 
 def get_table(table: Mapping[str, object], key: str) -> Mapping[str, object]:
@@ -68,68 +96,96 @@ def get_string(table: Mapping[str, object], key: str) -> str:
     return value
 
 
-def test_athena_cli_package_is_included_in_wheel() -> None:
-    """Wheel build対象にAthena CLI packageが含まれることを検証する.
+def test_root_manifest_is_virtual_uv_workspace() -> None:
+    """Rootがdistribution metadataを持たないsingle-lock uv workspaceであることを検証する.
+
+    Serverとcryptoをmemberとして列挙し、root自身はproject、build backend、console scriptを
+    所有しないことで同名distributionの二重ownershipを防ぐ.
 
     Returns:
-        None: package listの完全一致を検証して完了する. 呼び出し側へ値を返さない.
+        None: root virtual workspaceのobservable manifest contractを検証して完了する.
     """
-    pyproject = load_pyproject()
+    root_manifest = load_manifest(ROOT_MANIFEST_PATH)
+    tool_config = get_table(root_manifest, "tool")
+    uv_config = get_table(tool_config, "uv")
+    workspace_config = get_table(uv_config, "workspace")
 
-    tool_config = get_table(pyproject, "tool")
+    assert "project" not in root_manifest
+    assert "build-system" not in root_manifest
+    assert uv_config["package"] is False
+    assert get_string_list(workspace_config, "members") == [
+        "apps/athena_server",
+        "packages/athena_crypto",
+    ]
+
+
+def test_server_manifest_owns_single_athena_distribution() -> None:
+    """Server workspaceが既存Athena distribution metadataを単独所有することを検証する.
+
+    Runtime dependency、namespace、console entrypoint、Hatchling build metadataを同じmanifestへ
+    集約し、root distributionへのfallbackが不要であることを確認する.
+
+    Returns:
+        None: server distribution metadataの完全な移管を検証して完了する.
+    """
+    server_manifest = load_manifest(SERVER_MANIFEST_PATH)
+    project_config = get_table(server_manifest, "project")
+    scripts_config = get_table(project_config, "scripts")
+    build_system_config = get_table(server_manifest, "build-system")
+    tool_config = get_table(server_manifest, "tool")
     hatch_config = get_table(tool_config, "hatch")
     build_config = get_table(hatch_config, "build")
     targets_config = get_table(build_config, "targets")
     wheel_config = get_table(targets_config, "wheel")
 
+    assert get_string(project_config, "name") == "athena"
+    assert get_string(project_config, "version") == "0.1.0"
+    assert get_string_list(project_config, "dependencies") == RUNTIME_DEPENDENCIES
+    assert get_string(scripts_config, "athena") == "athena_cli.main:main"
+    assert get_string(build_system_config, "build-backend") == "hatchling.build"
     assert get_string_list(wheel_config, "packages") == ["src/osu_server", "src/athena_cli"]
 
 
-def test_athena_console_script_points_to_cli_app() -> None:
-    """Athena console scriptがCLI application entry pointを指すことを検証する.
+def test_server_source_and_lock_have_single_canonical_owner() -> None:
+    """Server sourceとPython lockがlegacy rootまたはmemberへ複製されないことを検証する.
 
     Returns:
-        None: console script entry pointを検証して完了する. 呼び出し側へ値を返さない.
+        None: namespace sourceのphysical ownerとauthoritative lockの一意性を検証して完了する.
     """
-    pyproject = load_pyproject()
+    assert (SERVER_WORKSPACE_ROOT / "src" / "osu_server" / "__init__.py").is_file()
+    assert (SERVER_WORKSPACE_ROOT / "src" / "athena_cli" / "__init__.py").is_file()
+    assert not (PROJECT_ROOT / "src").exists()
+    assert (PROJECT_ROOT / "uv.lock").is_file()
+    assert not (SERVER_WORKSPACE_ROOT / "uv.lock").exists()
+    assert not (PROJECT_ROOT / "packages" / "athena_crypto" / "uv.lock").exists()
 
-    project_config = get_table(pyproject, "project")
-    scripts_config = get_table(project_config, "scripts")
 
-    assert get_string(scripts_config, "athena") == "athena_cli.main:main"
+def test_server_manifest_owns_cli_import_boundary() -> None:
+    """Server manifestがCLIからserverへの一方向dependencyを機械検証することを確認する.
 
-
-def test_cli_dependencies_are_declared() -> None:
-    """CLI runtimeに必要なTyperとInquirerPy dependencyが宣言されることを検証する.
+    `osu_server -> athena_cli`を禁止するcontractをserver ownerに置く. root Ruff policyは
+    両namespaceをfirst-partyとして解決することを検証する.
 
     Returns:
-        None: dependency名の存在を検証して完了する. 呼び出し側へ値を返さない.
+        None: import-linter contractとroot quality policyのowner分離を検証して完了する.
     """
-    pyproject = load_pyproject()
-    project_config = get_table(pyproject, "project")
-
-    dependency_names = {
-        dependency.split(">=", maxsplit=1)[0].lower()
-        for dependency in get_string_list(project_config, "dependencies")
-    }
-
-    assert "typer" in dependency_names
-    assert "inquirerpy" in dependency_names
-
-
-def test_athena_cli_is_first_party_for_quality_tools() -> None:
-    """Ruffとimport-linterがAthena CLIをfirst-party packageとして扱うことを検証する.
-
-    Returns:
-        None: quality toolのroot package設定を検証して完了する. 呼び出し側へ値を返さない.
-    """
-    pyproject = load_pyproject()
-
-    tool_config = get_table(pyproject, "tool")
-    ruff_config = get_table(tool_config, "ruff")
+    root_manifest = load_manifest(ROOT_MANIFEST_PATH)
+    root_tool_config = get_table(root_manifest, "tool")
+    ruff_config = get_table(root_tool_config, "ruff")
     ruff_lint_config = get_table(ruff_config, "lint")
     ruff_isort_config = get_table(ruff_lint_config, "isort")
-    import_linter_config = get_table(tool_config, "importlinter")
+
+    server_manifest = load_manifest(SERVER_MANIFEST_PATH)
+    server_tool_config = get_table(server_manifest, "tool")
+    import_linter_config = get_table(server_tool_config, "importlinter")
+    raw_contracts = import_linter_config["contracts"]
+    assert isinstance(raw_contracts, list)
+    contracts = cast("Sequence[Mapping[str, object]]", raw_contracts)
+    runtime_contract = next(
+        contract
+        for contract in contracts
+        if contract.get("name") == "Server runtime doesn't depend on CLI"
+    )
 
     assert get_string_list(ruff_isort_config, "known-first-party") == [
         "osu_server",
@@ -139,3 +195,33 @@ def test_athena_cli_is_first_party_for_quality_tools() -> None:
         "osu_server",
         "athena_cli",
     ]
+    assert get_string_list(runtime_contract, "source_modules") == ["osu_server"]
+    assert get_string_list(runtime_contract, "forbidden_modules") == ["athena_cli"]
+
+
+def test_current_quality_gateway_uses_server_workspace_paths() -> None:
+    """Current quality gatewayが移設後sourceとserver-owned scriptを検査することを検証する.
+
+    Root Just gatewayへ移管するTask 3.4/3.5までは既存scriptを実行可能に保ち、存在しないlegacy
+    `src/`やroot import-linter configへfallbackせず、server packageに属するartifact verifierも
+    type check対象から外さないことを確認する.
+
+    Returns:
+        None: transitional quality consumerのcanonical pathを検証して完了する.
+    """
+    root_manifest = load_manifest(ROOT_MANIFEST_PATH)
+    root_tool_config = get_table(root_manifest, "tool")
+    basedpyright_config = get_table(root_tool_config, "basedpyright")
+    quality_script = (PROJECT_ROOT / "scripts" / "ci.sh").read_text(encoding="utf-8")
+    basedpyright_invocation = "uv run basedpyright \\\n            apps/athena_server/src/ \\"
+    basedpyright_command = quality_script[
+        quality_script.index("uv run basedpyright") : quality_script.index(
+            'echo "--> Import linter"',
+        )
+    ]
+
+    assert "apps/athena_server/src/" in quality_script
+    assert "uv run lint-imports --config apps/athena_server/pyproject.toml" in quality_script
+    assert basedpyright_invocation in quality_script
+    assert "apps/athena_server/scripts/" in basedpyright_command
+    assert get_string_list(basedpyright_config, "extraPaths") == ["apps/athena_server/src"]

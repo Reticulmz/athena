@@ -4,7 +4,6 @@ Rust実装の``athena_crypto``を, score commandが使うdomain value objectへ�
 """
 
 import athena_crypto
-
 from osu_server.domain.scores.decryption import DecryptedPayload
 from osu_server.shared.errors import DecryptionError
 

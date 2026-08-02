@@ -2,9 +2,9 @@
 
 import base64
 
-import athena_crypto
 import pytest
 
+import athena_crypto
 from osu_server.infrastructure.crypto.score_crypto import (
     decrypt_score_payload as decrypt_score_payload_wrapper,
 )

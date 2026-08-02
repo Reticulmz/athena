@@ -245,6 +245,7 @@ def _collect_differences(
                 semantic_root,
                 baseline,
                 mode=mode,
+                validation_root=repository_root,
             )
         )
     return differences
@@ -255,6 +256,7 @@ def _collect_semantic_differences(
     baseline: Baseline,
     *,
     mode: VerificationMode,
+    validation_root: Path | None = None,
 ) -> list[str]:
     """物理layoutから独立したruntime互換contractの差分を収集する.
 
@@ -262,6 +264,8 @@ def _collect_semantic_differences(
         semantic_root (Path): baselineのpre-cutover pathを解決できるread-only semantic view.
         baseline (Baseline): 比較するpreflight snapshot.
         mode (VerificationMode): CLI smokeとlegacy validation evidenceの解釈に使うlayout mode.
+        validation_root (Path | None): repository-wide validation policyを解決するroot.
+            Noneの場合はsemantic_rootを使用する.
 
     Returns:
         list[str]: runtime、CLI、migration、build、validation semantic contractの差分.
@@ -273,7 +277,7 @@ def _collect_semantic_differences(
     differences.extend(_check_build_contracts(semantic_root, baseline))
     differences.extend(
         _check_validation_contract(
-            semantic_root,
+            validation_root or semantic_root,
             baseline,
             mode=mode,
         )
@@ -1704,16 +1708,19 @@ def _check_scope_exclusions(
         differences,
     )
     if server_manifest is not None:
-        server_project = _mapping(
-            _field(server_manifest, "project", server_manifest_path), "project"
-        )
-        actual_dependencies = _string_list(
-            _field(server_project, "dependencies", f"{server_manifest_path}.project"),
-            f"{server_manifest_path}.project.dependencies",
-        )
-        if actual_dependencies != expected_dependencies:
-            message = "Frozen root Python dependencies changed: expected {!r}, got {!r}"
-            differences.append(message.format(expected_dependencies, actual_dependencies))
+        if "project" not in server_manifest:
+            differences.append(
+                f"Server dependency manifest has no project table: {server_manifest_path}"
+            )
+        else:
+            server_project = _mapping(server_manifest["project"], "project")
+            actual_dependencies = _string_list(
+                _field(server_project, "dependencies", f"{server_manifest_path}.project"),
+                f"{server_manifest_path}.project.dependencies",
+            )
+            if actual_dependencies != expected_dependencies:
+                message = "Frozen root Python dependencies changed: expected {!r}, got {!r}"
+                differences.append(message.format(expected_dependencies, actual_dependencies))
     cargo_manifest = _load_recorded_manifest(
         repository_root,
         crypto_cargo_manifest,

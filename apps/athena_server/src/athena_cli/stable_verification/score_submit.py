@@ -20,13 +20,14 @@ from athena_cli.stable_verification.parsers import (
     ScoreSubmitResponse,
     parse_score_submit_response,
 )
+from athena_cli.stable_verification.source_checkout import source_checkout_path
 
-_DEFAULT_FIXTURE_DIR = (
-    Path(__file__).resolve().parents[3]
-    / "tests"
-    / "fixtures"
-    / "stable_compatibility"
-    / "score_submit"
+_DEFAULT_FIXTURE_DIR = source_checkout_path(
+    Path(__file__),
+    "tests",
+    "fixtures",
+    "stable_compatibility",
+    "score_submit",
 )
 _REQUEST_METADATA_FIXTURE = "request_metadata.json"
 _COMPLETED_RESPONSE_FIXTURE = "completed_response.txt"

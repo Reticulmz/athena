@@ -333,7 +333,7 @@ Each validation checkpoint is a rollback boundary. Old and new canonical paths d
 
 **Implementation Notes**
 
-- Integration: Lock regenerationはmanifest cutoverと同じcheckpointで行う。
+- Integration: Server source/CLIのphysical move、server distribution manifest、root non-package workspace、single lock regeneration、およびcanonical root gateを阻害するruntime/test/tooling consumer更新は同じatomic cutoverで行う。どれか一つだけを完了taskとして扱わない。残余consumerの全量auditとhistorical exception分類はTask 2.5で扱う。
 - Validation: Clean locked sync、wheel contents、installed import/entrypoint smoke test。
 - Risks: Root/member dependency groupの重複はroot policyかruntime ownerの一方へ寄せる。
 
@@ -656,10 +656,13 @@ def environment_file_path(environment: EnvironmentName) -> Path: ...
 
 ### Boundary 1: Python workspace cutover
 
+Boundary 1開始時のpreflight baselineは、Python workspace cutover前のruntime、migration、validation、cleanup inventoryを固定する機械検証対象である。generated certificate、実tunnel config、secret値は記録しない。`--alembic-current`は到達可能な`DATABASE_URL`と、recorded migration headが適用済みの対象databaseを必要とする。`DATABASE_URL`が未設定または未到達、あるいはcurrent revisionがheadと異なる場合、checkerはnon-zeroで終了する。Task 4.4でlifecycleを分類するまでは、`monorepo-migration`以外のhistorical Kiro specをhistoryとして扱い、active normative stale-path failureにはしない。
+
 1. Preflight inventoryとしてruntime entrypoint、CLI command、Alembic head、test path、stale path listをsnapshotする。
-2. Cryptoを`packages/athena_crypto`へ移し、server source/CLI/tests/Alembic/typings/docsを`apps/athena_server`へ移す。
-3. Root/member manifestsとsingle lockを切り替え、config/env pathとall path consumersを更新する。
-4. Locked sync、artifact build、imports、CLI、Alembic、quality/test/compatibility gateを実行する。
+2. Cryptoを`packages/athena_crypto`へ移し、package ownerからbuild、wheel artifact、isolated consumerを検証する。
+3. Server source/CLIとserver distribution metadataを`apps/athena_server`へ移し、root/member manifestsのnon-package workspace化とsingle lock切替、およびcanonical root gateを阻害するruntime/test/tooling consumer更新を同じatomic cutoverで行う。root distributionまたは同名distributionを残さない。
+4. Server-owned test、Alembic、typings、docsと残余path consumerをownerへ移し、config/env pathとhistorical exception auditを更新する。
+5. Locked sync、artifact build、imports、CLI、Alembic、quality/test/compatibility gateを実行する。
 
 Rollback trigger: Namespace/entrypoint、Alembic head、runtime focused test、server/crypto buildのいずれかが一致しない場合。
 

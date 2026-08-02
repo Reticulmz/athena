@@ -1,0 +1,232 @@
+[project]
+name = "athena"
+version = "0.1.0"
+description = "osu! bancho compatible private server"
+requires-python = ">=3.14"
+dependencies = [
+    "starlette",
+    "uvicorn",
+    "pydantic-settings",
+    "sqlalchemy[asyncio]",
+    "asyncpg",
+    "alembic",
+    "valkey-glide>=2.1",
+    "argon2-cffi",
+    "caterpillar-py>=2.8.1",
+    "httpx>=0.28.1",
+    "python-multipart>=0.0.29",
+    "structlog>=25.5.0",
+    "taskiq>=0.11",
+    "taskiq-redis>=1.0",
+    "typer>=0.26.7",
+    "inquirerpy>=0.3.4",
+    "athena-crypto",
+    "dishka",
+    "starlette-dishka",
+    "rosu-pp-py==4.0.2",
+]
+
+[project.scripts]
+athena = "athena_cli.main:main"
+
+[tool.uv.sources]
+athena-crypto = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/osu_server", "src/athena_cli"]
+
+[tool.importlinter]
+root_packages = ["osu_server", "athena_cli"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Layered architecture"
+type = "layers"
+layers = [
+    "osu_server.transports",
+    "osu_server.jobs",
+    "osu_server.services",
+    "osu_server.repositories",
+    "osu_server.infrastructure",
+    "osu_server.domain",
+    "osu_server.shared",
+]
+
+[[tool.importlinter.contracts]]
+name = "Services don't depend on transports"
+type = "forbidden"
+source_modules = ["osu_server.services"]
+forbidden_modules = ["osu_server.transports"]
+
+[[tool.importlinter.contracts]]
+name = "Services stay adapter independent"
+type = "forbidden"
+source_modules = ["osu_server.services"]
+forbidden_modules = [
+    "osu_server.composition",
+    "osu_server.jobs",
+    "osu_server.repositories.sqlalchemy",
+    "osu_server.repositories.memory",
+    "osu_server.infrastructure.database",
+    "sqlalchemy",
+    "taskiq",
+    "starlette",
+    "fastapi",
+]
+
+[[tool.importlinter.contracts]]
+name = "Services don't import concrete infrastructure backends"
+type = "forbidden"
+source_modules = ["osu_server.services"]
+forbidden_modules = [
+    "osu_server.infrastructure.http.beatmap_http_client",
+    "osu_server.infrastructure.state.valkey",
+    "osu_server.infrastructure.state.memory",
+    "osu_server.infrastructure.storage.local",
+    "osu_server.infrastructure.performance.rosu_calculator",
+    "osu_server.infrastructure.messaging.memory",
+    "osu_server.infrastructure.database",
+]
+
+[[tool.importlinter.contracts]]
+name = "Cross-domain protocols live in shared ports"
+type = "forbidden"
+source_modules = [
+    "osu_server.services.commands.identity",
+    "osu_server.services.commands.beatmaps",
+    "osu_server.services.commands.scores",
+]
+forbidden_modules = [
+    "osu_server.services.commands.leaderboard_rebuild_wake",
+]
+
+[[tool.importlinter.contracts]]
+name = "Server runtime doesn't depend on CLI"
+type = "forbidden"
+source_modules = ["osu_server"]
+forbidden_modules = ["athena_cli"]
+
+[[tool.importlinter.contracts]]
+name = "Jobs only depend on approved layers"
+type = "forbidden"
+source_modules = ["osu_server.jobs"]
+forbidden_modules = [
+    "osu_server.transports",
+    "osu_server.composition",
+    "osu_server.repositories.sqlalchemy",
+    "osu_server.infrastructure.database",
+]
+
+[[tool.importlinter.contracts]]
+name = "Jobs stay persistence-adapter independent"
+type = "forbidden"
+source_modules = ["osu_server.jobs"]
+forbidden_modules = [
+    "osu_server.repositories.sqlalchemy",
+    "osu_server.repositories.memory",
+    "osu_server.infrastructure.database",
+    "sqlalchemy",
+    "starlette",
+    "fastapi",
+]
+
+[[tool.importlinter.contracts]]
+name = "Transports don't depend on jobs"
+type = "forbidden"
+source_modules = ["osu_server.transports"]
+forbidden_modules = ["osu_server.jobs"]
+
+[[tool.importlinter.contracts]]
+name = "Transports stay persistence-adapter independent"
+type = "forbidden"
+source_modules = ["osu_server.transports"]
+forbidden_modules = [
+    "osu_server.repositories.sqlalchemy",
+    "osu_server.repositories.memory",
+    "osu_server.infrastructure.database",
+    "sqlalchemy",
+]
+
+[[tool.importlinter.contracts]]
+name = "Transport family packages stay independent"
+type = "independence"
+modules = [
+    "osu_server.transports.stable",
+    "osu_server.transports.lazer",
+    "osu_server.transports.api",
+]
+
+[[tool.importlinter.contracts]]
+name = "Domain has no I/O dependencies"
+type = "forbidden"
+source_modules = ["osu_server.domain"]
+forbidden_modules = [
+    "osu_server.repositories",
+    "osu_server.infrastructure",
+    "osu_server.services",
+    "osu_server.transports",
+    "osu_server.jobs",
+    "pydantic",
+    "starlette",
+    "fastapi",
+    "taskiq",
+    "httpx",
+    "aiohttp",
+    "requests",
+    "sqlalchemy",
+    "redis",
+    "valkey",
+    "glide",
+    "psycopg",
+    "asyncpg",
+    "aiomysql",
+    "motor",
+    "boto3",
+]
+
+[[tool.importlinter.contracts]]
+name = "Repository interfaces stay pure"
+type = "forbidden"
+source_modules = ["osu_server.repositories.interfaces"]
+forbidden_modules = [
+    "osu_server.repositories.sqlalchemy",
+    "osu_server.repositories.memory",
+    "osu_server.infrastructure",
+    "osu_server.services",
+    "osu_server.transports",
+    "osu_server.jobs",
+    "sqlalchemy",
+    "taskiq",
+    "starlette",
+    "fastapi",
+    "pydantic",
+    "httpx",
+]
+
+[[tool.importlinter.contracts]]
+name = "Shared has no business logic dependencies"
+type = "forbidden"
+source_modules = ["osu_server.shared"]
+forbidden_modules = [
+    "osu_server.domain",
+    "osu_server.services",
+    "osu_server.repositories",
+    "osu_server.infrastructure",
+    "osu_server.transports",
+    "osu_server.jobs",
+]
+
+[[tool.importlinter.contracts]]
+name = "Repositories only use approved database libraries"
+type = "forbidden"
+source_modules = ["osu_server.repositories"]
+forbidden_modules = [
+    "httpx",
+    "aiohttp",
+    "requests",
+    "taskiq",
+]

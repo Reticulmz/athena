@@ -96,7 +96,7 @@
               basedpyright = {
                 enable = true;
                 name = "basedpyright";
-                entry = "uv run basedpyright src/ tests/";
+                entry = "uv run basedpyright apps/athena_server/src/ apps/athena_server/scripts/ tests/ packages/athena_crypto/typings/ packages/athena_crypto/scripts/ packages/athena_crypto/tests/";
                 files = "\\.py$";
                 pass_filenames = false;
                 priority = 20;
@@ -104,7 +104,7 @@
               import-linter = {
                 enable = true;
                 name = "import-linter";
-                entry = "uv run lint-imports";
+                entry = "uv run lint-imports --config apps/athena_server/pyproject.toml";
                 files = "\\.py$";
                 pass_filenames = false;
                 priority = 20;

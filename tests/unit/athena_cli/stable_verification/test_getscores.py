@@ -28,6 +28,7 @@ from athena_cli.stable_verification.models import (
     VerificationStatus,
 )
 from athena_cli.stable_verification.osu_py_probe import OsuPyProbePrerequisites
+from athena_cli.stable_verification.score_submit import ScoreSubmitVerifier
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -43,6 +44,26 @@ _COMPLETION_EVIDENCE_REFERENCES = (
     "getscores completion branch cases",
     "getscores completion status crosswalk",
 )
+
+
+def test_default_stable_verifiers_resolve_root_checkout_fixtures_after_source_move() -> None:
+    """Moved CLI sourceがroot checkoutのstable fixtureを既定で利用することを検証する.
+
+    Server sourceが`apps/athena_server/src`へ移動しても、source checkoutではroot workspace配下に
+    残るfixtureを読み込み、missing fixtureをUNAVAILABLEまたはFAILへ誤投影しないことを確認する.
+
+    Returns:
+        None: score submitとgetscoresの既定fixture verification結果を検証して完了する.
+    """
+    score_submit_results = ScoreSubmitVerifier().verify_golden_response()
+    getscores_results = GetscoresVerifier[OsuPyProbePrerequisites]().verify_fixtures()
+
+    assert {result.status for result in score_submit_results} == {
+        VerificationStatus.PASS,
+        VerificationStatus.KNOWN_GAP,
+    }
+    assert getscores_results
+    assert all(result.status is VerificationStatus.PASS for result in getscores_results)
 
 
 def test_verify_fixtures_parses_existing_web_legacy_getscores_bodies() -> None:

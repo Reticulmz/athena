@@ -3,9 +3,13 @@
 環境設定を読み込み,ASGI applicationをUvicornで起動する.
 """
 
+from pathlib import Path
+
 import uvicorn
 
 from osu_server.config import load_config
+
+_SERVER_SOURCE_ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
@@ -24,7 +28,7 @@ def main() -> None:
         host=config.server_host,
         port=config.server_port,
         reload=reload_enabled,
-        reload_dirs=["src"] if reload_enabled else None,
+        reload_dirs=[str(_SERVER_SOURCE_ROOT)] if reload_enabled else None,
         access_log=False,
     )
 
