@@ -39,14 +39,9 @@ run_quality() {
         run_first_party_python_tool uv run ruff check
         echo "--> Interrogate docstring coverage"
         run_first_party_python_tool uv run interrogate --config pyproject.toml
-        echo "--> Basedpyright type check (server and crypto Python sources)"
-        uv run basedpyright \
-            apps/athena_server/src/ \
-            apps/athena_server/scripts/ \
-            tests/ \
-            packages/athena_crypto/typings/ \
-            packages/athena_crypto/scripts/ \
-            packages/athena_crypto/tests/
+        echo "--> Basedpyright type check (workspace and repository tooling)"
+        uv run python tools/monorepo_migration/verify_workspace_validation.py \
+            --run-basedpyright
         echo "--> Import linter"
         uv run lint-imports --config apps/athena_server/pyproject.toml
     )
@@ -67,19 +62,39 @@ run_fix() {
 }
 
 run_test() {
-    echo "=== Running tests ==="
-    if command -v valkey-server >/dev/null 2>&1 && command -v valkey-cli >/dev/null 2>&1; then
-        run_with_test_valkey uv run pytest tests/ -v
-        return
-    fi
+    local pytest_paths
 
-    if [ -z "${VALKEY_URL:-}" ]; then
-        echo "VALKEY_URL must be set when valkey-server is unavailable" >&2
+    collect_first_party_python_files || return 1
+    if ! pytest_paths="$(
+        cd "${FIRST_PARTY_REPOSITORY_ROOT}" || exit 1
+        uv run python tools/monorepo_migration/verify_workspace_validation.py --pytest-paths
+    )"; then
+        return 1
+    fi
+    if [ -z "${pytest_paths}" ]; then
+        echo "Workspace validation returned no pytest target paths" >&2
         return 1
     fi
 
-    export ENVIRONMENT=test
-    uv run pytest tests/ -v
+    echo "=== Running tests ==="
+    (
+        cd "${FIRST_PARTY_REPOSITORY_ROOT}" || exit 1
+        local -a pytest_path_arguments=()
+        mapfile -t pytest_path_arguments <<< "${pytest_paths}"
+
+        if command -v valkey-server >/dev/null 2>&1 && command -v valkey-cli >/dev/null 2>&1; then
+            run_with_test_valkey uv run pytest "${pytest_path_arguments[@]}" -v
+            return
+        fi
+
+        if [ -z "${VALKEY_URL:-}" ]; then
+            echo "VALKEY_URL must be set when valkey-server is unavailable" >&2
+            return 1
+        fi
+
+        export ENVIRONMENT=test
+        uv run pytest "${pytest_path_arguments[@]}" -v
+    )
 }
 
 collect_first_party_python_files() {

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -200,11 +202,11 @@ def test_server_manifest_owns_cli_import_boundary() -> None:
 
 
 def test_current_quality_gateway_uses_server_workspace_paths() -> None:
-    """Current quality gatewayが移設後sourceとserver-owned scriptを検査することを検証する.
+    """Current quality gatewayが検証済みworkspace inventoryを型検査することを検証する.
 
     Root Just gatewayへ移管するTask 3.4/3.5までは既存scriptを実行可能に保ち、存在しないlegacy
-    `src/`やroot import-linter configへfallbackせず、server packageに属するartifact verifierも
-    type check対象から外さないことを確認する.
+    `src/`やroot import-linter configへfallbackせず、server/cryptoとrepository toolingを
+    dynamic verifierのinventoryからBasedpyrightへ渡すことを確認する.
 
     Returns:
         None: transitional quality consumerのcanonical pathを検証して完了する.
@@ -213,15 +215,42 @@ def test_current_quality_gateway_uses_server_workspace_paths() -> None:
     root_tool_config = get_table(root_manifest, "tool")
     basedpyright_config = get_table(root_tool_config, "basedpyright")
     quality_script = (PROJECT_ROOT / "scripts" / "ci.sh").read_text(encoding="utf-8")
-    basedpyright_invocation = "uv run basedpyright \\\n            apps/athena_server/src/ \\"
-    basedpyright_command = quality_script[
-        quality_script.index("uv run basedpyright") : quality_script.index(
-            'echo "--> Import linter"',
-        )
+    workspace_validation_tool = (
+        PROJECT_ROOT / "tools" / "monorepo_migration" / "verify_workspace_validation.py"
+    )
+    expected_type_check_paths = [
+        "apps/athena_server/src",
+        "apps/athena_server/scripts",
+        "tests",
+        "packages/athena_crypto/typings",
+        "packages/athena_crypto/scripts",
+        "packages/athena_crypto/tests",
+        "tools",
+        "gitlint_rules",
     ]
 
-    assert "apps/athena_server/src/" in quality_script
+    assert "tools/monorepo_migration/verify_workspace_validation.py" in quality_script
     assert "uv run lint-imports --config apps/athena_server/pyproject.toml" in quality_script
-    assert basedpyright_invocation in quality_script
-    assert "apps/athena_server/scripts/" in basedpyright_command
+    type_check_command_start = quality_script.index(
+        "uv run python tools/monorepo_migration/verify_workspace_validation.py",
+    )
+    type_check_command = quality_script[
+        type_check_command_start : quality_script.index(
+            'echo "--> Import linter"',
+            type_check_command_start,
+        )
+    ]
+    assert "--run-basedpyright" in type_check_command
     assert get_string_list(basedpyright_config, "extraPaths") == ["apps/athena_server/src"]
+
+    inventory_result = subprocess.run(
+        [sys.executable, str(workspace_validation_tool), "--type-check-paths"],
+        cwd=PROJECT_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert inventory_result.returncode == 0, inventory_result.stderr
+    assert inventory_result.stdout.splitlines() == expected_type_check_paths

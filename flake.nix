@@ -96,7 +96,7 @@
               basedpyright = {
                 enable = true;
                 name = "basedpyright";
-                entry = "uv run basedpyright apps/athena_server/src/ apps/athena_server/scripts/ tests/ packages/athena_crypto/typings/ packages/athena_crypto/scripts/ packages/athena_crypto/tests/";
+                entry = "uv run python tools/monorepo_migration/verify_workspace_validation.py --run-basedpyright";
                 files = "\\.py$";
                 pass_filenames = false;
                 priority = 20;

@@ -530,7 +530,8 @@ def test_quality_and_fix_commands_share_the_first_party_python_inventory() -> No
     """Qualityとfixがdocstring gateと同じtracked first-party Python inventoryを使うことを検証する.
 
     Ruff format/lint/fixの対象を`src/ tests/`に限定せず、tracked `.py`へ統一する.
-    BasedPyrightはserver source/testとcrypto ownerのpublic stub、script、testを検査する.
+    Basedpyrightはserver source/test、crypto ownerのpublic stub/script/test、repository toolingを
+    共通validation inventoryから検査する.
 
     Returns:
         None: qualityまたはfixが異なるinventoryを使うか,qualityにinterrogateが含まれない場合は
@@ -544,9 +545,8 @@ def test_quality_and_fix_commands_share_the_first_party_python_inventory() -> No
     assert "run_first_party_python_tool uv run ruff format --check" in quality_body
     assert "run_first_party_python_tool uv run ruff check" in quality_body
     assert "run_first_party_python_tool uv run interrogate --config pyproject.toml" in quality_body
-    assert "packages/athena_crypto/typings/" in quality_body
-    assert "packages/athena_crypto/scripts/" in quality_body
-    assert "packages/athena_crypto/tests/" in quality_body
+    assert "tools/monorepo_migration/verify_workspace_validation.py" in quality_body
+    assert "--run-basedpyright" in quality_body
     assert "uv run lint-imports" in quality_body
     assert "uv run ruff format --check src/ tests/" not in quality_body
     assert "uv run ruff check src/ tests/" not in quality_body
@@ -573,8 +573,9 @@ def test_quality_usage_distinguishes_full_inventory_from_scoped_checks() -> None
 
     assert script.count(scope_description) == 2
     assert "Run quality checks for all tracked first-party Python files" not in script
-    assert 'echo "--> Basedpyright type check (server and crypto Python sources)"' in quality_body
-    assert "packages/athena_crypto/typings/" in quality_body
+    assert 'echo "--> Basedpyright type check (workspace and repository tooling)"' in quality_body
+    assert "tools/monorepo_migration/verify_workspace_validation.py" in quality_body
+    assert "--run-basedpyright" in quality_body
 
 
 def test_first_party_python_paths_follow_cli_option_terminators() -> None:
@@ -703,16 +704,15 @@ def test_precommit_runs_ruff_fixes_before_ruff_format() -> None:
 
 
 def test_precommit_type_and_import_hooks_use_server_owned_validation_paths() -> None:
-    """Pre-commitのtype/import hookがserver ownerのvalidation pathを使うことを検証する.
+    """Pre-commitのtype/import hookがworkspace validation inventoryを使うことを検証する.
 
     Returns:
         None: legacy root sourceまたはroot import-linter configを参照する場合はassertionで失敗する.
     """
     flake = FLAKE_PATH.read_text(encoding="utf-8")
     expected_basedpyright_entry = (
-        'entry = "uv run basedpyright apps/athena_server/src/ '
-        "apps/athena_server/scripts/ tests/ packages/athena_crypto/typings/ "
-        'packages/athena_crypto/scripts/ packages/athena_crypto/tests/";'
+        'entry = "uv run python tools/monorepo_migration/verify_workspace_validation.py '
+        '--run-basedpyright";'
     )
     expected_import_linter_entry = (
         'entry = "uv run lint-imports --config apps/athena_server/pyproject.toml";'

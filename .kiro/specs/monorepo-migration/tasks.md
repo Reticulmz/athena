@@ -30,7 +30,7 @@
   - _Requirements: 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 3.2, 3.3, 3.4, 6.1, 6.2, 10.1, 10.7_
   - _Boundary: Server Workspace, Workspace Manifests, Validation Policy_
 
-- [ ] 1.4 Python workspace artifactを統合検証する
+- [x] 1.4 Python workspace artifactを統合検証する
   - Serverとcryptoのbuild contractをroot workflowから実行し、installed importsとconsole entrypointを検証する。
   - Crypto wheelにpublic typing artifactが含まれ、editable installだけに依存しないことを確認する。
   - Root quality/testがserver、worker、管理CLI、crypto package、repository toolingを検査し、known workspace/test omissionを機械的に検出することを確認する。
