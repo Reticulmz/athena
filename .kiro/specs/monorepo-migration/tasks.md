@@ -95,7 +95,7 @@
   - _Requirements: 3.5, 3.6, 5.1, 5.2, 8.2, 8.5_
   - _Boundary: Nix Composition_
 
-- [ ] 3.2 Explicit setupとdevelopment task gatewayを構築する (P)
+- [x] 3.2 Explicit setupとdevelopment task gatewayを構築する (P)
   - Root task catalogへlocked sync、worktree state、hook、certificate/trust setupを明示的に提供する。
   - Core developmentとtunnel developmentのpreflightを分け、setup不足をactionable failureとして返す。
   - Database migration/test database operationとspecialized worktree helperへの導線を維持する。
@@ -237,3 +237,4 @@
 - 2026-08-03: Task 2.6 Boundary 1はpost-cutover preflight、隔離PostgreSQLへのAlembic head適用/current一致、server/crypto artifact検証、root quality/import-linter、全workspace test（3465 passed, 57 skipped）で完了した。
 - 2026-08-03: Task 3.1はserver/crypto workspace module、root composed devShell、Nix checksを追加し、`nix develop`のsync/state/hook/certificate副作用を除去した。`nix flake check`、関連validation test 28件、side-effect-free shell実測、`prek run --all-files`が成功した。
 - Task 3.1ではworkspace artifact buildとNix-native structural checksを先に分離し、project dependencyを必要とする全hook実行はexplicit setupとTask 3.4のvalidation ownerへ残す。Flakeはhook configurationの生成とconsumer pathを検証する。
+- 2026-08-04: Task 3.2のCloudflared 2026.6.0 loginはcredentialを`$HOME/.cloudflared/cert.pem`へ出力するため、`HOME`をworktree-local stateへ隔離した。`dev-tunnel` preflightはconfigとorigin certificateの両方を要求する。

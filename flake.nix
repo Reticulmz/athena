@@ -36,6 +36,7 @@
             cloudflared
             git
             gitleaks
+            just
             mkcert
             nginx
             postgresql_17
