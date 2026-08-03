@@ -77,7 +77,7 @@
   - Path scanがhistorical exception以外のstale consumerを0件として報告する状態を完了条件とする。
   - _Requirements: 9.7, 10.1, 10.3, 10.7_
 
-- [ ] 2.6 Boundary 1のruntime compatibility checkpointを通す
+- [x] 2.6 Boundary 1のruntime compatibility checkpointを通す
   - App、worker、CLI、Stable/Lazer/API focused tests、crypto behavior、Alembic headをbaselineと比較する。
   - Root locked sync、server/crypto build、quality、test、import-boundary checksを実行する。
   - Failure時はtooling cutoverへ進まず、Python ownership boundary内で修復可能な状態を保つ。
@@ -234,3 +234,4 @@
 - Task 1.2 debug round 1: stale `.venv` extensionはcaptured score vectorを通したが、clean wheelは`InvalidDataSize`で失敗した。source importをartifact evidenceにせず、captured vectorと確認済みstable crypto contractだけで修復を判断する。
 - Task 1.2のpre-cutover fixtureはTask 1.1 commit SHAへ固定し、CI test checkoutはそのhistorical objectを取得できるfull historyを使用する。
 - 2026-08-03: Task 2.5のpath consumer auditはactive docs、stable fixture/catalog、verification report、tool configurationだけをscanし、historical Kiro snapshot、preflight reconstruction、Task 3.4までのGitlint配置を理由付きexceptionとして扱う。
+- 2026-08-03: Task 2.6 Boundary 1はpost-cutover preflight、隔離PostgreSQLへのAlembic head適用/current一致、server/crypto artifact検証、root quality/import-linter、全workspace test（3465 passed, 57 skipped）で完了した。
