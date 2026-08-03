@@ -13,7 +13,6 @@ import os
 import secrets
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
 import pytest
@@ -77,23 +76,25 @@ from osu_server.repositories.sqlalchemy.models.user import UserModel
 from osu_server.repositories.sqlalchemy.queries.beatmap_leaderboards import (
     SQLAlchemyBeatmapLeaderboardQueryRepository,
 )
+from tests.support.paths import ALEMBIC_CONFIG_PATH, ALEMBIC_VERSIONS_ROOT
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Sequence
+    from pathlib import Path
 
     from sqlalchemy.engine import Connection
 
-_MIGRATION_PATH = Path(
-    "alembic/versions/20260710_0400_use_enum_types_and_score_based_leaderboards.py"
+_MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / (
+    "20260710_0400_use_enum_types_and_score_based_leaderboards.py"
 )
-_LEADERBOARD_REPAIR_MIGRATION_PATH = Path(
-    "alembic/versions/20260712_0500_repair_legacy_leaderboard_projection.py"
+_LEADERBOARD_REPAIR_MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / (
+    "20260712_0500_repair_legacy_leaderboard_projection.py"
 )
-_MOD_SCOPED_MIGRATION_PATH = Path(
-    "alembic/versions/20260713_0600_add_mod_scoped_leaderboard_projection.py"
+_MOD_SCOPED_MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / (
+    "20260713_0600_add_mod_scoped_leaderboard_projection.py"
 )
-_ONLINE_INDEX_MIGRATION_PATH = Path(
-    "alembic/versions/20260713_0700_create_leaderboard_indexes_concurrently.py"
+_ONLINE_INDEX_MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / (
+    "20260713_0700_create_leaderboard_indexes_concurrently.py"
 )
 _ENUM_REVISION = "20260710_0400"
 _HEAD_REVISION = "20260713_0700"
@@ -1706,7 +1707,7 @@ def _upgrade_schema_to_revision(connection: Connection, revision_id: str) -> Non
         opts={"transaction_per_migration": True},
     )
     operations = Operations(migration_context)
-    script_directory = ScriptDirectory.from_config(Config("alembic.ini"))
+    script_directory = ScriptDirectory.from_config(Config(str(ALEMBIC_CONFIG_PATH)))
     revisions = tuple(script_directory.walk_revisions(base="base", head=revision_id))
     for revision in reversed(revisions):
         migration = cast("_MigrationModule", cast("object", revision.module))

@@ -23,39 +23,19 @@ from osu_server.repositories.sqlalchemy.models import (
     ScorePerformanceCalculationModel,
     ScoreSubmissionModel,
 )
+from tests.support.paths import ALEMBIC_VERSIONS_ROOT
 
-
-def _find_repository_root(start: Path) -> Path:
-    """開始pathからrepository rootを探索する.
-
-    Args:
-        start (Path): repository内またはその子directoryであることを前提にした探索開始path.
-
-    Returns:
-        Path: pyproject.tomlとalembic.iniを含む最初の親directory.
-
-    Raises:
-        RuntimeError: startからrepository rootを見つけられない場合.
-    """
-    for candidate in (start, *start.parents):
-        if (candidate / "pyproject.toml").is_file() and (candidate / "alembic.ini").is_file():
-            return candidate
-    msg = f"repository root not found from {start}"
-    raise RuntimeError(msg)
-
-
-_REPOSITORY_ROOT = _find_repository_root(Path(__file__).resolve().parent)
-MIGRATION_PATH = Path(
-    "alembic/versions/20260710_0400_use_enum_types_and_score_based_leaderboards.py"
+MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / (
+    "20260710_0400_use_enum_types_and_score_based_leaderboards.py"
 )
-LEADERBOARD_REPAIR_MIGRATION_PATH = Path(
-    "alembic/versions/20260712_0500_repair_legacy_leaderboard_projection.py"
+LEADERBOARD_REPAIR_MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / (
+    "20260712_0500_repair_legacy_leaderboard_projection.py"
 )
-MOD_SCOPED_MIGRATION_PATH = Path(
-    "alembic/versions/20260713_0600_add_mod_scoped_leaderboard_projection.py"
+MOD_SCOPED_MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / (
+    "20260713_0600_add_mod_scoped_leaderboard_projection.py"
 )
-ONLINE_INDEX_MIGRATION_PATH = Path(
-    "alembic/versions/20260713_0700_create_leaderboard_indexes_concurrently.py"
+ONLINE_INDEX_MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / (
+    "20260713_0700_create_leaderboard_indexes_concurrently.py"
 )
 
 
@@ -72,7 +52,7 @@ def _migration_tree(path: Path) -> ast.Module:
         OSError: pathに対応するmigration sourceを読み取れない場合.
         SyntaxError: migration sourceをPython ASTとして解析できない場合.
     """
-    resolved_path = path if path.is_absolute() else _REPOSITORY_ROOT / path
+    resolved_path = path if path.is_absolute() else ALEMBIC_VERSIONS_ROOT / path
     return ast.parse(
         resolved_path.read_text(encoding="utf-8"),
         filename=resolved_path.as_posix(),

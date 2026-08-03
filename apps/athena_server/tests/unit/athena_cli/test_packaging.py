@@ -146,6 +146,11 @@ def test_server_manifest_owns_single_athena_distribution() -> None:
     assert get_string(scripts_config, "athena") == "athena_cli.main:main"
     assert get_string(build_system_config, "build-backend") == "hatchling.build"
     assert get_string_list(wheel_config, "packages") == ["src/osu_server", "src/athena_cli"]
+    force_include_config = get_table(wheel_config, "force-include")
+    assert force_include_config == {
+        "alembic.ini": "alembic.ini",
+        "alembic": "alembic",
+    }
 
 
 def test_server_source_and_lock_have_single_canonical_owner() -> None:

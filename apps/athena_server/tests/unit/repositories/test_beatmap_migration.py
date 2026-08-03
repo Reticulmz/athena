@@ -1,6 +1,5 @@
 """Beatmap mirror migrationのschemaとmetadata contractを検証する."""
 
-from pathlib import Path
 from typing import cast
 
 from sqlalchemy import Column, ForeignKeyConstraint, String, Table, UniqueConstraint
@@ -12,8 +11,9 @@ from osu_server.repositories.sqlalchemy.models import (
     BeatmapModel,
     BeatmapSetModel,
 )
+from tests.support.paths import ALEMBIC_VERSIONS_ROOT
 
-MIGRATION_PATH = Path("alembic/versions/20260604_2001_create_beatmap_mirror_tables.py")
+MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / "20260604_2001_create_beatmap_mirror_tables.py"
 
 
 def _column(table: Table, name: str) -> Column[object]:

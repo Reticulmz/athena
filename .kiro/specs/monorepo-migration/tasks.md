@@ -48,7 +48,7 @@
   - 既存test countと重要test catalogに意図しない欠落がない状態を完了条件とする。
   - _Requirements: 1.1, 1.5, 2.6, 6.2, 6.3, 6.4_
 
-- [ ] 2.2 Alembic lifecycleをserver productへ移管する
+- [x] 2.2 Alembic lifecycleをserver productへ移管する
   - Migration configurationとrevision chainをserver workspaceへ集約する。
   - Revision identifier、head、schema semanticsを変更せず、新しいownerからupgrade可能にする。
   - CLIとroot taskからmigration/test database operationのfailure codeを保持する。

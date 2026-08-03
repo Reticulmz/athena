@@ -1,6 +1,5 @@
 """Beatmap leaderboard migrationのschemaとmetadata contractを検証する."""
 
-from pathlib import Path
 from typing import cast
 
 from sqlalchemy import (
@@ -15,8 +14,9 @@ from sqlalchemy import (
 
 from osu_server.infrastructure.database.base import Base
 from osu_server.repositories.sqlalchemy.models import BeatmapLeaderboardUserBestModel, ScoreModel
+from tests.support.paths import ALEMBIC_VERSIONS_ROOT
 
-MIGRATION_PATH = Path("alembic/versions/20260618_0100_add_beatmap_leaderboard_projection.py")
+MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / "20260618_0100_add_beatmap_leaderboard_projection.py"
 
 
 def _column(table: Table, name: str) -> Column[object]:

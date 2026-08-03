@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from tests.support.paths import ALEMBIC_CONFIG_PATH
+
 from athena_cli.runners import ProcessRunner
 
 if TYPE_CHECKING:
@@ -48,9 +50,11 @@ def test_run_alembic_upgrade_uses_selected_environment() -> None:
 
     result = runner.run_alembic_upgrade(environment={"ENVIRONMENT": "test"})
 
-    assert result.argv == ("alembic", "upgrade", "head")
+    assert result.argv == ("alembic", "-c", str(ALEMBIC_CONFIG_PATH), "upgrade", "head")
     assert result.exit_code == 0
-    assert executor.calls == [(("alembic", "upgrade", "head"), {"ENVIRONMENT": "test"})]
+    assert executor.calls == [
+        (("alembic", "-c", str(ALEMBIC_CONFIG_PATH), "upgrade", "head"), {"ENVIRONMENT": "test"})
+    ]
 
 
 def test_run_pytest_uses_paths_and_propagates_exit_code() -> None:

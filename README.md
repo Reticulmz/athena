@@ -170,13 +170,13 @@ prek run --all-files
 Apply migrations:
 
 ```bash
-uv run alembic upgrade head
+uv run --directory apps/athena_server alembic upgrade head
 ```
 
 Create a new migration after changing SQLAlchemy models:
 
 ```bash
-uv run alembic revision --autogenerate -m "describe change"
+uv run --directory apps/athena_server alembic revision --autogenerate -m "describe change"
 ```
 
 The development environment also exposes database helper tasks:

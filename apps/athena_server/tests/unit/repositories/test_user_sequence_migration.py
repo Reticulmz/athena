@@ -1,9 +1,10 @@
 """users.id sequence repair migrationの構造を検証する."""
 
 import re
-from pathlib import Path
 
-MIGRATION_PATH = Path("alembic/versions/20260710_0100_sync_users_id_sequence.py")
+from tests.support.paths import ALEMBIC_VERSIONS_ROOT
+
+MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / "20260710_0100_sync_users_id_sequence.py"
 SETVAL_WITH_RESERVED_ID_FALLBACK = re.compile(
     r"""
     setval\(\s*

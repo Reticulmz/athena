@@ -126,7 +126,7 @@ jobs:
         run: uv sync --locked --reinstall-package athena-crypto
 
       - name: Run migrations
-        run: uv run alembic upgrade head
+        run: uv run --directory apps/athena_server alembic upgrade head
 
       - name: Run tests
         run: ./scripts/ci.sh test

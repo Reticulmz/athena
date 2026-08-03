@@ -346,7 +346,11 @@ def _make_post_cutover_repository(tmp_path: Path) -> Path:
         ignore=ignored_paths,
     )
     _ = (server_root / "tests").mkdir()
-    _ = shutil.copytree(REPOSITORY_ROOT / "alembic", server_root / "alembic", ignore=ignored_paths)
+    _ = shutil.copytree(
+        REPOSITORY_ROOT / "apps/athena_server/alembic",
+        server_root / "alembic",
+        ignore=ignored_paths,
+    )
     _ = shutil.copytree(
         REPOSITORY_ROOT / "packages/athena_crypto",
         crypto_root,
@@ -356,7 +360,10 @@ def _make_post_cutover_repository(tmp_path: Path) -> Path:
         REPOSITORY_ROOT / "apps/athena_server/pyproject.toml",
         server_root / "pyproject.toml",
     )
-    _ = shutil.copy2(REPOSITORY_ROOT / "alembic.ini", server_root / "alembic.ini")
+    _ = shutil.copy2(
+        REPOSITORY_ROOT / "apps/athena_server/alembic.ini",
+        server_root / "alembic.ini",
+    )
     _ = shutil.copy2(REPOSITORY_ROOT / "pyproject.toml", repository_root / "pyproject.toml")
     root_gitlint_test = repository_root / "tests/unit/test_forbidden_words.py"
     root_gitlint_test.parent.mkdir(parents=True)
