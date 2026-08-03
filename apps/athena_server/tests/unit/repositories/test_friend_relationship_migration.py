@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import cast
 
 from sqlalchemy import CheckConstraint, Column, ForeignKeyConstraint, Table
 
 from osu_server.infrastructure.database.base import Base
 from osu_server.repositories.sqlalchemy.models import UserFriendRelationshipModel
+from tests.support.paths import ALEMBIC_VERSIONS_ROOT
 
-MIGRATION_PATH = Path("alembic/versions/20260617_0102_create_user_friend_relationships.py")
+MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / "20260617_0102_create_user_friend_relationships.py"
 
 
 def _column(table: Table, name: str) -> Column[object]:

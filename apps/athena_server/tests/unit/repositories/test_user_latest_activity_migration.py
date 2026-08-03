@@ -1,13 +1,13 @@
 """User latest activity migrationのschemaとmetadata contractを検証する."""
 
-from pathlib import Path
 from typing import cast
 
 from sqlalchemy import Column, DateTime, Table
 
 from osu_server.repositories.sqlalchemy.models import UserModel
+from tests.support.paths import ALEMBIC_VERSIONS_ROOT
 
-MIGRATION_PATH = Path("alembic/versions/20260710_0300_add_user_latest_activity.py")
+MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / "20260710_0300_add_user_latest_activity.py"
 
 
 def _column(table: Table, name: str) -> Column[object]:

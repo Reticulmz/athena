@@ -65,8 +65,8 @@ import-linter
 ./scripts/ci.sh test
 
 # Migrations
-alembic upgrade head
-alembic revision --autogenerate -m "..."
+nix develop --command uv run --directory apps/athena_server alembic upgrade head
+nix develop --command uv run --directory apps/athena_server alembic revision --autogenerate -m "..."
 
 # Test database tasks
 scripts/dev-tasks.sh db:test:create
@@ -597,7 +597,7 @@ Do not edit project-wide config without explicit user approval:
 - `pyproject.toml`
 - `uv.lock`
 - `.python-version`
-- `alembic.ini`
+- `apps/athena_server/alembic.ini`
 - `flake.nix`
 - `process-compose.yml`
 - CI, hook, linter, type-checker, or import-linter configuration

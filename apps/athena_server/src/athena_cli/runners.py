@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -63,6 +64,27 @@ class SubprocessCommandExecutor:
         return completed.returncode
 
 
+def _resolve_alembic_config_path() -> Path:
+    """実行中のserver artifactに対応するAlembic config pathを解決する.
+
+    Returns:
+        Path: source checkoutまたはinstalled wheelが所有する`alembic.ini` path.
+
+    Raises:
+        FileNotFoundError: server workspaceまたはinstalled artifactにconfigがない場合.
+    """
+    module_path = Path(__file__).resolve()
+    candidate_paths = (
+        module_path.parents[2] / "alembic.ini",
+        module_path.parents[1] / "alembic.ini",
+    )
+    for candidate_path in candidate_paths:
+        if candidate_path.is_file():
+            return candidate_path
+    message = "Server-owned Alembic config was not found"
+    raise FileNotFoundError(message)
+
+
 @dataclass(frozen=True, slots=True)
 class ProcessRunner:
     """Athena CLIが使う外部process commandを組み立てて実行する.
@@ -85,7 +107,13 @@ class ProcessRunner:
         Raises:
             OSError: alembic commandを起動できない場合.
         """
-        argv = ("alembic", "upgrade", "head")
+        argv = (
+            "alembic",
+            "-c",
+            str(_resolve_alembic_config_path()),
+            "upgrade",
+            "head",
+        )
         exit_code = self.executor.run(argv, environment)
         return CommandResult(argv=argv, exit_code=exit_code)
 

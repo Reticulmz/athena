@@ -1,17 +1,17 @@
 """Personal best migrationのschemaとmetadata contractを検証する."""
 
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import Column, ForeignKeyConstraint, Table
 
 from osu_server.infrastructure.database.base import Base
 from osu_server.repositories.sqlalchemy.models import PersonalBestModel
+from tests.support.paths import ALEMBIC_VERSIONS_ROOT
 
 if TYPE_CHECKING:
     from sqlalchemy.dialects.postgresql import ENUM
 
-MIGRATION_PATH = Path("alembic/versions/20260617_0101_add_personal_bests.py")
+MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / "20260617_0101_add_personal_bests.py"
 
 
 def _column(table: Table, name: str) -> Column[object]:

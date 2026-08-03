@@ -37,6 +37,7 @@ def test_server_workspace_verifies_wheel_only_entrypoints() -> None:
     assert "locked isolated consumer dependencies verified" in result.stdout
     assert "installed dependency closure verified" in result.stdout
     assert "installed namespaces verified" in result.stdout
+    assert "installed Alembic config resolution verified" in result.stdout
     assert "isolated direct app import verified" in result.stdout
     assert "installed app entrypoint verified" in result.stdout
     assert "installed worker broker verified" in result.stdout

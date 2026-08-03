@@ -1,13 +1,13 @@
 """Score replay view count migrationのschemaとmetadata contractを検証する."""
 
-from pathlib import Path
 from typing import cast
 
 from sqlalchemy import BigInteger, CheckConstraint, Column, Table
 
 from osu_server.repositories.sqlalchemy.models import ScoreModel
+from tests.support.paths import ALEMBIC_VERSIONS_ROOT
 
-MIGRATION_PATH = Path("alembic/versions/20260710_0200_add_score_replay_view_count.py")
+MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / "20260710_0200_add_score_replay_view_count.py"
 
 
 def _column(table: Table, name: str) -> Column[object]:

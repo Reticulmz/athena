@@ -1,6 +1,5 @@
 """Score performance migrationのschemaとmetadata contractを検証する."""
 
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import CheckConstraint, Column, ForeignKeyConstraint, Numeric, String, Table
@@ -12,11 +11,12 @@ from osu_server.repositories.sqlalchemy.models import (
     PerformanceRecalculationWorkItemModel,
     ScorePerformanceCalculationModel,
 )
+from tests.support.paths import ALEMBIC_VERSIONS_ROOT
 
 if TYPE_CHECKING:
     from decimal import Decimal
 
-MIGRATION_PATH = Path("alembic/versions/20260616_0100_add_score_performance_calculations.py")
+MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / "20260616_0100_add_score_performance_calculations.py"
 
 
 def _column(table: Table, name: str) -> Column[object]:

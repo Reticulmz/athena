@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from tests.support.paths import ALEMBIC_CONFIG_PATH
 from typer.testing import CliRunner
 
 from athena_cli.commands import db as db_command
@@ -56,7 +57,10 @@ class StubProcessRunner:
             CommandResult: Alembic upgrade headのargvと固定exit codeを持つ結果.
         """
         self.calls.append(dict(environment))
-        return CommandResult(argv=("alembic", "upgrade", "head"), exit_code=self.exit_code)
+        return CommandResult(
+            argv=("alembic", "-c", str(ALEMBIC_CONFIG_PATH), "upgrade", "head"),
+            exit_code=self.exit_code,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,7 +281,10 @@ def test_db_migrate_propagates_migration_failure(monkeypatch: pytest.MonkeyPatch
     result = runner.invoke(app, ["db", "migrate", "--env", "test"])
 
     assert result.exit_code == 7
-    assert "Command failed with exit code 7: alembic upgrade head" in result.output
+    assert (
+        f"Command failed with exit code 7: alembic -c {ALEMBIC_CONFIG_PATH} upgrade head"
+        in result.output
+    )
     assert process_runner.calls[0]["ENVIRONMENT"] == "test"
 
 

@@ -24,6 +24,16 @@ SERVER_NAMESPACE_MEMBERS = {
     "athena_cli/__init__.py",
     "athena_cli/main.py",
 }
+SERVER_MIGRATION_MEMBERS = frozenset(
+    {
+        "alembic.ini",
+        *(
+            path.relative_to(SERVER_WORKSPACE_ROOT).as_posix()
+            for path in (SERVER_WORKSPACE_ROOT / "alembic").rglob("*")
+            if path.is_file() and path.suffix not in {".pyc", ".pyo"}
+        ),
+    }
+)
 
 
 def _clean_environment() -> dict[str, str]:
@@ -121,7 +131,7 @@ def _single_wheel(wheels_directory: Path, pattern: str, distribution_name: str) 
 
 
 def _verify_server_wheel_archive(wheel_path: Path) -> None:
-    """Server wheelが両namespaceとAthena console entrypointを含むことを検証する.
+    """Server wheelがnamespace、migration、console entrypointを含むことを検証する.
 
     Args:
         wheel_path (Path): clean Hatchling buildで作成したserver wheel.
@@ -130,7 +140,7 @@ def _verify_server_wheel_archive(wheel_path: Path) -> None:
         None: archive memberとentrypoint metadataを検証して完了する.
 
     Raises:
-        RuntimeError: 必須sourceまたはconsole entrypoint metadataが欠落する場合.
+        RuntimeError: 必須source、migration、またはconsole entrypoint metadataが欠落する場合.
     """
     with zipfile.ZipFile(wheel_path) as wheel_archive:
         member_names = set(wheel_archive.namelist())
@@ -147,6 +157,10 @@ def _verify_server_wheel_archive(wheel_path: Path) -> None:
     missing_members = sorted(SERVER_NAMESPACE_MEMBERS.difference(member_names))
     if missing_members:
         message = f"Server wheel is missing namespace members: {missing_members!r}"
+        raise RuntimeError(message)
+    missing_migration_members = sorted(SERVER_MIGRATION_MEMBERS.difference(member_names))
+    if missing_migration_members:
+        message = f"Server wheel is missing migration members: {missing_migration_members!r}"
         raise RuntimeError(message)
     if "athena = athena_cli.main:main" not in entrypoint_source:
         message = "Server wheel does not expose athena = athena_cli.main:main"
@@ -331,6 +345,47 @@ for entry in sys.path:
             str(consumer_venv),
             str(REPOSITORY_ROOT),
         ],
+        cwd=consumer_root,
+        environment=environment,
+    )
+
+
+def _verify_installed_alembic_config_resolution(
+    consumer_python: Path,
+    consumer_venv: Path,
+    consumer_root: Path,
+    environment: Mapping[str, str],
+) -> None:
+    """Installed server wheelがowner-owned Alembic configを解決することを検証する.
+
+    Args:
+        consumer_python (Path): server wheelをinstallしたconsumer Python executable.
+        consumer_venv (Path): resolved configが配置されるべきconsumer environment root.
+        consumer_root (Path): source checkout外のconsumer working directory.
+        environment (Mapping[str, str]): installed importへ必要なruntime environment.
+
+    Returns:
+        None: installed wheelの`alembic.ini` pathがconsumer environment内にあることを
+            確認して完了する.
+
+    Raises:
+        RuntimeError: configがsource checkoutへfallbackするかinstalled environment外にある場合.
+    """
+    probe_source = """
+import sys
+from pathlib import Path
+
+from athena_cli.runners import _resolve_alembic_config_path
+
+consumer_venv = Path(sys.argv[1]).resolve()
+config_path = _resolve_alembic_config_path()
+if not config_path.is_file():
+    raise SystemExit(f"installed Alembic config is missing: {config_path}")
+if not config_path.is_relative_to(consumer_venv):
+    raise SystemExit(f"Alembic config resolved outside consumer wheel: {config_path}")
+"""
+    _ = _run_command(
+        [str(consumer_python), "-I", "-c", probe_source, str(consumer_venv)],
         cwd=consumer_root,
         environment=environment,
     )
@@ -567,6 +622,13 @@ def main() -> None:
             runtime_environment,
         )
         print("installed namespaces verified")
+        _verify_installed_alembic_config_resolution(
+            consumer_python,
+            consumer_venv,
+            consumer_root,
+            runtime_environment,
+        )
+        print("installed Alembic config resolution verified")
         _verify_installed_app_import(
             consumer_python,
             consumer_venv,

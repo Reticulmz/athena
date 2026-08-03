@@ -1,8 +1,8 @@
 """Blob migrationのschema contractを検証する."""
 
-from pathlib import Path
+from tests.support.paths import ALEMBIC_VERSIONS_ROOT
 
-MIGRATION_PATH = Path("alembic/versions/20260604_1846_create_blobs_table.py")
+MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / "20260604_1846_create_blobs_table.py"
 
 
 def test_blob_migration_creates_required_columns_and_constraints() -> None:
