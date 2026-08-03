@@ -18,7 +18,7 @@ SERVER_SOURCE_PATHS = (
     SERVER_WORKSPACE_ROOT / "scripts",
 )
 SERVER_ARTIFACT_TEST_PATH = (
-    REPOSITORY_ROOT / "tests" / "unit" / "test_server_workspace_artifact.py"
+    SERVER_WORKSPACE_ROOT / "tests" / "unit" / "test_server_workspace_artifact.py"
 )
 
 
@@ -114,8 +114,9 @@ def _quality() -> None:
 def _test() -> None:
     """Current server ownerが提供するinstalled-artifact testを実行する.
 
-    Task 2.1でserver test全体がworkspaceへ移設されるまで、server-owned wheel contractをroot test
-    catalogから実行する。このtestはsource checkoutへのfallbackなしでapp、worker、CLIを検証する.
+    Root test contractがserver suite全体をowner pathから実行する一方で、このoperationはwheel-only
+    contractを再帰なしで検証する。このtestはsource checkoutへのfallbackなしでapp、worker、CLIを
+    検証する.
 
     Returns:
         None: server installed-artifact testが成功して完了する.

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
-DEFAULT_TEST_PATHS = ("tests/",)
+DEFAULT_TEST_PATHS = ("apps/athena_server/tests/",)
 
 
 def setup_database(*, environment: str | None) -> None:

@@ -448,7 +448,9 @@ _ATHENA_GETSCORES_MAPPER_SOURCE = (
     "athena_deterministic:src/osu_server/transports/stable/web_legacy/mappers/getscores.py"
 )
 _GETSCORES_STATUS_TEST_SOURCE_PREFIX = (
-    "automated_test:tests/unit/transports/web_legacy/test_getscores_status_mapper.py#"
+    "automated_test:"
+    "apps/athena_server/tests/unit/transports/web_legacy/"
+    "test_getscores_status_mapper.py#"
 )
 _BEATMAP_INFO_RANKED_SOURCE = (
     ".kiro:specs/beatmap-info-endpoint/research.md"
@@ -1872,7 +1874,9 @@ def _canonical_getscores_contract(
             representation,
             wire_status,
             EndpointEvidenceState.OFFICIAL_FIXTURE,
-            (f"official_fixture:tests/fixtures/web_legacy/getscores/{fixture_stem}_response.txt",),
+            (
+                f"official_fixture:apps/athena_server/tests/fixtures/web_legacy/getscores/{fixture_stem}_response.txt",
+            ),
         )
     if status is BeatmapRankStatus.APPROVED:
         return (

@@ -16,7 +16,8 @@ INITIAL_WORKSPACE_MEMBERS = (
     "apps/athena_server",
     "packages/athena_crypto",
 )
-ROOT_TEST_DIRECTORY = Path("tests")
+LEGACY_ROOT_TEST_DIRECTORY = Path("tests")
+TEMPORARY_ROOT_GITLINT_TEST_PATH = LEGACY_ROOT_TEST_DIRECTORY / "unit" / "test_forbidden_words.py"
 APPLICATIONS_DIRECTORY = "apps"
 PACKAGES_DIRECTORY = "packages"
 REPOSITORY_TOOLING_DIRECTORIES = (
@@ -203,7 +204,7 @@ def _member_test_paths(repository_root: Path, member_path: Path) -> tuple[Path, 
     """
     member_root = repository_root / member_path
     test_root = member_root / "tests"
-    test_paths = tuple(sorted(member_root.rglob("test_*.py")))
+    test_paths = tuple(sorted(path for path in member_root.rglob("test_*.py") if path.is_file()))
     invalid_paths = [
         path.relative_to(repository_root).as_posix()
         for path in test_paths
@@ -234,7 +235,8 @@ def _tooling_test_roots(repository_root: Path) -> tuple[Path, ...]:
     for tooling_directory in REPOSITORY_TOOLING_DIRECTORIES:
         tooling_root = repository_root / tooling_directory
         owner_test_roots: set[Path] = set()
-        for test_path in sorted(tooling_root.rglob("test_*.py")):
+        test_paths = sorted(path for path in tooling_root.rglob("test_*.py") if path.is_file())
+        for test_path in test_paths:
             test_root = next(
                 (
                     parent
@@ -258,6 +260,35 @@ def _tooling_test_roots(repository_root: Path) -> tuple[Path, ...]:
     return tuple(tooling_test_roots)
 
 
+def _validate_root_test_files(repository_root: Path) -> None:
+    """Root `tests`に一時Gitlint testだけが残ることを検証する.
+
+    Args:
+        repository_root (Path): root test directoryを解決するrepository root.
+
+    Returns:
+        None: `tests/unit/test_forbidden_words.py`だけが存在することを確認して完了する.
+
+    Raises:
+        WorkspaceValidationError: 一時Gitlint testが欠落するか、他のroot test fileがある場合.
+    """
+    legacy_test_root = repository_root / LEGACY_ROOT_TEST_DIRECTORY
+    root_test_paths = tuple(
+        sorted(
+            path.relative_to(repository_root).as_posix()
+            for path in legacy_test_root.rglob("test_*.py")
+            if path.is_file()
+        )
+    )
+    expected_root_test_paths = (TEMPORARY_ROOT_GITLINT_TEST_PATH.as_posix(),)
+    if root_test_paths != expected_root_test_paths:
+        message = (
+            "Root test files must contain only the temporary Gitlint test: expected "
+            f"{list(expected_root_test_paths)!r}, got {list(root_test_paths)!r}"
+        )
+        raise WorkspaceValidationError(message)
+
+
 def _pytest_roots(repository_root: Path) -> tuple[Path, ...]:
     """Root gateがpytestで直接実行するtest rootを収集して検証する.
 
@@ -268,31 +299,30 @@ def _pytest_roots(repository_root: Path) -> tuple[Path, ...]:
         tuple[Path, ...]: rootからのrelative pytest target directory.
 
     Raises:
-        WorkspaceValidationError: test locationが無効、package testのartifact contractが不足、
-            またはpytest targetが一件もない場合.
+        WorkspaceValidationError: root Gitlint testまたはtest locationが不正で、package testの
+            artifact contract不足、またはpytest targetが一件もない場合.
     """
     members = _workspace_members(repository_root)
-    artifact_pytest_roots: list[Path] = []
-    root_test_path = repository_root / ROOT_TEST_DIRECTORY
-    if root_test_path.is_dir():
-        artifact_pytest_roots.append(ROOT_TEST_DIRECTORY)
+    _validate_root_test_files(repository_root)
+    application_pytest_roots: list[Path] = []
 
     artifact_contract_test_names: list[str] = []
     for member_path in members:
         test_paths = _member_test_paths(repository_root, member_path)
         test_root = member_path / "tests"
         if _member_kind(member_path) == "application" and test_paths:
-            artifact_pytest_roots.append(test_root)
+            application_pytest_roots.append(test_root)
         artifact_contract_test_names.append(_artifact_contract_test_name(member_path))
 
-    if not artifact_pytest_roots:
-        message = "No root or application pytest test directories were discovered"
+    if not application_pytest_roots:
+        message = "No application pytest test directories were discovered"
         raise WorkspaceValidationError(message)
 
     pytest_test_files = {
         path.name
-        for pytest_root in artifact_pytest_roots
+        for pytest_root in application_pytest_roots
         for path in (repository_root / pytest_root).rglob("test_*.py")
+        if path.is_file()
     }
     missing_contract_tests = sorted(
         test_name
@@ -305,7 +335,11 @@ def _pytest_roots(repository_root: Path) -> tuple[Path, ...]:
             f"{missing_contract_tests!r}"
         )
         raise WorkspaceValidationError(message)
-    return (*artifact_pytest_roots, *_tooling_test_roots(repository_root))
+    return (
+        LEGACY_ROOT_TEST_DIRECTORY,
+        *application_pytest_roots,
+        *_tooling_test_roots(repository_root),
+    )
 
 
 def _type_check_paths(
@@ -319,7 +353,8 @@ def _type_check_paths(
         pytest_roots (tuple[Path, ...]): validation済みroot pytest target directory.
 
     Returns:
-        tuple[Path, ...]: source、test、public typing、repository toolingを一度ずつ含むtype target.
+        tuple[Path, ...]: source、root/server test、public typing、repository toolingを一度ずつ含む
+            type target.
     """
     application_type_paths: list[Path] = []
     package_type_paths: list[Path] = []
@@ -338,12 +373,16 @@ def _type_check_paths(
     application_test_paths = [
         pytest_root
         for pytest_root in pytest_roots
-        if pytest_root == ROOT_TEST_DIRECTORY or pytest_root.parts[0] == APPLICATIONS_DIRECTORY
+        if pytest_root.parts[0] == APPLICATIONS_DIRECTORY
+    ]
+    root_test_paths = [
+        pytest_root for pytest_root in pytest_roots if pytest_root == LEGACY_ROOT_TEST_DIRECTORY
     ]
     return tuple(
         dict.fromkeys(
             (
                 *application_type_paths,
+                *root_test_paths,
                 *application_test_paths,
                 *package_type_paths,
                 *REPOSITORY_TOOLING_DIRECTORIES,

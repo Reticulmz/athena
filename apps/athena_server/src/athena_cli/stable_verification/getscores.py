@@ -34,18 +34,14 @@ from athena_cli.stable_verification.source_checkout import source_checkout_path
 GETSCORES_WEB_LEGACY_PATH = "/web/osu-osz2-getscores.php"
 
 _PROJECT_ROOT = source_checkout_path(Path(__file__))
-_DEFAULT_WEB_LEGACY_FIXTURE_DIR = _PROJECT_ROOT / "tests" / "fixtures" / "web_legacy" / "getscores"
+_SERVER_TEST_ROOT = _PROJECT_ROOT / "apps" / "athena_server" / "tests"
+_DEFAULT_WEB_LEGACY_FIXTURE_DIR = _SERVER_TEST_ROOT / "fixtures" / "web_legacy" / "getscores"
 _DEFAULT_COMPLETION_MANIFEST_ROOT = (
-    _PROJECT_ROOT / "tests" / "fixtures" / "stable_compatibility" / "getscores"
+    _SERVER_TEST_ROOT / "fixtures" / "stable_compatibility" / "getscores"
 )
 _DEFAULT_COMPLETION_BODY_ROOT = _DEFAULT_WEB_LEGACY_FIXTURE_DIR / "completion"
 _DEFAULT_PROBE_CASES_PATH = (
-    _PROJECT_ROOT
-    / "tests"
-    / "fixtures"
-    / "stable_compatibility"
-    / "getscores"
-    / "probe_cases.json"
+    _SERVER_TEST_ROOT / "fixtures" / "stable_compatibility" / "getscores" / "probe_cases.json"
 )
 _LEADERBOARD_TYPE_QUERY_VALUES = {
     "local": "1",

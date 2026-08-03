@@ -59,9 +59,18 @@
       "alembic": "apps/athena_server/alembic",
       "alembic.ini": "apps/athena_server/alembic.ini",
       "pyproject.toml": "apps/athena_server/pyproject.toml",
+      "tests": "apps/athena_server/tests",
       "athena-crypto": "packages/athena_crypto"
     },
-    "retired_paths": ["src", "alembic", "alembic.ini", "athena-crypto"]
+    "retired_paths": ["src", "alembic", "alembic.ini", "tests", "athena-crypto"],
+    "retired_path_exceptions": ["tests/unit/test_forbidden_words.py"],
+    "validation": {
+      "pytest_testpaths": [
+        "tests",
+        "apps/athena_server/tests",
+        "tools/monorepo_migration/tests"
+      ]
+    }
   },
   "crypto_cutover_compatibility": {
     "legacy_root_paths": [

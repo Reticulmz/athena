@@ -42,7 +42,7 @@ def run_test_command(
         environment (str | None):
             subprocessへ渡すtarget environment. 未指定時はprocess environmentを使用する.
         paths (list[str] | None):
-            pytestへ渡すtest pathの反復指定. 未指定時は既定のtests/を使用する.
+            pytestへ渡すtest pathの反復指定. 未指定時は既定のapps/athena_server/tests/を使用する.
 
     Returns:
         None: test commandを実行し値を返さずに完了する.

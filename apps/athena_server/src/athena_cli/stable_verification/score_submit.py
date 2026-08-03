@@ -24,6 +24,8 @@ from athena_cli.stable_verification.source_checkout import source_checkout_path
 
 _DEFAULT_FIXTURE_DIR = source_checkout_path(
     Path(__file__),
+    "apps",
+    "athena_server",
     "tests",
     "fixtures",
     "stable_compatibility",

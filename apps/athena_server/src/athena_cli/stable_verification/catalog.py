@@ -63,63 +63,67 @@ _EVIDENCE: tuple[EvidenceEntry, ...] = (
         surface=StableSurface.REGISTRATION,
         evidence_type=EvidenceType.AUTOMATED_TEST,
         scope=EvidenceScope.MANDATORY,
-        reference="tests/integration/test_registration_flow.py",
+        reference="apps/athena_server/tests/integration/test_registration_flow.py",
         purpose="registration request parsing, validation, and stable response behavior",
     ),
     EvidenceEntry(
         surface=StableSurface.BANCHO_LOGIN,
         evidence_type=EvidenceType.AUTOMATED_TEST,
         scope=EvidenceScope.MANDATORY,
-        reference="tests/integration/test_login_flow.py",
+        reference="apps/athena_server/tests/integration/test_login_flow.py",
         purpose="stable bancho login routing, credentials, and packet stream",
     ),
     EvidenceEntry(
         surface=StableSurface.POLLING,
         evidence_type=EvidenceType.AUTOMATED_TEST,
         scope=EvidenceScope.MANDATORY,
-        reference="tests/integration/test_polling_e2e.py",
+        reference="apps/athena_server/tests/integration/test_polling_e2e.py",
         purpose="stable token polling and queued packet delivery",
     ),
     EvidenceEntry(
         surface=StableSurface.CHAT,
         evidence_type=EvidenceType.AUTOMATED_TEST,
         scope=EvidenceScope.MANDATORY,
-        reference="tests/integration/test_chat_e2e.py",
+        reference="apps/athena_server/tests/integration/test_chat_e2e.py",
         purpose="stable chat packet handling and delivery contract",
     ),
     EvidenceEntry(
         surface=StableSurface.GETSCORES,
         evidence_type=EvidenceType.GOLDEN_FIXTURE,
         scope=EvidenceScope.MANDATORY,
-        reference="tests/unit/transports/web_legacy/test_getscores_fixtures.py",
+        reference="apps/athena_server/tests/unit/transports/web_legacy/test_getscores_fixtures.py",
         purpose="decoded getscores stable response fixture compatibility",
     ),
     EvidenceEntry(
         surface=StableSurface.GETSCORES,
         evidence_type=EvidenceType.AUTOMATED_TEST,
         scope=EvidenceScope.MANDATORY,
-        reference="tests/integration/test_getscores_endpoint.py",
+        reference="apps/athena_server/tests/integration/test_getscores_endpoint.py",
         purpose="getscores host routing and endpoint response contract",
     ),
     EvidenceEntry(
         surface=StableSurface.GETSCORES,
         evidence_type=EvidenceType.GOLDEN_FIXTURE,
         scope=EvidenceScope.MANDATORY,
-        reference=("tests/fixtures/stable_compatibility/getscores/response_shapes.json"),
+        reference=(
+            "apps/athena_server/tests/fixtures/stable_compatibility/getscores/response_shapes.json"
+        ),
         purpose="getscores completion response shape contract",
     ),
     EvidenceEntry(
         surface=StableSurface.GETSCORES,
         evidence_type=EvidenceType.GOLDEN_FIXTURE,
         scope=EvidenceScope.MANDATORY,
-        reference="tests/fixtures/stable_compatibility/getscores/branch_cases.json",
+        reference="apps/athena_server/tests/fixtures/stable_compatibility/getscores/branch_cases.json",
         purpose="getscores completion branch selection catalog",
     ),
     EvidenceEntry(
         surface=StableSurface.GETSCORES,
         evidence_type=EvidenceType.GOLDEN_FIXTURE,
         scope=EvidenceScope.MANDATORY,
-        reference=("tests/fixtures/stable_compatibility/getscores/beatmap_status_crosswalk.json"),
+        reference=(
+            "apps/athena_server/tests/fixtures/stable_compatibility/getscores/beatmap_status_crosswalk.json"
+        ),
         purpose="getscores completion beatmap status crosswalk",
     ),
     EvidenceEntry(
@@ -133,14 +137,14 @@ _EVIDENCE: tuple[EvidenceEntry, ...] = (
         surface=StableSurface.SCORE_SUBMIT,
         evidence_type=EvidenceType.AUTOMATED_TEST,
         scope=EvidenceScope.MANDATORY,
-        reference="tests/unit/transports/web_legacy/test_score_submit_mapper.py",
+        reference="apps/athena_server/tests/unit/transports/web_legacy/test_score_submit_mapper.py",
         purpose="score submit mapper request metadata and chart response contract",
     ),
     EvidenceEntry(
         surface=StableSurface.SCORE_SUBMIT,
         evidence_type=EvidenceType.AUTOMATED_TEST,
         scope=EvidenceScope.MANDATORY,
-        reference="tests/integration/transports/web_legacy/test_score_submit_e2e.py",
+        reference="apps/athena_server/tests/integration/transports/web_legacy/test_score_submit_e2e.py",
         purpose="score submit endpoint workflow and response compatibility",
     ),
     EvidenceEntry(
@@ -148,7 +152,7 @@ _EVIDENCE: tuple[EvidenceEntry, ...] = (
         evidence_type=EvidenceType.GOLDEN_FIXTURE,
         scope=EvidenceScope.MANDATORY,
         reference=(
-            "tests/fixtures/stable_compatibility/replay_download/"
+            "apps/athena_server/tests/fixtures/stable_compatibility/replay_download/"
             "target_client_request_metadata.json"
         ),
         purpose="target stable client replay download route and auth metadata",
@@ -158,7 +162,7 @@ _EVIDENCE: tuple[EvidenceEntry, ...] = (
         evidence_type=EvidenceType.GOLDEN_FIXTURE,
         scope=EvidenceScope.MANDATORY,
         reference=(
-            "tests/fixtures/stable_compatibility/replay_download/"
+            "apps/athena_server/tests/fixtures/stable_compatibility/replay_download/"
             "target_client_response_metadata.json"
         ),
         purpose="target stable client replay download response metadata",
@@ -167,14 +171,18 @@ _EVIDENCE: tuple[EvidenceEntry, ...] = (
         surface=StableSurface.REPLAY_DOWNLOAD,
         evidence_type=EvidenceType.GOLDEN_FIXTURE,
         scope=EvidenceScope.MANDATORY,
-        reference=("tests/fixtures/stable_compatibility/replay_download/reference_responses.json"),
+        reference=(
+            "apps/athena_server/tests/fixtures/stable_compatibility/replay_download/reference_responses.json"
+        ),
         purpose="replay download reference implementation response audit",
     ),
     EvidenceEntry(
         surface=StableSurface.REPLAY_DOWNLOAD,
         evidence_type=EvidenceType.GOLDEN_FIXTURE,
         scope=EvidenceScope.MANDATORY,
-        reference=("tests/fixtures/stable_compatibility/replay_download/response_contract.json"),
+        reference=(
+            "apps/athena_server/tests/fixtures/stable_compatibility/replay_download/response_contract.json"
+        ),
         purpose="replay download branch readiness response contract",
     ),
     EvidenceEntry(
@@ -182,7 +190,7 @@ _EVIDENCE: tuple[EvidenceEntry, ...] = (
         evidence_type=EvidenceType.GOLDEN_FIXTURE,
         scope=EvidenceScope.MANDATORY,
         reference=(
-            "tests/fixtures/stable_compatibility/replay_download/body_assembly_decision.json"
+            "apps/athena_server/tests/fixtures/stable_compatibility/replay_download/body_assembly_decision.json"
         ),
         purpose="replay download body assembly decision metadata",
     ),
@@ -190,7 +198,7 @@ _EVIDENCE: tuple[EvidenceEntry, ...] = (
         surface=StableSurface.REPLAY_DOWNLOAD,
         evidence_type=EvidenceType.AUTOMATED_TEST,
         scope=EvidenceScope.MANDATORY,
-        reference="tests/unit/athena_cli/stable_verification/test_replay_download.py",
+        reference="apps/athena_server/tests/unit/athena_cli/stable_verification/test_replay_download.py",
         purpose="replay blob diagnostic classification and redaction contract",
     ),
 )

@@ -27,6 +27,7 @@ members = [
 target-version = "py313"
 src = [
     "apps/athena_server/src",
+    "apps/athena_server/tests",
     "tests",
     "packages/athena_crypto/typings",
 ]
@@ -69,11 +70,13 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"apps/athena_server/tests/**/*.py" = ["PLR2004"]  # Magic numbers are common/expected in test assertions
 "tests/**/*.py" = ["PLR2004"]  # Magic numbers are common/expected in test assertions
-"tests/unit/transports/bancho/test_di_registration.py" = ["PLC0415"]  # Requires local import to test laziness
-"tests/integration/test_login_flow.py" = ["PLC0415"]
-"tests/integration/test_polling_e2e.py" = ["PLC0415"]
-"tests/integration/test_registration_flow.py" = ["PLC0415"]
+"tools/monorepo_migration/tests/**/*.py" = ["PLR2004"]  # Tooling test assertions use intentional literals
+"apps/athena_server/tests/unit/transports/bancho/test_di_registration.py" = ["PLC0415"]  # Requires local import to test laziness
+"apps/athena_server/tests/integration/test_login_flow.py" = ["PLC0415"]
+"apps/athena_server/tests/integration/test_polling_e2e.py" = ["PLC0415"]
+"apps/athena_server/tests/integration/test_registration_flow.py" = ["PLC0415"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -104,12 +107,17 @@ ignore-semiprivate = false
 pythonVersion = "3.14"
 pythonPlatform = "Linux"
 typeCheckingMode = "all"
-extraPaths = ["apps/athena_server/src"]
+extraPaths = ["apps/athena_server/src", "apps/athena_server"]
 venvPath = "."
 venv = ".venv"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = [
+    "tests",
+    "apps/athena_server/tests",
+    "tools/monorepo_migration/tests",
+]
+pythonpath = [".", "apps/athena_server"]
 asyncio_mode = "auto"
 python_files = ["test_*.py"]
 python_classes = ["Test*"]

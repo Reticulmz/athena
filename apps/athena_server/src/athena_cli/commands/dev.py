@@ -433,7 +433,7 @@ def _execute_getscores_verification(
                 diagnostic_summary=DiagnosticSummary(
                     message=f"getscores probe case unavailable: {exc.__class__.__name__}"
                 ),
-                reference="tests/fixtures/stable_compatibility/getscores/probe_cases.json",
+                reference="apps/athena_server/tests/fixtures/stable_compatibility/getscores/probe_cases.json",
             )
         )
         return tuple(results)

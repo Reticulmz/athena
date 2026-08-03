@@ -21,6 +21,18 @@ type JsonMapping = Mapping[str, object]
 type AlembicCurrentRunner = Callable[[Path], subprocess.CompletedProcess[str]]
 ALEMBIC_CURRENT_REVISION_LINE = re.compile(r"(?P<revision>[^\s()]+)\s+\([^)]*\)")
 MINIMUM_HISTORICAL_KIRO_SPEC_COUNT = 2
+GENERATED_WORKTREE_DIRECTORY_NAMES = frozenset(
+    {
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".state",
+        ".venv",
+        "__pycache__",
+        "node_modules",
+        "target",
+    }
+)
 
 
 class VerificationMode(StrEnum):
@@ -310,6 +322,10 @@ def _populate_post_cutover_semantic_view(
         _field(compatibility, "retired_paths", "post_cutover_compatibility"),
         "post_cutover_compatibility.retired_paths",
     )
+    retired_path_exceptions = _string_list(
+        _field(compatibility, "retired_path_exceptions", "post_cutover_compatibility"),
+        "post_cutover_compatibility.retired_path_exceptions",
+    )
     differences: list[str] = []
     for pre_cutover_path, relocated_path in relocations.items():
         target_path = repository_root / _string(
@@ -323,10 +339,22 @@ def _populate_post_cutover_semantic_view(
         semantic_path.parent.mkdir(parents=True, exist_ok=True)
         semantic_path.symlink_to(target_path, target_is_directory=target_path.is_dir())
     differences.extend(
-        f"Post-cutover retired path is still present: {retired_path}"
-        for retired_path in retired_paths
-        if (repository_root / retired_path).exists()
+        f"Post-cutover retired path exception is missing: {exception_path}"
+        for exception_path in retired_path_exceptions
+        if not (repository_root / exception_path).is_file()
     )
+    for retired_path in retired_paths:
+        retired_path_object = Path(retired_path)
+        exception_paths = frozenset(
+            Path(exception_path).relative_to(retired_path_object)
+            for exception_path in retired_path_exceptions
+            if Path(exception_path).is_relative_to(retired_path_object)
+        )
+        if _retired_path_has_non_generated_content(
+            repository_root / retired_path,
+            allowed_file_paths=exception_paths,
+        ):
+            differences.append(f"Post-cutover retired path is still present: {retired_path}")
     return differences
 
 
@@ -400,7 +428,7 @@ def _populate_crypto_cutover_semantic_view(
     differences.extend(
         f"Crypto-cutover retired path is still present: {retired_path}"
         for retired_path in retired_paths
-        if (repository_root / retired_path).exists()
+        if _retired_path_has_non_generated_content(repository_root / retired_path)
     )
     differences.extend(
         f"Crypto-cutover forbidden path is present: {forbidden_path}"
@@ -439,6 +467,45 @@ def _symlink_semantic_path(semantic_root: Path, relative_path: str, target_path:
     semantic_path = semantic_root / relative_path
     semantic_path.parent.mkdir(parents=True, exist_ok=True)
     semantic_path.symlink_to(target_path, target_is_directory=target_path.is_dir())
+
+
+def _retired_path_has_non_generated_content(
+    path: Path,
+    *,
+    allowed_file_paths: frozenset[Path] | None = None,
+) -> bool:
+    """Retired pathにsource authorityとなる内容が残るかを判定する.
+
+    Args:
+        path (Path): post-cutoverまたはcrypto-cutoverで存在しないことを期待するpath.
+        allowed_file_paths (frozenset[Path] | None): retired directory内に一時的に残す相対file
+            path. Noneの場合は例外を許可しない.
+
+    Returns:
+        bool: 許可されたfileと生成物以外の通常file、symbolic link、またはdirectory contentが
+            ある場合はTrue.
+    """
+    if path.is_symlink() or path.is_file():
+        return True
+    if not path.is_dir():
+        return False
+
+    permitted_file_paths = allowed_file_paths or frozenset()
+    for current_root, directory_names, file_names in path.walk():
+        has_unallowed_file = any(
+            (current_root / file_name).relative_to(path) not in permitted_file_paths
+            for file_name in file_names
+        )
+        if has_unallowed_file or any(
+            (current_root / directory_name).is_symlink() for directory_name in directory_names
+        ):
+            return True
+        directory_names[:] = [
+            directory_name
+            for directory_name in directory_names
+            if directory_name not in GENERATED_WORKTREE_DIRECTORY_NAMES
+        ]
+    return False
 
 
 def _check_required_files(repository_root: Path, baseline: Baseline) -> list[str]:
@@ -1340,6 +1407,20 @@ def _check_validation_contract(
     expected_test_paths = _string_list(
         _field(validation, "pytest_testpaths", "validation"), "validation.pytest_testpaths"
     )
+    if mode is VerificationMode.POST_CUTOVER:
+        compatibility = _post_cutover_compatibility(baseline)
+        post_cutover_validation = _mapping(
+            _field(compatibility, "validation", "post_cutover_compatibility"),
+            "post_cutover_compatibility.validation",
+        )
+        expected_test_paths = _string_list(
+            _field(
+                post_cutover_validation,
+                "pytest_testpaths",
+                "post_cutover_compatibility.validation",
+            ),
+            "post_cutover_compatibility.validation.pytest_testpaths",
+        )
     if actual_test_paths != expected_test_paths:
         differences.append(
             f"Pytest target paths changed: expected {expected_test_paths}, got {actual_test_paths}"

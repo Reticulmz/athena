@@ -41,7 +41,7 @@
   - _Boundary: Workspace Manifests, Server Workspace, Crypto Workspace, Validation Policy_
 
 - [ ] 2. Server-owned artifactsとcompatibility evidenceをcutoverする
-- [ ] 2.1 Server、worker、CLI test assetsをowner workspaceへ移管する
+- [x] 2.1 Server、worker、CLI test assetsをowner workspaceへ移管する
   - Unit、integration、e2e、fixtures、factories、supportをserver productのtest ownershipへ集約する。
   - Test import、fixture discovery、relative evidence pathを新しいowner基準へ更新する。
   - Root test contractからserver、worker、CLIの全testが発見されることを検証する。

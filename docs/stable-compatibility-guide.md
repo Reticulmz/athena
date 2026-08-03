@@ -782,8 +782,8 @@ Common query parameters parsed by Athena:
 | Header with rows | HTTP 200 with the header/title body, one personal-best row, two leaderboard rows, and one terminal LF. | `header_with_rows` |
 
 The manifest in
-`tests/fixtures/stable_compatibility/getscores/response_shapes.json` references
-five Base64 body fixtures in `tests/fixtures/web_legacy/getscores/completion/`
+`apps/athena_server/tests/fixtures/stable_compatibility/getscores/response_shapes.json` references
+five Base64 body fixtures in `apps/athena_server/tests/fixtures/web_legacy/getscores/completion/`
 and fixes their HTTP status, required/absent headers, body bytes, terminal
 newline count, and personal-best/leaderboard-row semantics.
 
@@ -965,7 +965,7 @@ Important multipart fields handled by Athena's parser/mapper:
 
 Compatibility note: Athena's current multipart parser treats `x` as the client
 hash for handled score-submit requests. The separate golden quit/failed fixtures
-under `tests/fixtures/golden/` contain `x=1` plus a distinct `s` field; that
+under `apps/athena_server/tests/fixtures/golden/` contain `x=1` plus a distinct `s` field; that
 shape is evidence for future compatibility research and must not be treated as
 supported without first defining how `x` and `s` map for that client variant.
 
@@ -1123,7 +1123,7 @@ Replay download evidence note:
 
 | Evidence field | Evidence state | Evidence note |
 | --- | --- | --- |
-| Primary route | `confirmed` | Target captures confirm `GET /web/osu-getreplay.php`; fixture: `tests/fixtures/stable_compatibility/replay_download/target_client_request_metadata.json`; classification: `primary_target_client_route`. |
+| Primary route | `confirmed` | Target captures confirm `GET /web/osu-getreplay.php`; fixture: `apps/athena_server/tests/fixtures/stable_compatibility/replay_download/target_client_request_metadata.json`; classification: `primary_target_client_route`. |
 | Alias route | `candidate` | `/web/replays/<id>` is `candidate_only_reference_backed` from `lets`; target captures did not observe it. |
 | Auth and request fields | `confirmed` | Target captures carry query keys `c`, `h`, `m`, `u`; auth-like fields are `h` (`redacted_auth_proof`) and `u` (`redacted_user_identity`). Raw values are not committed. |
 | Auth failure response | `implementation_ready` | `bancho.py` supplies reference-backed 401 with `empty_body`; fixture: `response_contract.json` branch `auth_failure`. |
@@ -1143,7 +1143,7 @@ Issue #36 handoff:
 | Implementation-ready branches | Success 200 `lzma_compressed_replay_payload` via `direct_blob_bytes`; auth failure 401 `empty_body`; hidden score 404 `empty_http_exception`; storage-missing 404 `empty_http_exception`. |
 | Blocked / unresolved branches | Missing replay is unresolved because `bancho.py`/`deck` 404 conflicts with `lets` empty 200; missing/malformed `c`, missing/malformed `m`, and unknown field remain `unconfirmed` with blocker `no_target_or_reference_evidence`. |
 | Body decision | `body_assembly_decision.json`: `download_body_strategy=direct_blob_bytes`. If future validation finds blob integrity pass but target body incompatible, implement `assemble_download_body`. |
-| Sanitized fixtures | `tests/fixtures/stable_compatibility/replay_download/target_client_request_metadata.json`, `tests/fixtures/stable_compatibility/replay_download/target_client_response_metadata.json`, `tests/fixtures/stable_compatibility/replay_download/reference_responses.json`, `tests/fixtures/stable_compatibility/replay_download/response_contract.json`, `tests/fixtures/stable_compatibility/replay_download/body_assembly_decision.json`. |
+| Sanitized fixtures | `apps/athena_server/tests/fixtures/stable_compatibility/replay_download/target_client_request_metadata.json`, `apps/athena_server/tests/fixtures/stable_compatibility/replay_download/target_client_response_metadata.json`, `apps/athena_server/tests/fixtures/stable_compatibility/replay_download/reference_responses.json`, `apps/athena_server/tests/fixtures/stable_compatibility/replay_download/response_contract.json`, `apps/athena_server/tests/fixtures/stable_compatibility/replay_download/body_assembly_decision.json`. |
 
 Issue #37 boundary:
 
