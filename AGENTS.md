@@ -53,10 +53,10 @@ taskiq worker osu_server.worker:broker
 python -m osu_server
 
 # Quality
-ruff check src/
-ruff format --check src/
-basedpyright src/
-pytest tests/
+ruff check apps/athena_server/src/ apps/athena_server/tests/ tools/monorepo_migration/
+ruff format --check apps/athena_server/src/ apps/athena_server/tests/ tools/monorepo_migration/
+basedpyright apps/athena_server/src/ apps/athena_server/tests/ tools/monorepo_migration/
+pytest apps/athena_server/tests/ tools/monorepo_migration/tests/
 import-linter
 
 # Project gates
@@ -118,9 +118,9 @@ composition -> runtime adapters -> command/query use-cases -> repositories -> in
 
 - `composition`: Dishka providers and runtime graph construction.
 - Runtime adapters: Starlette routes and taskiq tasks. Keep them thin.
-- Command use-cases: state-changing workflows under `src/osu_server/services/commands/`.
-- Query use-cases: read-only workflows under `src/osu_server/services/queries/`.
-- Domain: transport-independent business language under `src/osu_server/domain/`.
+- Command use-cases: state-changing workflows under `apps/athena_server/src/osu_server/services/commands/`.
+- Query use-cases: read-only workflows under `apps/athena_server/src/osu_server/services/queries/`.
+- Domain: transport-independent business language under `apps/athena_server/src/osu_server/domain/`.
 - Repositories: command and query persistence ports plus concrete implementations.
 - Infrastructure: DB, Valkey, storage, messaging, jobs, and low-level adapters.
 - Shared: primitive shared errors, constants, and types.
@@ -130,7 +130,7 @@ composition -> runtime adapters -> command/query use-cases -> repositories -> in
 ### Composition Rules
 
 - Dishka owns dependency composition.
-- App, worker, and test graphs live in `src/osu_server/composition/providers/`.
+- App, worker, and test graphs live in `apps/athena_server/src/osu_server/composition/providers/`.
 - APP scope owns config, DB engines, Valkey clients, taskiq broker, storage, HTTP clients, and long-lived adapters.
 - REQUEST scope owns per-request dependencies and Unit of Work factories when they must not become global state.
 - Use explicit provider overrides for tests. Do not branch production providers on `config.environment == "test"`.
@@ -286,7 +286,7 @@ The local quality gate is `./scripts/ci.sh quality` (ruff format, ruff lint, bas
 ### Directory Layout
 
 ```
-src/osu_server/
+apps/athena_server/src/osu_server/
 ├── app.py              # Starlette root app assembly
 ├── worker.py           # taskiq worker entry
 ├── config.py           # pydantic-settings

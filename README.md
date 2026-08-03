@@ -135,8 +135,8 @@ types and meanings are reviewed against the canonical standard, implementation,
 call sites, and relevant tests.
 
 `./scripts/ci.sh quality` runs the same Ruff and interrogate checks over every
-tracked first-party `.py` file, while basedpyright and import-linter retain their
-`src/ tests/` scope. The generated pre-commit configuration is owned by
+tracked first-party `.py` file, while basedpyright and import-linter use the
+workspace-owned source, test, stub, and repository-tooling inventory. The generated pre-commit configuration is owned by
 `flake.nix`: it runs the uv lockfile's Ruff formatter and linter for changed `.py`
 files, then invokes the full docstring gate once. Changes limited to `.pyi` stubs
 do not trigger the docstring gate.
@@ -157,6 +157,12 @@ Run both:
 
 ```bash
 ./scripts/ci.sh all
+```
+
+Audit moved-path consumers and their documented historical exceptions:
+
+```bash
+uv run python tools/monorepo_migration/verify_path_consumers.py
 ```
 
 Before committing, run:

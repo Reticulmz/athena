@@ -134,16 +134,12 @@ Root `pyproject.toml`はnon-package uv workspaceとrepository-wide Python develo
 - Workspace固有architecture、protocol、researchはownerの`docs/`へ置く。
 - `.kiro/specs/`はactive planとcompleted feature specificationの両方を保持する。
 
-## Explicit removals and relocations
+## Migration status and remaining cleanup
 
-- Root `src/`、`tests/`、`alembic/`、`alembic.ini`を`apps/athena_server/`へ移す。
-- Root `typings/`をserver-owned stubsと`athena_crypto` distribution-owned stubsへ分ける。
-- `athena-crypto/`を`packages/athena_crypto/`へ移し、member固有`uv.lock`を削除する。
-- `gitlint_rules/`とそのtestを`tools/gitlint/`へ移す。
-- Nginx、Cloudflare、hostsのtracked templateを`infra/development/`へ移す。
-- Generated certificateとmachine固有proxy/tunnel設定を`.state/`へ移す。
-- `scripts/ci.sh`と`scripts/dev-tasks.sh`をJust、Athena CLI、process orchestrationへ置き換えて削除する。
-- Root `TODO.md`をroadmap/specとの照合後に削除する。
+- Python server source、test、Alembic、server stub、CLI、docsは`apps/athena_server/`が所有する。
+- Native crypto source、test、manifest、public typingは`packages/athena_crypto/`が所有する。Root uv workspaceは単一lockを使う。
+- Stable compatibility fixture、catalog、verification reportはserver owner配下のpathをcurrent evidenceとして参照する。
+- Gitlint rule、development task gateway、tracked ingress template、root backlogの最終cleanupは後続Task 3/4で実施する。移行完了まで暫定artifactを削除せず、path consumer auditの理由付きallowlistで管理する。
 
 ## Deferred decisions
 

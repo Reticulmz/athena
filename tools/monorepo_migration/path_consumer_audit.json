@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "scan_paths": [
+    "AGENTS.md",
+    "README.md",
+    ".kiro/steering/tech.md",
+    "docs/monorepo-layout.md",
+    ".github/workflows/ci.yml",
+    ".gitlint",
+    ".gitleaks.toml",
+    "pyproject.toml",
+    "flake.nix",
+    "process-compose.yml",
+    ".worktreeinclude",
+    "apps/athena_server/docs",
+    "apps/athena_server/src/athena_cli/stable_verification",
+    "apps/athena_server/tests/unit/athena_cli/stable_verification",
+    "apps/athena_server/tests/unit/athena_cli/test_packaging.py"
+  ],
+  "excluded_paths": [
+    {
+      "glob": ".kiro/specs/**",
+      "reason": "Historical Kiro snapshots are evidence, not current consumers."
+    },
+    {
+      "glob": ".kiro/specs/monorepo-migration/**",
+      "reason": "The approved current migration plan preserves before/after path evidence."
+    },
+    {
+      "glob": "tools/monorepo_migration/verify_preflight_baseline.py",
+      "reason": "The preflight verifier preserves transitional layout evidence."
+    },
+    {
+      "glob": "tools/monorepo_migration/tests/test_preflight_baseline.py",
+      "reason": "Preflight tests reconstruct historical repositories intentionally."
+    },
+    {
+      "glob": ".agents/**",
+      "reason": "Shared skill examples are not repository path consumers."
+    },
+    {
+      "glob": ".claude/**",
+      "reason": "Shared skill examples are not repository path consumers."
+    },
+    {
+      "glob": ".codex/**",
+      "reason": "Shared skill examples are not repository path consumers."
+    },
+    {
+      "glob": "docs/adr/**",
+      "reason": "ADRs retain historical design vocabulary and migration evidence."
+    }
+  ],
+  "rules": [
+    {
+      "id": "root_src",
+      "regex": "(?<![A-Za-z0-9_./-])src/",
+      "replacement": "apps/athena_server/src/"
+    },
+    {
+      "id": "root_tests",
+      "regex": "(?<![A-Za-z0-9_./-])tests/",
+      "replacement": "apps/athena_server/tests/"
+    },
+    {
+      "id": "root_typings",
+      "regex": "(?<![A-Za-z0-9_./-])typings/",
+      "replacement": "apps/athena_server/typings/ or packages/athena_crypto/typings/"
+    },
+    {
+      "id": "root_alembic",
+      "regex": "(?<![A-Za-z0-9_./-])alembic/",
+      "replacement": "apps/athena_server/alembic/"
+    },
+    {
+      "id": "legacy_crypto_path",
+      "regex": "(?<![A-Za-z0-9_./-])athena-crypto/",
+      "replacement": "packages/athena_crypto/"
+    },
+    {
+      "id": "gitlint_root",
+      "regex": "(?<![A-Za-z0-9_./-])gitlint_rules/",
+      "replacement": "tools/gitlint/"
+    }
+  ],
+  "allow": [
+    {
+      "glob": "docs/monorepo-layout.md",
+      "rule": "*",
+      "reason": "Target tree uses workspace-relative src/tests/typings vocabulary."
+    },
+    {
+      "glob": "pyproject.toml",
+      "rule": "root_tests",
+      "reason": "The temporary root Gitlint test remains until Task 3.4."
+    },
+    {
+      "glob": ".gitlint",
+      "rule": "gitlint_root",
+      "reason": "Gitlint rule relocation is owned by Task 3.4."
+    },
+    {
+      "glob": "apps/athena_server/tests/unit/athena_cli/stable_verification/test_catalog.py",
+      "rule": "root_tests",
+      "reason": "The catalog asserts that retired fixture paths are not current evidence."
+    },
+    {
+      "glob": "apps/athena_server/tests/unit/athena_cli/test_packaging.py",
+      "rule": "root_src",
+      "reason": "Packaging contract asserts server-relative wheel package paths."
+    },
+    {
+      "glob": "apps/athena_server/tests/unit/athena_cli/test_packaging.py",
+      "rule": "root_tests",
+      "reason": "Packaging contract asserts the transitional root Gitlint test path."
+    }
+  ]
+}

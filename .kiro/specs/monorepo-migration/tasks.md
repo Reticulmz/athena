@@ -70,7 +70,7 @@
   - 隔離環境へserver wheelをinstallし、workspace environment fileがない状態でもprocess environmentだけからapp、worker、CLIが起動し、source checkoutの異なるworking directoryでも同じconfig outcomeになる状態を完了条件とする。
   - _Requirements: 1.2, 1.3, 1.4, 1.5, 5.3, 5.5, 5.6_
 
-- [ ] 2.5 Moved path consumerを一括更新する
+- [x] 2.5 Moved path consumerを一括更新する
   - Task 1.3で更新したcutover-blocking consumerを含め、Active fixture catalog、verification report、allowlist、tool configuration、current instructionの残余source/test pathを新配置へ更新する。
   - Normative/current pathとhistorical Kiro snapshotを区別する暫定audit ruleを用意する。
   - Old pathをruntime/test/tooling consumerが参照していないことをtargeted scanで確認する。
@@ -233,3 +233,4 @@
 - 2026-08-02: User approval後、Task 1.3へcanonical root gateをgreenに保つcutover-blocking runtime/test/tooling consumer更新を移管した。Task 2.5は残余consumerの全量audit、historical exception、current instructionのreconciliationを所有する。
 - Task 1.2 debug round 1: stale `.venv` extensionはcaptured score vectorを通したが、clean wheelは`InvalidDataSize`で失敗した。source importをartifact evidenceにせず、captured vectorと確認済みstable crypto contractだけで修復を判断する。
 - Task 1.2のpre-cutover fixtureはTask 1.1 commit SHAへ固定し、CI test checkoutはそのhistorical objectを取得できるfull historyを使用する。
+- 2026-08-03: Task 2.5のpath consumer auditはactive docs、stable fixture/catalog、verification report、tool configurationだけをscanし、historical Kiro snapshot、preflight reconstruction、Task 3.4までのGitlint配置を理由付きexceptionとして扱う。
