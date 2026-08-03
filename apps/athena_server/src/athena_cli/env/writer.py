@@ -10,7 +10,7 @@ from athena_cli.errors import CliUserError
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from athena_cli.context import EnvironmentName
+    from osu_server.config import EnvironmentName
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +89,7 @@ def _validate_overwrite_policy(
     if not exists:
         return
     if not force:
-        raise CliUserError(f"Environment file already exists: {path}")
+        raise CliUserError(f"Environment file already exists: {path.name}")
     if environment == "production" and not production_confirmed:
         raise CliUserError(
             "Overwriting .env.production requires --force and explicit confirmation."

@@ -14,6 +14,7 @@ from starlette.routing import Host, Mount, Route, Router
 from starlette.testclient import TestClient
 from taskiq import AsyncBroker
 
+import osu_server.config as config_module
 from osu_server.app import app, create_app
 from osu_server.composition.providers.container import make_app_container
 from osu_server.composition.providers.test import (
@@ -324,19 +325,24 @@ def test_create_app_reads_route_domain_from_environment_file(
     結果: host route は env file の DOMAIN を使用する.
 
     Args:
-        monkeypatch (pytest.MonkeyPatch): process environment と working directory を
+        monkeypatch (pytest.MonkeyPatch): server root、process environment、working directoryを
             隔離する fixture.
         tmp_path (Path): .env.development を配置する temporary directory.
 
     Returns:
         None: routing config の environment file 読み込み契約を検証する.
     """
-    monkeypatch.chdir(tmp_path)
+    server_root = tmp_path / "server"
+    server_root.mkdir()
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.setattr(config_module, "server_project_root", lambda: server_root)
+    monkeypatch.chdir(cwd)
     monkeypatch.delenv("DOMAIN", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("VALKEY_URL", raising=False)
     monkeypatch.setenv("ENVIRONMENT", "development")
-    _ = (tmp_path / ".env.development").write_text(
+    _ = (server_root / ".env.development").write_text(
         "DOMAIN=example.test\n",
         encoding="utf-8",
     )

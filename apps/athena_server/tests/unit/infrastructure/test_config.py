@@ -5,7 +5,13 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from osu_server.config import AppConfig, load_config, load_routing_config
+import osu_server.config as config_module
+from osu_server.config import (
+    AppConfig,
+    environment_file_path,
+    load_config,
+    load_routing_config,
+)
 
 _TEST_DATABASE_URL = "postgresql+asyncpg://user:pass@localhost/osu"
 _TEST_VALKEY_URL = "redis://localhost:6379/0"
@@ -13,6 +19,32 @@ _TEST_VALKEY_URL = "redis://localhost:6379/0"
 _DEFAULT_PORT = 8000
 _DEFAULT_HOST = "0.0.0.0"
 _DEFAULT_ENVIRONMENT = "development"
+
+
+def test_environment_file_path_is_independent_of_current_working_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Server project root基準のenvironment file pathがCWDに依存しないことを検証する.
+
+    server rootと無関係なworking directoryを設定してenvironment file pathを解決し,
+    target pathがserver root内で一定になることを確認する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): project rootとworking directoryを隔離するpytest helper.
+        tmp_path (Path): server rootとworking directoryを置くpytest一時directory.
+
+    Returns:
+        None: 解決pathを検証して完了し, 呼び出し側へ値を返さない.
+    """
+    server_root = tmp_path / "server"
+    server_root.mkdir()
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.setattr(config_module, "server_project_root", lambda: server_root)
+    monkeypatch.chdir(cwd)
+
+    assert environment_file_path("test") == server_root / ".env.test"
 
 
 class TestAppConfigEnvVarReading:
@@ -63,17 +95,23 @@ class TestAppConfigEnvVarReading:
         URLとdefault development environmentがfileから読まれることを確認する.
 
         Args:
-            monkeypatch (pytest.MonkeyPatch): working directoryと環境変数を隔離するpytest helper.
+            monkeypatch (pytest.MonkeyPatch): project root、working directory、環境変数を隔離する
+                pytest helper.
             tmp_path (Path): env fileを置くpytest一時directory.
 
         Returns:
             None: development env file読込を検証して完了し値を返さない.
         """
-        monkeypatch.chdir(tmp_path)
+        server_root = tmp_path / "server"
+        server_root.mkdir()
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        monkeypatch.setattr(config_module, "server_project_root", lambda: server_root)
+        monkeypatch.chdir(cwd)
         monkeypatch.delenv("DATABASE_URL", raising=False)
         monkeypatch.delenv("VALKEY_URL", raising=False)
         monkeypatch.delenv("ENVIRONMENT", raising=False)
-        _ = (tmp_path / ".env.development").write_text(
+        _ = (server_root / ".env.development").write_text(
             f"DATABASE_URL={_TEST_DATABASE_URL}\nVALKEY_URL={_TEST_VALKEY_URL}\n",
             encoding="utf-8",
         )
@@ -94,13 +132,19 @@ class TestAppConfigEnvVarReading:
         configが1件のmirror base URL listを保持することを確認する.
 
         Args:
-            monkeypatch (pytest.MonkeyPatch): working directoryと環境変数を隔離するpytest helper.
+            monkeypatch (pytest.MonkeyPatch): project root、working directory、環境変数を隔離する
+                pytest helper.
             tmp_path (Path): env fileを置くpytest一時directory.
 
         Returns:
             None: metadata mirror URL読込を検証して完了し値を返さない.
         """
-        monkeypatch.chdir(tmp_path)
+        server_root = tmp_path / "server"
+        server_root.mkdir()
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        monkeypatch.setattr(config_module, "server_project_root", lambda: server_root)
+        monkeypatch.chdir(cwd)
         monkeypatch.delenv("DATABASE_URL", raising=False)
         monkeypatch.delenv("VALKEY_URL", raising=False)
         monkeypatch.delenv("ENVIRONMENT", raising=False)
@@ -109,7 +153,7 @@ class TestAppConfigEnvVarReading:
             f"VALKEY_URL={_TEST_VALKEY_URL}\n"
             "BEATMAP_METADATA_MIRROR_BASE_URLS=https://api.nerinyan.moe\n"
         )
-        _ = (tmp_path / ".env.development").write_text(env_file_content, encoding="utf-8")
+        _ = (server_root / ".env.development").write_text(env_file_content, encoding="utf-8")
 
         config = load_config()
 
@@ -124,7 +168,8 @@ class TestAppConfigEnvVarReading:
         test fileのURLとtest environmentが選ばれることを確認する.
 
         Args:
-            monkeypatch (pytest.MonkeyPatch): working directoryと環境変数を隔離するpytest helper.
+            monkeypatch (pytest.MonkeyPatch): project root、working directory、環境変数を隔離する
+                pytest helper.
             tmp_path (Path): environment別env fileを置くpytest一時directory.
 
         Returns:
@@ -132,15 +177,20 @@ class TestAppConfigEnvVarReading:
         """
         test_database_url = "postgresql+asyncpg://test:test@localhost/test_osu"
         test_valkey_url = "redis://localhost:6380/1"
-        monkeypatch.chdir(tmp_path)
+        server_root = tmp_path / "server"
+        server_root.mkdir()
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        monkeypatch.setattr(config_module, "server_project_root", lambda: server_root)
+        monkeypatch.chdir(cwd)
         monkeypatch.delenv("DATABASE_URL", raising=False)
         monkeypatch.delenv("VALKEY_URL", raising=False)
         monkeypatch.setenv("ENVIRONMENT", "test")
-        _ = (tmp_path / ".env.development").write_text(
+        _ = (server_root / ".env.development").write_text(
             f"DATABASE_URL={_TEST_DATABASE_URL}\nVALKEY_URL={_TEST_VALKEY_URL}\n",
             encoding="utf-8",
         )
-        _ = (tmp_path / ".env.test").write_text(
+        _ = (server_root / ".env.test").write_text(
             f"DATABASE_URL={test_database_url}\nVALKEY_URL={test_valkey_url}\n",
             encoding="utf-8",
         )
@@ -162,18 +212,24 @@ class TestAppConfigEnvVarReading:
         databaseとValkey設定なしでもdomainが読まれることを確認する.
 
         Args:
-            monkeypatch (pytest.MonkeyPatch): working directoryと環境変数を隔離するpytest helper.
+            monkeypatch (pytest.MonkeyPatch): project root、working directory、環境変数を隔離する
+                pytest helper.
             tmp_path (Path): routing env fileを置くpytest一時directory.
 
         Returns:
             None: service非依存routing config読込を検証して完了し値を返さない.
         """
-        monkeypatch.chdir(tmp_path)
+        server_root = tmp_path / "server"
+        server_root.mkdir()
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        monkeypatch.setattr(config_module, "server_project_root", lambda: server_root)
+        monkeypatch.chdir(cwd)
         monkeypatch.delenv("DOMAIN", raising=False)
         monkeypatch.delenv("DATABASE_URL", raising=False)
         monkeypatch.delenv("VALKEY_URL", raising=False)
         monkeypatch.delenv("ENVIRONMENT", raising=False)
-        _ = (tmp_path / ".env.development").write_text(
+        _ = (server_root / ".env.development").write_text(
             "DOMAIN=example.test\n",
             encoding="utf-8",
         )

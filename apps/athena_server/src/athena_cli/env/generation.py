@@ -13,7 +13,7 @@ from osu_server.config import AppConfig
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from athena_cli.context import EnvironmentName
+    from osu_server.config import EnvironmentName
 
 
 @dataclass(frozen=True, slots=True)

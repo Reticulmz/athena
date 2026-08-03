@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from typer.testing import CliRunner
@@ -13,6 +12,8 @@ from athena_cli.main import app
 from athena_cli.prompts import OsuApiPromptResult
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import pytest
 
 runner = CliRunner()
@@ -179,7 +180,8 @@ def test_interactive_env_init_creates_file_and_reports_path(
     """Interactive env initが選択値からfileを作りpathを表示することを検証する.
 
     Args:
-        monkeypatch (pytest.MonkeyPatch): prompt factoryとcurrent directoryを置き換えるfixture.
+        monkeypatch (pytest.MonkeyPatch): prompt factory、server root、current directoryを
+            置き換えるfixture.
         tmp_path (Path): environment file作成を隔離するpytest temporary directory.
 
     Returns:
@@ -192,12 +194,17 @@ def test_interactive_env_init_creates_file_and_reports_path(
         create_fake_env_init_prompt_adapter,
     )
 
-    monkeypatch.chdir(tmp_path)
+    server_root = tmp_path / "server"
+    server_root.mkdir()
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.setattr(env_command, "server_project_root", lambda: server_root)
+    monkeypatch.chdir(cwd)
     result = runner.invoke(app, ["env", "init", "test"])
 
     assert result.exit_code == 0
     assert "Environment file written: .env.test" in result.output
-    env_content = Path(".env.test").read_text(encoding="utf-8")
+    env_content = (server_root / ".env.test").read_text(encoding="utf-8")
     assert (
         "DATABASE_URL=postgresql+asyncpg://athena:db-password@localhost:5432/athena" in env_content
     )
@@ -213,7 +220,7 @@ def test_interactive_env_init_rejects_existing_file_without_force(
     """Interactive env initが既存fileをforceなしで置換しないことを検証する.
 
     Args:
-        monkeypatch (pytest.MonkeyPatch): prompt factoryとcurrent directoryを置き換えるfixture.
+        monkeypatch (pytest.MonkeyPatch): prompt factoryとserver rootを置き換えるfixture.
         tmp_path (Path): 既存environment fileを配置するpytest temporary directory.
 
     Returns:
@@ -225,13 +232,13 @@ def test_interactive_env_init_rejects_existing_file_without_force(
         create_fake_env_init_prompt_adapter,
     )
 
-    monkeypatch.chdir(tmp_path)
-    _ = Path(".env.test").write_text("EXISTING=value\n", encoding="utf-8")
+    monkeypatch.setattr(env_command, "server_project_root", lambda: tmp_path)
+    _ = (tmp_path / ".env.test").write_text("EXISTING=value\n", encoding="utf-8")
     result = runner.invoke(app, ["env", "init", "test"])
 
     assert result.exit_code != 0
     assert "Environment file already exists: .env.test" in result.output
-    assert Path(".env.test").read_text(encoding="utf-8") == "EXISTING=value\n"
+    assert (tmp_path / ".env.test").read_text(encoding="utf-8") == "EXISTING=value\n"
 
 
 def test_interactive_env_init_requires_production_overwrite_confirmation(
@@ -241,8 +248,7 @@ def test_interactive_env_init_requires_production_overwrite_confirmation(
     """Interactive production env initがunconfirmed overwriteを拒否することを検証する.
 
     Args:
-        monkeypatch (pytest.MonkeyPatch): confirmationなしadapterとcurrent directoryを
-            設定するfixture.
+        monkeypatch (pytest.MonkeyPatch): confirmationなしadapterとserver rootを設定するfixture.
         tmp_path (Path): production environment fileを配置するpytest temporary directory.
 
     Returns:
@@ -254,13 +260,13 @@ def test_interactive_env_init_requires_production_overwrite_confirmation(
         create_unconfirmed_production_prompt_adapter,
     )
 
-    monkeypatch.chdir(tmp_path)
-    _ = Path(".env.production").write_text("EXISTING=value\n", encoding="utf-8")
+    monkeypatch.setattr(env_command, "server_project_root", lambda: tmp_path)
+    _ = (tmp_path / ".env.production").write_text("EXISTING=value\n", encoding="utf-8")
     result = runner.invoke(app, ["env", "init", "production", "--force"])
 
     assert result.exit_code != 0
     assert "Overwriting .env.production requires --force" in result.output
-    assert Path(".env.production").read_text(encoding="utf-8") == "EXISTING=value\n"
+    assert (tmp_path / ".env.production").read_text(encoding="utf-8") == "EXISTING=value\n"
 
 
 def test_non_interactive_env_init_creates_file_from_process_env_without_prompt(
@@ -270,7 +276,7 @@ def test_non_interactive_env_init_creates_file_from_process_env_without_prompt(
     """non-interactive env initがprocess環境からfileを作りpromptを使わないことを検証する.
 
     Args:
-        monkeypatch (pytest.MonkeyPatch): prompt factoryとprocess環境とcurrent directoryを
+        monkeypatch (pytest.MonkeyPatch): prompt factory、process環境、server rootを
             置き換えるfixture.
         tmp_path (Path): environment file作成を隔離するpytest temporary directory.
 
@@ -288,12 +294,12 @@ def test_non_interactive_env_init_creates_file_from_process_env_without_prompt(
     )
     monkeypatch.setenv("VALKEY_URL", "redis://localhost:6379/0")
 
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(env_command, "server_project_root", lambda: tmp_path)
     result = runner.invoke(app, ["env", "init", "test", "--non-interactive"])
 
     assert result.exit_code == 0
     assert "Environment file written: .env.test" in result.output
-    env_content = Path(".env.test").read_text(encoding="utf-8")
+    env_content = (tmp_path / ".env.test").read_text(encoding="utf-8")
     assert (
         "DATABASE_URL=postgresql+asyncpg://athena:db-password@localhost:5432/athena" in env_content
     )
@@ -322,12 +328,12 @@ def test_non_interactive_env_init_lists_missing_values(
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("VALKEY_URL", raising=False)
 
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(env_command, "server_project_root", lambda: tmp_path)
     result = runner.invoke(app, ["env", "init", "test", "--non-interactive"])
 
     assert result.exit_code != 0
     assert "Missing required environment values: DATABASE_URL, VALKEY_URL" in result.output
-    assert not Path(".env.test").exists()
+    assert not (tmp_path / ".env.test").exists()
 
 
 def test_non_interactive_env_init_rejects_existing_file_without_force(
@@ -337,7 +343,7 @@ def test_non_interactive_env_init_rejects_existing_file_without_force(
     """non-interactive env initが既存fileをforceなしで置換しないことを検証する.
 
     Args:
-        monkeypatch (pytest.MonkeyPatch): prompt factoryとprocess環境とcurrent directoryを
+        monkeypatch (pytest.MonkeyPatch): prompt factory、process環境、server rootを
             置き換えるfixture.
         tmp_path (Path): 既存environment fileを配置するpytest temporary directory.
 
@@ -355,13 +361,13 @@ def test_non_interactive_env_init_rejects_existing_file_without_force(
     )
     monkeypatch.setenv("VALKEY_URL", "redis://localhost:6379/0")
 
-    monkeypatch.chdir(tmp_path)
-    _ = Path(".env.test").write_text("EXISTING=value\n", encoding="utf-8")
+    monkeypatch.setattr(env_command, "server_project_root", lambda: tmp_path)
+    _ = (tmp_path / ".env.test").write_text("EXISTING=value\n", encoding="utf-8")
     result = runner.invoke(app, ["env", "init", "test", "--non-interactive"])
 
     assert result.exit_code != 0
     assert "Environment file already exists: .env.test" in result.output
-    assert Path(".env.test").read_text(encoding="utf-8") == "EXISTING=value\n"
+    assert (tmp_path / ".env.test").read_text(encoding="utf-8") == "EXISTING=value\n"
 
 
 def test_non_interactive_env_init_rejects_invalid_content_before_write(
@@ -371,8 +377,7 @@ def test_non_interactive_env_init_rejects_invalid_content_before_write(
     """non-interactive env initが不正なDSNをfile作成前に拒否することを検証する.
 
     Args:
-        monkeypatch (pytest.MonkeyPatch): prompt factoryと不正DSNを持つprocess環境を
-            設定するfixture.
+        monkeypatch (pytest.MonkeyPatch): prompt factory、不正DSN、server rootを設定するfixture.
         tmp_path (Path): file非作成を確認するpytest temporary directory.
 
     Returns:
@@ -386,12 +391,12 @@ def test_non_interactive_env_init_rejects_invalid_content_before_write(
     monkeypatch.setenv("DATABASE_URL", "not-a-dsn")
     monkeypatch.setenv("VALKEY_URL", "redis://localhost:6379/0")
 
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(env_command, "server_project_root", lambda: tmp_path)
     result = runner.invoke(app, ["env", "init", "test", "--non-interactive"])
 
     assert result.exit_code != 0
     assert "Invalid configuration: database_url" in result.output
-    assert not Path(".env.test").exists()
+    assert not (tmp_path / ".env.test").exists()
 
 
 def test_env_example_outputs_schema_derived_example(

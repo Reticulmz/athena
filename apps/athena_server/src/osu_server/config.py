@@ -5,8 +5,9 @@
 
 import os
 import re
+from pathlib import Path
 from string import Formatter
-from typing import Annotated, ClassVar, Self
+from typing import Annotated, ClassVar, Literal, Self
 from urllib.parse import urlparse
 
 from pydantic import Field, PostgresDsn, RedisDsn, TypeAdapter, field_validator, model_validator
@@ -14,6 +15,15 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Valkey は redis:// スキーマを使用するため、RedisDsn のバリデーションをそのまま活用
 ValkeyDsn = RedisDsn
+
+type EnvironmentName = Literal["development", "test", "production"]
+
+SUPPORTED_ENVIRONMENTS: frozenset[EnvironmentName] = frozenset(
+    {"development", "test", "production"}
+)
+SUPPORTED_ENVIRONMENT_LABEL = "development, test, production"
+DEFAULT_ENVIRONMENT: EnvironmentName = "development"
+ENVIRONMENT_VARIABLE = "ENVIRONMENT"
 
 _BANCHO_BOT_USERNAME_MIN = 2
 _BANCHO_BOT_USERNAME_MAX = 15
@@ -23,9 +33,81 @@ _SOURCE_CREDENTIAL_ENVIRONMENTS = frozenset({"development", "production"})
 _TEST_ENVIRONMENT = "test"
 _DEVELOPMENT_ENVIRONMENT = "development"
 _BEATMAP_URL_TEMPLATE_FIELD = "beatmap_id"
-_DEFAULT_ENVIRONMENT = "development"
-_ENVIRONMENT_VARIABLE = "ENVIRONMENT"
 type _BeatmapUrlTemplateField = tuple[str, str | None, str | None]
+
+
+class UnsupportedEnvironmentError(ValueError):
+    """Athenaがサポートしない実行環境名を表す.
+
+    Attributes:
+        environment (str): validationで拒否した入力値.
+    """
+
+    def __init__(self, environment: str) -> None:
+        """Unsupportedな実行環境名を保持して例外を初期化する.
+
+        Args:
+            environment (str): サポート対象外として検出した実行環境名.
+        """
+        self.environment: str
+        self.environment = environment
+        message = f"Unsupported environment {environment!r}."
+        message = f"{message} Supported environments: {SUPPORTED_ENVIRONMENT_LABEL}."
+        super().__init__(message)
+
+
+def validate_environment_name(value: str) -> EnvironmentName:
+    """実行環境名を正規化してサポート対象か検証する.
+
+    Args:
+        value (str): process環境またはCLIから受け取った実行環境名.
+
+    Returns:
+        EnvironmentName: 小文字化して検証済みの実行環境名.
+
+    Raises:
+        UnsupportedEnvironmentError: 値がサポート対象の実行環境名でない場合.
+    """
+    candidate = value.lower()
+    if candidate not in SUPPORTED_ENVIRONMENTS:
+        raise UnsupportedEnvironmentError(candidate)
+    return candidate
+
+
+def server_project_root() -> Path:
+    """Server source checkoutのproject rootを解決する.
+
+    Returns:
+        Path: source checkoutでは`apps/athena_server`, installed wheelではmoduleの
+            package directory. 呼び出し時のcurrent working directoryには依存しない.
+
+    Notes:
+        Installed wheelにはworkspaceのenvironment fileを同梱しないため, package directoryを
+        fallbackにして存在しないenv fileを指定する. process environmentだけの起動を妨げない.
+    """
+    module_path = Path(__file__).resolve()
+    source_root = module_path.parents[2]
+    if (source_root / "pyproject.toml").is_file() and (
+        source_root / "src" / "osu_server"
+    ).is_dir():
+        return source_root
+    return module_path.parent
+
+
+def environment_file_path(environment: EnvironmentName) -> Path:
+    """指定環境のserver-owned environment file pathを返す.
+
+    Args:
+        environment (EnvironmentName): サポート対象の実行環境名.
+
+    Returns:
+        Path: server project rootにある`.env.<environment>`の絶対path.
+
+    Raises:
+        UnsupportedEnvironmentError: 実行環境名がサポート対象外の場合.
+    """
+    validated_environment = validate_environment_name(environment)
+    return server_project_root() / f".env.{validated_environment}"
 
 
 class AppConfig(BaseSettings):
@@ -34,7 +116,7 @@ class AppConfig(BaseSettings):
     Attributes:
         database_url (PostgresDsn): PostgreSQLへの接続DSN.
         valkey_url (ValkeyDsn): Valkeyへの接続DSN.
-        environment (str): 実行環境名. 未指定時はdevelopment.
+        environment (EnvironmentName): 実行環境名. 未指定時はdevelopment.
         server_host (str): ASGI serverがlistenするhost.
         server_port (int): ASGI serverがlistenするport.
         domain (str): host-based routingに使用する基本domain.
@@ -84,7 +166,7 @@ class AppConfig(BaseSettings):
 
     database_url: PostgresDsn
     valkey_url: ValkeyDsn
-    environment: str = "development"
+    environment: EnvironmentName = DEFAULT_ENVIRONMENT
     server_host: str = "0.0.0.0"
     server_port: int = 8000
     domain: str = "athena.localhost"
@@ -144,6 +226,22 @@ class AppConfig(BaseSettings):
         if self.query_diagnostics_enabled is not None:
             return self.query_diagnostics_enabled
         return self.environment.lower() == _DEVELOPMENT_ENVIRONMENT
+
+    @field_validator("environment", mode="before")
+    @classmethod
+    def _normalize_environment(cls, v: str) -> EnvironmentName:
+        """実行環境名を小文字化してサポート対象か検証する.
+
+        Args:
+            v (str): environment variableまたはenv fileから読み込んだ実行環境名.
+
+        Returns:
+            EnvironmentName: 小文字化して検証済みの実行環境名.
+
+        Raises:
+            UnsupportedEnvironmentError: 値がサポート対象の実行環境名でない場合.
+        """
+        return validate_environment_name(v)
 
     @field_validator("blob_storage_backend")
     @classmethod
@@ -608,14 +706,30 @@ class RoutingConfig(BaseSettings):
     """application lifespan開始前に必要なrouting設定を表す.
 
     Attributes:
-        environment (str): 実行環境名. 未指定時はdevelopment.
+        environment (EnvironmentName): 実行環境名. 未指定時はdevelopment.
         domain (str): host-based routingに使用する基本domain.
         model_config (ClassVar[SettingsConfigDict]): 未知の設定を無視してenvironment variableを
             直接読むSettings設定.
     """
 
-    environment: str = "development"
+    environment: EnvironmentName = DEFAULT_ENVIRONMENT
     domain: str = "athena.localhost"
+
+    @field_validator("environment", mode="before")
+    @classmethod
+    def _normalize_environment(cls, v: str) -> EnvironmentName:
+        """routing用実行環境名を小文字化してサポート対象か検証する.
+
+        Args:
+            v (str): environment variableまたはenv fileから読み込んだ実行環境名.
+
+        Returns:
+            EnvironmentName: 小文字化して検証済みの実行環境名.
+
+        Raises:
+            UnsupportedEnvironmentError: 値がサポート対象の実行環境名でない場合.
+        """
+        return validate_environment_name(v)
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_prefix="",
@@ -633,10 +747,13 @@ def load_config() -> AppConfig:
         pydantic.ValidationError: 必須設定またはfield間の制約が満たされない場合.
 
     Notes:
-        `ENVIRONMENT`を小文字化して`.env.<environment>`を選び,未指定時はdevelopmentを使う.
+        `ENVIRONMENT`を小文字化してserver project rootの`.env.<environment>`を選び,
+        未指定時はdevelopmentを使う. process environmentはenv fileより優先する.
     """
-    environment = os.environ.get(_ENVIRONMENT_VARIABLE, _DEFAULT_ENVIRONMENT).lower()
-    return AppConfig(_env_file=f".env.{environment}")  # pyright: ignore[reportCallIssue]
+    environment = validate_environment_name(
+        os.environ.get(ENVIRONMENT_VARIABLE, DEFAULT_ENVIRONMENT)
+    )
+    return AppConfig(_env_file=environment_file_path(environment))  # pyright: ignore[reportCallIssue]
 
 
 def load_routing_config() -> RoutingConfig:
@@ -646,8 +763,12 @@ def load_routing_config() -> RoutingConfig:
         RoutingConfig: host-based routingに必要なenvironmentとdomainを含む設定.
 
     Notes:
-        `ENVIRONMENT`を小文字化して`.env.<environment>`を選び,DB/Valkeyの必須設定は
-        この段階で検証しない.
+        `ENVIRONMENT`を小文字化してserver project rootの`.env.<environment>`を選び,
+        DB/Valkeyの必須設定はこの段階で検証しない. process environmentはenv fileより優先する.
     """
-    environment = os.environ.get(_ENVIRONMENT_VARIABLE, _DEFAULT_ENVIRONMENT).lower()
-    return RoutingConfig(_env_file=f".env.{environment}")  # pyright: ignore[reportCallIssue]
+    environment = validate_environment_name(
+        os.environ.get(ENVIRONMENT_VARIABLE, DEFAULT_ENVIRONMENT)
+    )
+    return RoutingConfig(
+        _env_file=environment_file_path(environment)  # pyright: ignore[reportCallIssue]
+    )

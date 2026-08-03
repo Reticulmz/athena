@@ -34,6 +34,7 @@ cloudflared/config.yml
 .env
 .env.*
 !.env.example
+!apps/athena_server/.env.example
 
 # direnv
 .direnv

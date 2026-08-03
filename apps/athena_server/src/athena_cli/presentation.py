@@ -43,4 +43,4 @@ def format_environment_file_written(path: Path) -> str:
     Returns:
         str: pathを含む完了message.
     """
-    return f"Environment file written: {path}"
+    return f"Environment file written: {path.name}"

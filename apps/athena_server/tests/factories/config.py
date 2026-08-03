@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import PostgresDsn, RedisDsn
 
-from osu_server.config import AppConfig
+from osu_server.config import AppConfig, validate_environment_name
 
 _DEFAULT_DATABASE_URL = "postgresql+asyncpg://user:pass@localhost/osu"
 _DEFAULT_VALKEY_URL = "redis://localhost:6379/0"
@@ -109,7 +109,7 @@ def make_app_config(
         if isinstance(database_url, str)
         else database_url,
         valkey_url=RedisDsn(str(valkey_url)) if isinstance(valkey_url, str) else valkey_url,
-        environment=environment,
+        environment=validate_environment_name(environment),
         server_host=server_host,
         server_port=server_port,
         domain=domain,

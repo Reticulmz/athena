@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 
-from athena_cli.context import UnsupportedEnvironmentError
+from osu_server.config import UnsupportedEnvironmentError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

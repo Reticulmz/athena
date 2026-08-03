@@ -62,7 +62,7 @@
   - Root private stubへの暗黙依存がなく、server type/compatibility checksが通る状態を完了条件とする。
   - _Requirements: 2.6, 2.7, 6.1, 9.2, 10.1_
 
-- [ ] 2.4 Environment resolutionをserver project基準へ固定する
+- [x] 2.4 Environment resolutionをserver project基準へ固定する
   - Supported environmentのtyped nameとvalidationをserver config boundaryへ集約し、CLIが再利用する。
   - Source checkoutではserver project基準のenvironment fileを解決し、current working directoryへの依存を除く。
   - Process environment precedenceとenvironment-only installed startupを維持する。

@@ -5,39 +5,33 @@ from __future__ import annotations
 import os
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
+
+from osu_server.config import (
+    DEFAULT_ENVIRONMENT,
+    ENVIRONMENT_VARIABLE,
+    SUPPORTED_ENVIRONMENT_LABEL,
+    SUPPORTED_ENVIRONMENTS,
+    EnvironmentName,
+    UnsupportedEnvironmentError,
+    validate_environment_name,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Mapping
 
 
-EnvironmentName = Literal["development", "test", "production"]
-SUPPORTED_ENVIRONMENTS: frozenset[EnvironmentName] = frozenset(
-    {"development", "test", "production"}
+__all__ = (
+    "DEFAULT_ENVIRONMENT",
+    "ENVIRONMENT_VARIABLE",
+    "SUPPORTED_ENVIRONMENTS",
+    "SUPPORTED_ENVIRONMENT_LABEL",
+    "CliContext",
+    "EnvironmentName",
+    "UnsupportedEnvironmentError",
+    "resolve_context",
+    "selected_environment_variable",
 )
-SUPPORTED_ENVIRONMENT_LABEL = "development, test, production"
-DEFAULT_ENVIRONMENT: EnvironmentName = "development"
-ENVIRONMENT_VARIABLE = "ENVIRONMENT"
-
-
-class UnsupportedEnvironmentError(ValueError):
-    """CLIが受け付けないenvironment名を表す.
-
-    Attributes:
-        environment (str): validationで拒否した入力値.
-    """
-
-    def __init__(self, environment: str) -> None:
-        """unsupportedなenvironment名を保持して例外を初期化する.
-
-        Args:
-            environment (str): support対象外として検出したenvironment名.
-        """
-        self.environment: str
-        self.environment = environment
-        message = f"Unsupported environment {environment!r}."
-        message = f"{message} Supported environments: {SUPPORTED_ENVIRONMENT_LABEL}."
-        super().__init__(message)
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,10 +91,8 @@ def _resolve_environment_name(
         selected_environment
         if selected_environment is not None
         else process_environment.get(ENVIRONMENT_VARIABLE, DEFAULT_ENVIRONMENT)
-    ).lower()
-    if candidate not in SUPPORTED_ENVIRONMENTS:
-        raise UnsupportedEnvironmentError(candidate)
-    return candidate
+    )
+    return validate_environment_name(candidate)
 
 
 @contextmanager

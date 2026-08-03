@@ -8,7 +8,6 @@ import os
 import weakref
 from collections.abc import AsyncIterator, Awaitable, Callable, Generator, Iterator
 from contextlib import AbstractContextManager, contextmanager, suppress
-from pathlib import Path
 from typing import Protocol, cast, final
 
 import pytest
@@ -17,6 +16,7 @@ from glide import GlideClient
 from taskiq_redis import ListQueueBroker
 
 import osu_server.infrastructure.cache.valkey_client as valkey_module
+from osu_server.config import environment_file_path
 from osu_server.shared.query_diagnostics import (
     QueryDiagnosticSummary,
     query_diagnostic_scope,
@@ -26,7 +26,7 @@ from osu_server.shared.query_diagnostics import (
 # Runtime resource tracking -- ensures sockets are closed after tests
 # ---------------------------------------------------------------------------
 
-_TEST_ENV_FILE = Path(".env.test")
+_TEST_ENV_FILE = environment_file_path("test")
 _TEST_SERVICE_ENV_VARS = frozenset({"DATABASE_URL", "VALKEY_URL"})
 
 type _ValkeyClientFactory = Callable[[str], Awaitable[GlideClient]]

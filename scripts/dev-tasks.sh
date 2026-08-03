@@ -5,6 +5,9 @@ set -euo pipefail
 
 PG_PORT="${PGPORT:-5432}"
 VALKEY_PORT="${VALKEY_PORT:-6379}"
+_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+_REPOSITORY_ROOT="$(cd -- "$_SCRIPT_DIR/.." && pwd)"
+_SERVER_TEST_ENV_FILE="$_REPOSITORY_ROOT/apps/athena_server/.env.test"
 
 _test_database_url="postgresql://localhost:${PG_PORT}/athena_test"
 _test_valkey_url="redis://localhost:${VALKEY_PORT}/1"
@@ -14,7 +17,7 @@ setup_test_env() {
 
   if [ -n "${ATHENA_TEST_DATABASE_URL:-}" ]; then
     export DATABASE_URL="$ATHENA_TEST_DATABASE_URL"
-  elif [ -f .env.test ]; then
+  elif [ -f "$_SERVER_TEST_ENV_FILE" ]; then
     unset DATABASE_URL
   else
     export DATABASE_URL="$_test_database_url"
@@ -22,7 +25,7 @@ setup_test_env() {
 
   if [ -n "${ATHENA_TEST_VALKEY_URL:-}" ]; then
     export VALKEY_URL="$ATHENA_TEST_VALKEY_URL"
-  elif [ -f .env.test ]; then
+  elif [ -f "$_SERVER_TEST_ENV_FILE" ]; then
     unset VALKEY_URL
   else
     export VALKEY_URL="$_test_valkey_url"

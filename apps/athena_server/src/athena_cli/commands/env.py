@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -16,6 +15,7 @@ from athena_cli.env.writer import write_environment_file
 from athena_cli.errors import map_cli_error
 from athena_cli.presentation import format_environment_file_written, format_production_banner
 from athena_cli.prompts import PromptAdapter
+from osu_server.config import server_project_root
 
 app = typer.Typer(help="Environment file management commands.")
 
@@ -124,7 +124,7 @@ def _init_environment(*, environment: str, force: bool, non_interactive: bool) -
         EnvGenerationInput(environment=context.environment, values=values)
     )
     write_result = write_environment_file(
-        root=Path(),
+        root=server_project_root(),
         environment=context.environment,
         content=generation_result.content,
         force=force,
