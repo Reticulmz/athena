@@ -19,7 +19,8 @@ from athena_cli.stable_verification.models import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[6]
-_STABLE_COMPATIBILITY_GUIDE_PATH = PROJECT_ROOT / "docs" / "stable-compatibility-guide.md"
+SERVER_WORKSPACE_ROOT = PROJECT_ROOT / "apps" / "athena_server"
+_STABLE_COMPATIBILITY_GUIDE_PATH = SERVER_WORKSPACE_ROOT / "docs" / "stable-compatibility-guide.md"
 _GETSCORES_COMPLETION_MANIFEST_REFERENCES = frozenset(
     (
         "apps/athena_server/tests/fixtures/stable_compatibility/getscores/response_shapes.json",

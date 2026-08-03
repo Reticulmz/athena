@@ -445,7 +445,8 @@ _REFERENCE_IMPLEMENTATION_APPROVED_SOURCE = (
     "0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/api/domains/osu.py"
 )
 _ATHENA_GETSCORES_MAPPER_SOURCE = (
-    "athena_deterministic:src/osu_server/transports/stable/web_legacy/mappers/getscores.py"
+    "athena_deterministic:apps/athena_server/src/osu_server/"
+    "transports/stable/web_legacy/mappers/getscores.py"
 )
 _GETSCORES_STATUS_TEST_SOURCE_PREFIX = (
     "automated_test:"

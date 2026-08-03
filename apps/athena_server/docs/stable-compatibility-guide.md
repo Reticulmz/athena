@@ -45,7 +45,7 @@ Reference implementation paths used while writing this guide:
 | Repository | Relevant paths |
 | --- | --- |
 | Lekuruu wiki | `Protocol.md`, `Login.md`, `PacketEnums.md`, `Types/*.md`, `Packets/Client/*.md`, `Packets/Server/*.md` |
-| Athena | `src/osu_server/transports/stable/bancho`, `src/osu_server/transports/stable/web_legacy`, `src/athena_cli/stable_verification` |
+| Athena | `apps/athena_server/src/osu_server/transports/stable/bancho`, `apps/athena_server/src/osu_server/transports/stable/web_legacy`, `apps/athena_server/src/athena_cli/stable_verification` |
 | bancho.py | `app/api/domains/cho.py`, `app/api/domains/osu.py`, `app/packets.py`, `app/objects/player.py`, `app/objects/match.py`, `migrations/base.sql`, `app/repositories/*.py` |
 | lets | `lets.py`, `handlers/*`, `objects/beatmap.pyx`, `objects/score.pyx`, `objects/scoreboard.pyx` |
 | pep.py | `handlers/mainHandler.pyx`, `constants/packetIDs.py`, `constants/serverPackets.py`, `helpers/packetHelper.pyx`, `objects/osuToken.py`, `objects/match.py` |
@@ -110,7 +110,7 @@ responses.
 ## Bancho HTTP Transport
 
 Stable Bancho traffic uses HTTP POST requests to `/` on a Bancho host. Athena
-routes these hosts in `src/osu_server/composition/application.py`:
+routes these hosts in `apps/athena_server/src/osu_server/composition/application.py`:
 
 | Host | Path | Purpose |
 | --- | --- | --- |
@@ -141,7 +141,7 @@ The stable client sends a UTF-8 body with three non-empty lines:
 ```
 
 Athena parses this in
-`src/osu_server/transports/stable/bancho/parsers/login.py`.
+`apps/athena_server/src/osu_server/transports/stable/bancho/parsers/login.py`.
 
 The `client_info` line is pipe-delimited:
 
@@ -706,7 +706,7 @@ Task 2.2 `/web/bancho_connect.php` evidence note:
 
 | Evidence field | Evidence state | Evidence note |
 | --- | --- | --- |
-| Auth method | `scope outside` | Current Athena route intentionally delegates credential validation to Bancho login `POST /`; `src/osu_server/transports/stable/web_legacy/bancho_connect.py` reads `u` and `h` only as reachability context. |
+| Auth method | `scope outside` | Current Athena route intentionally delegates credential validation to Bancho login `POST /`; `apps/athena_server/src/osu_server/transports/stable/web_legacy/bancho_connect.py` reads `u` and `h` only as reachability context. |
 | Required request params | `confirmed` | `v`, `u`, `h`, `fail`, `retry`, `fx`, and `ch` are documented from current parser/reference notes; Athena does not require them for the empty reachability response. |
 | Success response | `confirmed` | Athena returns HTTP 200 with an empty body, but this only confirms the current route body. The Task 2.2 classification stays `needs reference evidence` until pre-login validation and country-code/IP variants are settled. |
 | Auth failure response | `scope outside` | Auth failure is handled by the main Bancho login workflow unless future traffic proves pre-login validation is required here. |
@@ -745,7 +745,7 @@ Task 2.2 evidence note:
 | Evidence field | Evidence state | Evidence note |
 | --- | --- | --- |
 | Auth method | `scope outside` | Registration is unauthenticated by design; the audit treats `POST /users` and local `POST /web/users` as adjacent required registration context, not as legacy PHP exact paths. |
-| Required request params | `confirmed` | `user[username]`, `user[user_email]`, `user[password]`, and `check` are documented above and implemented by `src/osu_server/transports/stable/web_legacy/registration.py`. |
+| Required request params | `confirmed` | `user[username]`, `user[user_email]`, `user[password]`, and `check` are documented above and implemented by `apps/athena_server/src/osu_server/transports/stable/web_legacy/registration.py`. |
 | Success response | `confirmed` | Current Athena success body is `ok` with HTTP 200. |
 | Auth failure response | `scope outside` | No authenticated session or credential check exists for this registration form. |
 | Domain/data-not-found response | `scope outside` | Registration validates submitted identity fields rather than looking up a pre-existing domain object. |
@@ -885,15 +885,15 @@ Task 4.2 recorded the following passing gates:
 
 ```bash
 nix develop --command uv run pytest \
-  tests/unit/athena_cli/stable_verification/test_getscores.py \
-  tests/unit/athena_cli/stable_verification/test_getscores_completion_evidence.py \
-  tests/unit/transports/web_legacy/test_getscores_formatter.py \
-  tests/unit/transports/web_legacy/test_getscores_category_mapper.py \
-  tests/unit/transports/web_legacy/test_getscores_status_mapper.py \
-  tests/integration/test_getscores_endpoint.py \
-  tests/integration/test_getscores_unavailable_paths.py \
-  tests/integration/test_getscores_status_fixtures.py \
-  tests/integration/test_getscores_diagnostics.py
+  apps/athena_server/tests/unit/athena_cli/stable_verification/test_getscores.py \
+  apps/athena_server/tests/unit/athena_cli/stable_verification/test_getscores_completion_evidence.py \
+  apps/athena_server/tests/unit/transports/web_legacy/test_getscores_formatter.py \
+  apps/athena_server/tests/unit/transports/web_legacy/test_getscores_category_mapper.py \
+  apps/athena_server/tests/unit/transports/web_legacy/test_getscores_status_mapper.py \
+  apps/athena_server/tests/integration/test_getscores_endpoint.py \
+  apps/athena_server/tests/integration/test_getscores_unavailable_paths.py \
+  apps/athena_server/tests/integration/test_getscores_status_fixtures.py \
+  apps/athena_server/tests/integration/test_getscores_diagnostics.py
 nix develop --command ./scripts/ci.sh quality
 nix develop --command ./scripts/ci.sh test
 nix develop --command prek run --all-files
@@ -1709,7 +1709,7 @@ matrix or guide section that proves them.
 
 Task 4.2 keeps this spec as a documentation audit. The feature diff is expected
 to remain limited to Kiro spec files, `CONTEXT.md`, and the stable
-compatibility docs. It must not contain `src/`, `tests/`, runtime route stubs,
+compatibility docs. It must not contain `apps/athena_server/src/`, `apps/athena_server/tests/`, runtime route stubs,
 golden fixture files, or captured traffic artifacts.
 
 Compatibility no-op rows still keep their own follow-up gaps. Existing partial
@@ -1729,8 +1729,8 @@ follow-up reporting without changing runtime behavior.
 | Matrix tables | Reviewed: grouped coverage rows, exact path traceability rows, requirement coverage rows, and classification completeness rows retain header and separator rows and remain readable as Markdown tables. |
 | Guide headings | Reviewed: Legacy Web Endpoints, Audit Scope Index, Final Audit Classification Contract, Endpoint Family Evidence Note Template, endpoint family evidence notes, Legacy Web Follow-up Checklist, and Audit-only Boundary Verification remain distinct headings. |
 | Guide tables | Reviewed: evidence note tables keep the six required evidence fields, and the follow-up checklist keeps separate columns for missing implementation, missing fixture/reference evidence, and missing current-client traffic. |
-| Feature diff boundary | Reviewed with `git diff --name-only main...HEAD`: the feature diff is limited to `.kiro/specs/legacy-web-endpoint-inventory-audit/*`, `CONTEXT.md`, `docs/stable-compatibility-guide.md`, and `docs/stable-compatibility-matrix.md`. |
-| Runtime boundary | Clean: the feature diff does not include `src/`, `tests/`, runtime route stubs, golden fixture files, or captured traffic artifacts. |
+| Feature diff boundary | Reviewed with `git diff --name-only main...HEAD`: the feature diff is limited to `.kiro/specs/legacy-web-endpoint-inventory-audit/*`, `CONTEXT.md`, `apps/athena_server/docs/stable-compatibility-guide.md`, and `apps/athena_server/docs/stable-compatibility-matrix.md`. |
+| Runtime boundary | Clean: the feature diff does not include `apps/athena_server/src/`, `apps/athena_server/tests/`, runtime route stubs, golden fixture files, or captured traffic artifacts. |
 | Unresolved follow-up reporting | Complete for this audit: unresolved work remains in the Legacy Web Follow-up Checklist and in `needs reference evidence`, `deferred`, or `out of scope` classifications rather than being treated as implemented. |
 
 Docs-only audit completion condition: all Kiro tasks may be marked complete only

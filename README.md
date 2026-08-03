@@ -49,16 +49,16 @@ composition -> runtime adapters -> command/query use-cases -> repositories -> in
 
 Core package responsibilities:
 
-- `src/osu_server/domain`: transport-independent business language and policies.
-- `src/osu_server/services/commands`: state-changing workflows and transaction timing.
-- `src/osu_server/services/queries`: read-only display, search, and compatibility views.
-- `src/osu_server/repositories`: persistence ports and concrete memory, SQLAlchemy,
+- `apps/athena_server/src/osu_server/domain`: transport-independent business language and policies.
+- `apps/athena_server/src/osu_server/services/commands`: state-changing workflows and transaction timing.
+- `apps/athena_server/src/osu_server/services/queries`: read-only display, search, and compatibility views.
+- `apps/athena_server/src/osu_server/repositories`: persistence ports and concrete memory, SQLAlchemy,
   and Valkey implementations.
-- `src/osu_server/transports`: stable, lazer, and first-party protocol adapters.
-- `src/osu_server/jobs`: taskiq task adapters.
-- `src/osu_server/composition`: Dishka provider graph and runtime integration.
+- `apps/athena_server/src/osu_server/transports`: stable, lazer, and first-party protocol adapters.
+- `apps/athena_server/src/osu_server/jobs`: taskiq task adapters.
+- `apps/athena_server/src/osu_server/composition`: Dishka provider graph and runtime integration.
 
-See [docs/architecture.md](docs/architecture.md) for the full boundary contract.
+See [apps/athena_server/docs/architecture.md](apps/athena_server/docs/architecture.md) for the full boundary contract.
 
 ## Tech Stack
 
@@ -202,11 +202,11 @@ under `domain/compatibility/stable`.
 ## Compatibility Roadmap
 
 The detailed packet, endpoint, request, response, and persistence inventory lives
-in [docs/stable-compatibility-matrix.md](docs/stable-compatibility-matrix.md).
+in [apps/athena_server/docs/stable-compatibility-matrix.md](apps/athena_server/docs/stable-compatibility-matrix.md).
 That matrix is the source of truth for stable compatibility progress; this README
 only summarizes the current direction so the two documents do not drift.
 The processing and data-shape guide lives in
-[docs/stable-compatibility-guide.md](docs/stable-compatibility-guide.md).
+[apps/athena_server/docs/stable-compatibility-guide.md](apps/athena_server/docs/stable-compatibility-guide.md).
 
 Current focus areas:
 
@@ -243,10 +243,10 @@ performed by the user on GitHub Web UI.
 
 ## Documentation
 
-- [docs/architecture.md](docs/architecture.md): architecture and placement rules.
-- [docs/stable-compatibility-matrix.md](docs/stable-compatibility-matrix.md): stable
+- [apps/athena_server/docs/architecture.md](apps/athena_server/docs/architecture.md): architecture and placement rules.
+- [apps/athena_server/docs/stable-compatibility-matrix.md](apps/athena_server/docs/stable-compatibility-matrix.md): stable
   packet and endpoint compatibility inventory.
-- [docs/stable-compatibility-guide.md](docs/stable-compatibility-guide.md): stable
+- [apps/athena_server/docs/stable-compatibility-guide.md](apps/athena_server/docs/stable-compatibility-guide.md): stable
   request, response, processing, and persistence guide.
 - [AGENTS.md](AGENTS.md): coding-agent instructions, workflow rules, and the
   canonical Python docstring standard.

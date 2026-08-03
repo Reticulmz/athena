@@ -3,6 +3,8 @@
 from importlib import import_module
 from pathlib import Path
 
+SERVER_WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
+
 
 def test_di_runtime_dependencies_are_importable() -> None:
     """前提: DI runtime dependency が開発環境に存在する.
@@ -27,7 +29,7 @@ def test_architecture_guide_documents_refactor_boundaries() -> None:
     Returns:
         None: architecture documentation 契約を検証する.
     """
-    architecture_guide = Path("docs/architecture.md")
+    architecture_guide = SERVER_WORKSPACE_ROOT / "docs" / "architecture.md"
 
     assert architecture_guide.exists()
 

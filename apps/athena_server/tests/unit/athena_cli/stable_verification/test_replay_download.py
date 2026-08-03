@@ -225,8 +225,9 @@ def test_replay_download_docs_and_matrix_share_current_evidence_terms() -> None:
     Raises:
         AssertionError: guideまたはmatrixから必須evidence用語が欠落した場合.
     """
-    guide = (PROJECT_ROOT / "docs" / "stable-compatibility-guide.md").read_text(encoding="utf-8")
-    matrix = (PROJECT_ROOT / "docs" / "stable-compatibility-matrix.md").read_text(encoding="utf-8")
+    server_docs = PROJECT_ROOT / "apps" / "athena_server" / "docs"
+    guide = (server_docs / "stable-compatibility-guide.md").read_text(encoding="utf-8")
+    matrix = (server_docs / "stable-compatibility-matrix.md").read_text(encoding="utf-8")
     required_terms = (
         "primary_target_client_route",
         "candidate_only_reference_backed",
@@ -247,7 +248,9 @@ def test_replay_download_docs_define_issue_36_and_37_handoff_boundary() -> None:
     Raises:
         AssertionError: guideからIssue #36/#37のhandoff用語またはroute contractが欠落した場合.
     """
-    guide = (PROJECT_ROOT / "docs" / "stable-compatibility-guide.md").read_text(encoding="utf-8")
+    guide = (
+        PROJECT_ROOT / "apps" / "athena_server" / "docs" / "stable-compatibility-guide.md"
+    ).read_text(encoding="utf-8")
     required_terms = (
         "Issue #36 handoff",
         "Issue #37 boundary",
