@@ -185,6 +185,7 @@ def test_root_quality_type_checks_initial_workspace_and_repository_tooling() -> 
     manifest = _toml_table(tomllib.loads(ROOT_MANIFEST_PATH.read_text(encoding="utf-8")))
     tool = _toml_table(manifest["tool"])
     basedpyright_configuration = _toml_table(tool["basedpyright"])
+    assert basedpyright_configuration["stubPath"] == "apps/athena_server/typings"
     assert basedpyright_configuration["extraPaths"] == [
         "apps/athena_server/src",
         "apps/athena_server",

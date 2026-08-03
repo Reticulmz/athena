@@ -22,7 +22,7 @@ FIRST_PARTY_PYTHON_ROOTS = (
     PROJECT_ROOT / "apps/athena_server/src",
     PROJECT_ROOT / "apps/athena_server/scripts",
     PROJECT_ROOT / "apps/athena_server/tests",
-    PROJECT_ROOT / "alembic",
+    PROJECT_ROOT / "apps/athena_server/alembic",
     PROJECT_ROOT / "gitlint_rules",
     PROJECT_ROOT / "packages/athena_crypto/scripts",
     PROJECT_ROOT / "packages/athena_crypto/tests",

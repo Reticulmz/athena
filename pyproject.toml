@@ -107,6 +107,7 @@ ignore-semiprivate = false
 pythonVersion = "3.14"
 pythonPlatform = "Linux"
 typeCheckingMode = "all"
+stubPath = "apps/athena_server/typings"
 extraPaths = ["apps/athena_server/src", "apps/athena_server"]
 venvPath = "."
 venv = ".venv"

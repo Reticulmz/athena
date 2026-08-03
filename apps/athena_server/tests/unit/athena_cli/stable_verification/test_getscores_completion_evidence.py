@@ -49,7 +49,8 @@ _OFFICIAL_GETSCORES_SOURCE_PREFIX = (
     "official_fixture:apps/athena_server/tests/fixtures/web_legacy/getscores/"
 )
 _ATHENA_GETSCORES_MAPPER_SOURCE = (
-    "athena_deterministic:src/osu_server/transports/stable/web_legacy/mappers/getscores.py"
+    "athena_deterministic:apps/athena_server/src/osu_server/"
+    "transports/stable/web_legacy/mappers/getscores.py"
 )
 _GETSCORES_STATUS_TEST_SOURCE_PREFIX = (
     "automated_test:"

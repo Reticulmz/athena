@@ -15,7 +15,7 @@ composition -> runtime adapters -> command/query use-cases -> repositories -> in
 
 ## Composition Responsibilities
 
-Dependency composition is owned by Dishka. App, worker, and test graphs are defined in `src/osu_server/composition/providers/` and exposed through container factories. Runtime integration code lives in `composition/lifespan.py`, `composition/starlette_integration.py`, and `composition/taskiq_integration.py`.
+Dependency composition is owned by Dishka. App, worker, and test graphs are defined in `apps/athena_server/src/osu_server/composition/providers/` and exposed through container factories. Runtime integration code lives in `composition/lifespan.py`, `composition/starlette_integration.py`, and `composition/taskiq_integration.py`.
 
 Provider scope rules are part of the architecture contract:
 
@@ -28,15 +28,15 @@ Startup failure is observable before the app serves requests or the worker execu
 
 ## Command And Query Use Cases
 
-State-changing workflows live under `src/osu_server/services/commands/`. A command use-case owns business rules, authorization decisions, idempotency, and transaction timing. Command inputs and results are typed dataclasses local to the command package. Commands may open a Unit of Work only around durable command-side consistency checks and mutations.
+State-changing workflows live under `apps/athena_server/src/osu_server/services/commands/`. A command use-case owns business rules, authorization decisions, idempotency, and transaction timing. Command inputs and results are typed dataclasses local to the command package. Commands may open a Unit of Work only around durable command-side consistency checks and mutations.
 
-Read-only display, search, aggregation, and compatibility read workflows live under `src/osu_server/services/queries/`. A query use-case uses query repositories, does not open command Unit of Work, and does not mutate durable state to satisfy missing read data. Missing read data is represented as an explicit unavailable or empty result.
+Read-only display, search, aggregation, and compatibility read workflows live under `apps/athena_server/src/osu_server/services/queries/`. A query use-case uses query repositories, does not open command Unit of Work, and does not mutate durable state to satisfy missing read data. Missing read data is represented as an explicit unavailable or empty result.
 
 Transports and jobs invoke use-cases through boundaries whose names make command or query responsibility visible. Client-family wire types, packet structs, form/query text payloads, taskiq context objects, SQLAlchemy models, and DB sessions do not cross into command or query input types.
 
 ## Persistence Boundaries And Unit Of Work
 
-Command persistence is owned by `Unit of Work` contracts in `src/osu_server/repositories/interfaces/unit_of_work.py`. The Unit of Work exposes command repository interfaces, owns the command transaction boundary, and provides `commit()` and `rollback()` semantics for all repositories participating in one command outcome.
+Command persistence is owned by `Unit of Work` contracts in `apps/athena_server/src/osu_server/repositories/interfaces/unit_of_work.py`. The Unit of Work exposes command repository interfaces, owns the command transaction boundary, and provides `commit()` and `rollback()` semantics for all repositories participating in one command outcome.
 
 Command repositories live under `repositories/interfaces/commands/`, `repositories/sqlalchemy/commands/`, and `repositories/memory/commands/`. They contain mutation and consistency-check operations required by command outcomes. SQLAlchemy command repositories receive the Unit of Work-owned session and do not commit or roll back by themselves. Memory command repositories participate in in-memory Unit of Work transaction simulation for tests.
 
@@ -122,7 +122,8 @@ Architecture documentation and mechanical validation must describe the same boun
 
 The local quality gate is `./scripts/ci.sh quality`, which runs Ruff formatting,
 linting, and interrogate over Git's tracked first-party `.py` inventory while
-basedpyright and import-linter retain their `src/ tests/` scope. The test gate is
+basedpyright and import-linter retain their `apps/athena_server/src/` and
+`apps/athena_server/tests/` scopes. The test gate is
 `./scripts/ci.sh test`. A refactor phase is incomplete if the guide, validation
 rules, and package layout disagree.
 

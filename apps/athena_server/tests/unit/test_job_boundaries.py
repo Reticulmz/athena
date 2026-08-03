@@ -177,10 +177,11 @@ def test_legacy_chat_persistence_job_modules_are_absent_or_inert() -> None:
     Returns:
         None: legacy chat job の inert 契約を検証する.
     """
+    server_source_root = PROJECT_ROOT / "apps/athena_server" / "src" / "osu_server"
     legacy_paths = [
-        PROJECT_ROOT / "src/osu_server/infrastructure/jobs/message_persistence.py",
-        PROJECT_ROOT / "src/osu_server/composition/jobs/__init__.py",
-        PROJECT_ROOT / "src/osu_server/composition/jobs/message_persistence.py",
+        server_source_root / "infrastructure/jobs/message_persistence.py",
+        server_source_root / "composition/jobs/__init__.py",
+        server_source_root / "composition/jobs/message_persistence.py",
     ]
 
     for path in legacy_paths:

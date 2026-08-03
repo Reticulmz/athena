@@ -573,10 +573,13 @@ When encountering type or lint errors, resolve in this order:
 2. **Use in-memory implementations or stubs** -- structurally avoid `Any` from mocks.
 3. **Search for community type stubs** -- `types-*` packages on PyPI, typeshed, third-party GitHub stubs.
 4. **Generate stubs** -- `basedpyright --createstub <package>`.
-5. **Manually refine generated stubs** -- edit `.pyi` files under `typings/`.
+5. **Manually refine generated stubs** -- edit server/test-only `.pyi` files under
+   `apps/athena_server/typings/`. The public `athena_crypto` stub remains under
+   `packages/athena_crypto/typings/`.
 6. **Inline suppression as last resort** -- only after all above have been tried; document the reason in a comment.
 
-When community stubs exist, add via `uv add --dev`. Local stubs go under `typings/` and are committed to the repository.
+When community stubs exist, add via `uv add --dev`. Local server stubs go under
+`apps/athena_server/typings/` and are committed to the repository.
 
 ## Testing And Completion
 

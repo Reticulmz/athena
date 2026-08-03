@@ -55,7 +55,7 @@
   - Empty test databaseがexisting headまでupgradeされ、移行前baselineと一致する状態を完了条件とする。
   - _Requirements: 1.6, 2.6, 4.1, 6.6, 8.3_
 
-- [ ] 2.3 Server-specific stubsとtechnical evidenceをownerへ移管する
+- [x] 2.3 Server-specific stubsとtechnical evidenceをownerへ移管する
   - Server/test-only third-party stubsをserver workspaceへ集約し、crypto public stubとのownershipを分離する。
   - Architecture、Stable compatibility、server operation evidenceをserver ownerから参照できるようにする。
   - Type checkerとcompatibility toolingが新しいstub/evidence locationを使用するよう更新する。
