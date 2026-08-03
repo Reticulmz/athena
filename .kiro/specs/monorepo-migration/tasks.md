@@ -86,7 +86,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 6.1, 6.2, 6.6, 10.1, 10.7_
 
 - [ ] 3. Development toolingとinfrastructureを構築する
-- [ ] 3.1 Side-effect-free Nix compositionを構築する (P)
+- [x] 3.1 Side-effect-free Nix compositionを構築する (P)
   - Root environment compositionからserver/crypto固有toolchain、build、checkをworkspace moduleへ分離する。
   - Shell entryはtoolとworktree-relative path variableだけを提供し、sync、state、hook、certificate、trust changeを実行しない。
   - Root-only Flake/lockからdefault shell、workspace checks、reproducible validationを評価できるようにする。
@@ -235,3 +235,4 @@
 - Task 1.2のpre-cutover fixtureはTask 1.1 commit SHAへ固定し、CI test checkoutはそのhistorical objectを取得できるfull historyを使用する。
 - 2026-08-03: Task 2.5のpath consumer auditはactive docs、stable fixture/catalog、verification report、tool configurationだけをscanし、historical Kiro snapshot、preflight reconstruction、Task 3.4までのGitlint配置を理由付きexceptionとして扱う。
 - 2026-08-03: Task 2.6 Boundary 1はpost-cutover preflight、隔離PostgreSQLへのAlembic head適用/current一致、server/crypto artifact検証、root quality/import-linter、全workspace test（3465 passed, 57 skipped）で完了した。
+- 2026-08-03: Task 3.1はserver/crypto workspace module、root composed devShell、Nix checksを追加し、`nix develop`のsync/state/hook/certificate副作用を除去した。`nix flake check`、関連validation test 28件、side-effect-free shell実測、`prek run --all-files`が成功した。

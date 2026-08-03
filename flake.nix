@@ -23,18 +23,34 @@
         "aarch64-darwin"
       ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
-    in
-    {
-      devShells = forAllSystems (
+
+      systemOutputs = forAllSystems (
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          lib = pkgs.lib;
+          serverWorkspace = import ./apps/athena_server/default.nix { inherit pkgs lib; };
+          cryptoWorkspace = import ./packages/athena_crypto/default.nix { inherit pkgs lib; };
+
+          rootPackages = with pkgs; [
+            cloudflared
+            git
+            gitleaks
+            mkcert
+            nginx
+            postgresql_17
+            prek
+            process-compose
+            valkey
+          ];
+          workspacePackages = lib.unique (
+            serverWorkspace.toolchain ++ cryptoWorkspace.toolchain
+          );
 
           pre-commit-check = git-hooks.lib.${system}.run {
             src = ./.;
             package = pkgs.prek;
             hooks = {
-              # --- Priority 0: 自動修正 (lint fixとtext正規化) ---
               ruff = {
                 enable = true;
                 entry = "uv run ruff check --fix";
@@ -55,8 +71,6 @@
                 types = [ "text" ];
                 priority = 0;
               };
-
-              # --- Priority 10: formatterと軽量check ---
               ruff-format = {
                 enable = true;
                 entry = "uv run ruff format";
@@ -91,8 +105,6 @@
                 pass_filenames = false;
                 priority = 10;
               };
-
-              # --- Priority 20: 型チェック / import ルール / テスト (重い処理、並列) ---
               basedpyright = {
                 enable = true;
                 name = "basedpyright";
@@ -117,8 +129,6 @@
                 pass_filenames = false;
                 priority = 20;
               };
-
-              # --- commit-msg ステージ (別ステージで実行) ---
               gitlint = {
                 enable = true;
                 name = "gitlint";
@@ -127,78 +137,63 @@
               };
             };
           };
+
+          worktreeEnvironment = ''
+            _ATHENA_WORKTREE_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+            if [ -z "$_ATHENA_WORKTREE_ROOT" ]; then
+              echo "nix develop must run inside an Athena Git worktree" >&2
+              return 1
+            fi
+            export ATHENA_WORKTREE_ROOT="$_ATHENA_WORKTREE_ROOT"
+            unset _ATHENA_WORKTREE_ROOT
+
+            export ATHENA_STATE="$ATHENA_WORKTREE_ROOT/.state"
+            export PGDATA="$ATHENA_STATE/postgres"
+            export PGHOST="127.0.0.1"
+            export PGPORT="5432"
+            export UV_PROJECT_ENVIRONMENT="$ATHENA_WORKTREE_ROOT/.venv"
+            export VIRTUAL_ENV="$UV_PROJECT_ENVIRONMENT"
+            export UV_PYTHON_PREFERENCE=only-system
+            export UV_CACHE_DIR="''${UV_CACHE_DIR:-$HOME/.uv/cache/athena}"
+            export PATH="$VIRTUAL_ENV/bin:$PATH"
+          '';
+
+          mkWorkspaceShell = packages:
+            pkgs.mkShell {
+              packages = packages;
+              shellHook = worktreeEnvironment;
+            };
+
+          checks =
+            serverWorkspace.checks
+            // cryptoWorkspace.checks
+            // {
+              composition = pkgs.runCommand "athena-nix-composition-check" { } ''
+                test -f ${./flake.nix}
+                test -f ${./flake.lock}
+                test -f ${./apps/athena_server/default.nix}
+                test -f ${./packages/athena_crypto/default.nix}
+                touch "$out"
+              '';
+              pre-commit-config = pre-commit-check.config.configFile;
+            };
         in
         {
-          default = pkgs.mkShell {
-            packages = with pkgs; [
-              python314
-              uv
-              process-compose
-              git
-              nginx
-              mkcert
-              cloudflared
-              gitleaks
-              postgresql_17
-              valkey
-            ];
-
-            shellHook = ''
-              _ATHENA_ORIGINAL_PWD="$PWD"
-              _WORKTREE_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-              export ATHENA_WORKTREE_ROOT="$_WORKTREE_ROOT"
-
-              # git-hooks.nix writes .pre-commit-config.yaml relative to cwd.
-              # Run it from the current worktree root so linked worktrees do not
-              # accidentally reuse the primary checkout's generated config.
-              cd "$ATHENA_WORKTREE_ROOT"
-              ${pre-commit-check.shellHook}
-              cd "$_ATHENA_ORIGINAL_PWD"
-
-              # Per-worktree state directory.
-              export ATHENA_STATE="$ATHENA_WORKTREE_ROOT/.state"
-              mkdir -p "$ATHENA_STATE"/{postgres,valkey,nginx}
-
-              export PGDATA="$ATHENA_STATE/postgres"
-              export PGHOST="127.0.0.1"
-              export PGPORT="5432"
-
-              # Python venv (per-worktree).
-              export UV_PYTHON_PREFERENCE=only-system
-              export UV_CACHE_DIR="''${UV_CACHE_DIR:-$HOME/.uv/cache/athena}"
-              mkdir -p "$UV_CACHE_DIR"
-              export UV_PROJECT_ENVIRONMENT="$ATHENA_WORKTREE_ROOT/.venv"
-              export VIRTUAL_ENV="$UV_PROJECT_ENVIRONMENT"
-              uv sync --project "$ATHENA_WORKTREE_ROOT" --all-groups --quiet 2>/dev/null || true
-              export PATH="$VIRTUAL_ENV/bin:$PATH"
-
-              # mkcert 証明書の自動生成 (未作成時のみ)
-              if [ ! -f "$ATHENA_WORKTREE_ROOT/certs/_wildcard.athena.localhost.pem" ]; then
-                echo "generating mkcert certificates..."
-                mkdir -p "$ATHENA_WORKTREE_ROOT/certs"
-                mkcert -install 2>/dev/null
-                mkcert -cert-file "$ATHENA_WORKTREE_ROOT/certs/_wildcard.athena.localhost.pem" \
-                       -key-file "$ATHENA_WORKTREE_ROOT/certs/_wildcard.athena.localhost-key.pem" \
-                       "*.athena.localhost" 2>/dev/null
-              fi
-
-              echo ""
-              echo "athena dev environment ready"
-              echo "  process-compose up                    - start services (postgres, valkey) + app + worker + nginx + cloudflared"
-              echo "  uv run pytest                         - run tests"
-              echo "  scripts/dev-tasks.sh db:test:create   - create test database"
-              echo "  scripts/dev-tasks.sh db:test:migrate  - migrate test database"
-              echo "  scripts/dev-tasks.sh db:test:run      - run tests against test DB"
-              echo "  nginx listens on :80/:443 -> athena :8000"
-              echo "  cloudflared tunnel -> *.example.com :80"
-              echo ""
-              echo "  First-time tunnel setup:"
-              echo "    cloudflared tunnel login"
-              echo "    cloudflared tunnel create athena-dev"
-              echo "    cloudflared tunnel route dns athena-dev '*.example.com'"
-            '';
+          devShells = {
+            default = mkWorkspaceShell (rootPackages ++ workspacePackages);
+            server = mkWorkspaceShell (rootPackages ++ serverWorkspace.toolchain);
+            crypto = mkWorkspaceShell (rootPackages ++ cryptoWorkspace.toolchain);
+          };
+          inherit checks;
+          packages = {
+            pre-commit-config = pre-commit-check.config.configFile;
           };
         }
       );
+    in
+    {
+      devShells = builtins.mapAttrs (_system: outputs: outputs.devShells) systemOutputs;
+      checks = builtins.mapAttrs (_system: outputs: outputs.checks) systemOutputs;
+      packages = builtins.mapAttrs (_system: outputs: outputs.packages) systemOutputs;
     };
 }
