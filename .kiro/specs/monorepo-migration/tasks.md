@@ -236,3 +236,4 @@
 - 2026-08-03: Task 2.5のpath consumer auditはactive docs、stable fixture/catalog、verification report、tool configurationだけをscanし、historical Kiro snapshot、preflight reconstruction、Task 3.4までのGitlint配置を理由付きexceptionとして扱う。
 - 2026-08-03: Task 2.6 Boundary 1はpost-cutover preflight、隔離PostgreSQLへのAlembic head適用/current一致、server/crypto artifact検証、root quality/import-linter、全workspace test（3465 passed, 57 skipped）で完了した。
 - 2026-08-03: Task 3.1はserver/crypto workspace module、root composed devShell、Nix checksを追加し、`nix develop`のsync/state/hook/certificate副作用を除去した。`nix flake check`、関連validation test 28件、side-effect-free shell実測、`prek run --all-files`が成功した。
+- Task 3.1ではworkspace artifact buildとNix-native structural checksを先に分離し、project dependencyを必要とする全hook実行はexplicit setupとTask 3.4のvalidation ownerへ残す。Flakeはhook configurationの生成とconsumer pathを検証する。
