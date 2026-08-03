@@ -175,7 +175,14 @@
                 test -f ${./packages/athena_crypto/default.nix}
                 touch "$out"
               '';
-              pre-commit-config = pre-commit-check.config.configFile;
+              pre-commit-config = pkgs.runCommand "athena-pre-commit-config-check" {
+                configFile = pre-commit-check.config.configFile;
+              } ''
+                test -s "$configFile"
+                grep -q 'verify_workspace_validation.py' "$configFile"
+                grep -q 'apps/athena_server/pyproject.toml' "$configFile"
+                touch "$out"
+              '';
             };
         in
         {
@@ -186,7 +193,9 @@
           };
           inherit checks;
           packages = {
+            crypto-workspace = cryptoWorkspace.build;
             pre-commit-config = pre-commit-check.config.configFile;
+            server-workspace = serverWorkspace.build;
           };
         }
       );
