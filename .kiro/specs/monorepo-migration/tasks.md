@@ -104,7 +104,7 @@
   - _Requirements: 3.4, 3.5, 3.6, 4.1, 4.3, 4.4, 7.1, 7.2, 7.3_
   - _Boundary: Root Task Gateway_
 
-- [ ] 3.3 Worktree-local process graphとingress profileを構築する (P)
+- [x] 3.3 Worktree-local process graphとingress profileを構築する (P)
   - Database、initialization、state service、app、worker、reverse proxyのreadiness/dependency/shutdownを維持する。
   - Tracked ingress templateとgenerated certificate、actual proxy/tunnel config、credentialを分離する。
   - Core profileをcredential-free named HTTPSとして提供し、同じapplication routingを使用するtunnelをoptional profileへ分離する。

@@ -21,14 +21,13 @@ htmlcov/
 # Nix / flake
 result
 
-# Development state (postgres, valkey, nginx)
+# Worktree-local generated state, credentials, certificates, and actual ingress config
 .state/
 
-# Local nginx config (copy from nginx.dev.conf.example and customize)
+# Legacy machine-local ingress state remains ignored until the final cleanup boundary
 nginx.dev.conf
-
-# Local cloudflared config
 cloudflared/config.yml
+certs/
 
 # Environment variables
 .env
@@ -50,9 +49,6 @@ cloudflared/config.yml
 .rtk/
 .serena/
 .antigravitycli/
-
-# mkcert certificates
-certs/
 
 # Application logs
 logs/

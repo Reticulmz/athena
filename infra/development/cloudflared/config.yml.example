@@ -1,0 +1,9 @@
+# Copy this tracked template to `.state/cloudflared/config.yml` in the current worktree.
+# Replace the hostname placeholder after `just tunnel-setup` has created the worktree-local
+# account certificate and `.state/cloudflared/credentials.json`. The execution credential is
+# the single source of truth for TunnelID, so this route-only config does not duplicate identity.
+
+ingress:
+  - hostname: "*.example.com"
+    service: http://127.0.0.1:80
+  - service: http_status:404

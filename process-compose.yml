@@ -1,25 +1,25 @@
 version: "0.5"
-# 依存 process を逆順に停止し、worker/app が Valkey/PostgreSQL より先に終了する
+# 依存processを逆順に停止し、ingress/worker/appをstate serviceより先に終了する.
 ordered_shutdown: true
 
-# 環境変数 ATHENA_STATE, PGDATA, PGHOST, PGPORT は
-# flake.nix shellHook で設定済み
+# ATHENA_WORKTREE_ROOT、ATHENA_STATE、PGDATA、PGHOST、PGPORTは
+# side-effect-freeなNix development shellが現在worktree基準で提供する.
 
 processes:
   postgres:
     command: |
-      set -e
+      set -eu
       if [ ! -f "$PGDATA/PG_VERSION" ]; then
         echo "initializing postgres data directory..."
         initdb -D "$PGDATA" --no-locale --encoding=UTF8
-        echo "listen_addresses = '127.0.0.1'" >> "$PGDATA/postgresql.conf"
-        echo "unix_socket_directories = '$PGDATA'" >> "$PGDATA/postgresql.conf"
-        echo "port = 5432" >> "$PGDATA/postgresql.conf"
+        printf "listen_addresses = '127.0.0.1'\n" >> "$PGDATA/postgresql.conf"
+        printf "unix_socket_directories = '%s'\n" "$PGDATA" >> "$PGDATA/postgresql.conf"
+        printf "port = %s\n" "$PGPORT" >> "$PGDATA/postgresql.conf"
       fi
       exec postgres -D "$PGDATA"
     readiness_probe:
       exec:
-        command: pg_isready -h 127.0.0.1 -p 5432
+        command: pg_isready -h "$PGHOST" -p "$PGPORT"
       initial_delay_seconds: 2
       period_seconds: 5
     shutdown:
@@ -27,7 +27,21 @@ processes:
       timeout_seconds: 30
 
   postgres-init:
-    command: createdb -h 127.0.0.1 -p 5432 athena 2>/dev/null || true
+    command: |
+      set -eu
+      database_exists="$(
+        psql \
+          --host "$PGHOST" \
+          --port "$PGPORT" \
+          --dbname postgres \
+          --tuples-only \
+          --no-align \
+          --command "SELECT 1 FROM pg_database WHERE datname = 'athena'"
+      )"
+      if [ "$database_exists" = "1" ]; then
+        exit 0
+      fi
+      exec createdb --host "$PGHOST" --port "$PGPORT" athena
     depends_on:
       postgres:
         condition: process_healthy
@@ -36,9 +50,9 @@ processes:
 
   valkey:
     command: >-
-      valkey-server
+      exec valkey-server
       --port 6379
-      --dir "$ATHENA_STATE/valkey"
+      --dir "$ATHENA_WORKTREE_ROOT/.state/valkey"
       --daemonize no
     readiness_probe:
       exec:
@@ -49,9 +63,8 @@ processes:
       signal: 15
       timeout_seconds: 10
 
-  # 完了済み postgres-init は停止順に使えないため、app/worker は postgres にも直接依存する
   app:
-    command: uv run python -m osu_server
+    command: exec uv run --directory apps/athena_server python -m osu_server
     depends_on:
       postgres:
         condition: process_healthy
@@ -59,10 +72,21 @@ processes:
         condition: process_completed_successfully
       valkey:
         condition: process_healthy
+    readiness_probe:
+      exec:
+        command: >-
+          python -c 'from urllib.request import urlopen;
+          response = urlopen("http://127.0.0.1:8000/health", timeout=2);
+          response.close()'
+      initial_delay_seconds: 2
+      period_seconds: 2
+    shutdown:
+      signal: 15
+      timeout_seconds: 30
 
   worker:
-    # uv の wrapper を置き換え、Taskiq が停止 signal を直接受け取る
-    command: exec uv run taskiq worker osu_server.worker:broker
+    # uv wrapperを置き換え、Taskiqが停止signalを直接受け取る.
+    command: exec uv run --directory apps/athena_server taskiq worker osu_server.worker:broker
     depends_on:
       postgres:
         condition: process_healthy
@@ -70,15 +94,52 @@ processes:
         condition: process_completed_successfully
       valkey:
         condition: process_healthy
+    shutdown:
+      signal: 15
+      timeout_seconds: 30
 
   nginx:
     command: >-
-      mkdir -p .state/nginx &&
-      sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80 > /dev/null 2>&1;
-      nginx -p ./ -e .state/nginx/error.log -c ./nginx.dev.conf -g 'daemon off;'
+      exec nginx
+      -p "$ATHENA_WORKTREE_ROOT/"
+      -e "$ATHENA_WORKTREE_ROOT/.state/nginx/error.log"
+      -c "$ATHENA_WORKTREE_ROOT/.state/nginx/nginx.conf"
+      -g "daemon off;"
+    depends_on:
+      app:
+        condition: process_healthy
+    readiness_probe:
+      exec:
+        command: |
+          ca_root="$(mkcert -CAROOT)"
+          exec python \
+            "$ATHENA_WORKTREE_ROOT/tools/monorepo_migration/nginx_tls_probe.py" \
+            probe \
+            "$ca_root/rootCA.pem"
+      initial_delay_seconds: 1
+      period_seconds: 2
     shutdown:
       signal: 3
       timeout_seconds: 5
 
   cloudflared:
-    command: cloudflared tunnel --config cloudflared/config.yml --no-autoupdate run
+    command: |
+      set -eu
+      tunnel_id="$(
+        python "$ATHENA_WORKTREE_ROOT/infra/development/validate_state.py" \
+          tunnel-id \
+          "$ATHENA_WORKTREE_ROOT"
+      )"
+      exec cloudflared tunnel \
+        --origincert "$ATHENA_WORKTREE_ROOT/.state/cloudflared/login-home/.cloudflared/cert.pem" \
+        --config "$ATHENA_WORKTREE_ROOT/.state/cloudflared/config.yml" \
+        --no-autoupdate \
+        run \
+        --credentials-file "$ATHENA_WORKTREE_ROOT/.state/cloudflared/credentials.json" \
+        "$tunnel_id"
+    depends_on:
+      nginx:
+        condition: process_healthy
+    shutdown:
+      signal: 15
+      timeout_seconds: 35

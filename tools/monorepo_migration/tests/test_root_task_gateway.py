@@ -2,15 +2,30 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import os
 import shutil
+import ssl
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
+
+import pytest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 JUSTFILE_PATH = REPOSITORY_ROOT / "justfile"
 SETUP_SCRIPT_PATH = REPOSITORY_ROOT / "scripts" / "setup-worktree.sh"
+NGINX_TEMPLATE_PATH = REPOSITORY_ROOT / "infra" / "development" / "nginx" / "nginx.conf.template"
+STATE_VALIDATOR_PATH = REPOSITORY_ROOT / "infra" / "development" / "validate_state.py"
+VALID_TUNNEL_ID = "123e4567-e89b-12d3-a456-426614174000"
+VALID_TUNNEL_SECRET = base64.b64encode(bytes(32)).decode("ascii")
+VALID_TUNNEL_CREDENTIALS: dict[str, object] = {
+    "AccountTag": "fixture-account",
+    "TunnelSecret": VALID_TUNNEL_SECRET,
+    "TunnelID": VALID_TUNNEL_ID,
+}
 
 
 def _write_executable(path: Path, source: str) -> None:
@@ -27,6 +42,18 @@ def _write_executable(path: Path, source: str) -> None:
     _ = path.chmod(0o755)
 
 
+def _serialize_tunnel_credentials(credentials: dict[str, object]) -> str:
+    """Tunnel credential mappingをUTF-8 JSON file用sourceへ変換する.
+
+    Args:
+        credentials (dict[str, object]): Cloudflared credential fieldを保持するmapping.
+
+    Returns:
+        str: JSON objectと末尾改行から成るcredential file source.
+    """
+    return f"{json.dumps(credentials)}\n"
+
+
 def _copy_root_task_gateway(repository_root: Path) -> None:
     """Root Task Gatewayを隔離repositoryへ複製する.
 
@@ -38,8 +65,13 @@ def _copy_root_task_gateway(repository_root: Path) -> None:
     """
     scripts_directory = repository_root / "scripts"
     scripts_directory.mkdir(parents=True)
+    nginx_directory = repository_root / "infra" / "development" / "nginx"
+    nginx_directory.mkdir(parents=True)
+    development_infra_directory = repository_root / "infra" / "development"
     _ = shutil.copy2(JUSTFILE_PATH, repository_root / "justfile")
     _ = shutil.copy2(SETUP_SCRIPT_PATH, scripts_directory / "setup-worktree.sh")
+    _ = shutil.copy2(NGINX_TEMPLATE_PATH, nginx_directory / "nginx.conf.template")
+    _ = shutil.copy2(STATE_VALIDATOR_PATH, development_infra_directory / "validate_state.py")
 
 
 def _initialize_git_repository(repository_root: Path) -> None:
@@ -72,6 +104,8 @@ def _fake_setup_environment(repository_root: Path) -> tuple[dict[str, str], Path
     binary_directory.mkdir()
     command_log_path = repository_root / "commands.log"
     pre_commit_config_path = repository_root / "generated-pre-commit.yaml"
+    real_mkcert_path = shutil.which("mkcert")
+    assert real_mkcert_path is not None, "mkcert must be available in the Nix development shell"
     _ = pre_commit_config_path.write_text("repos: []\n", encoding="utf-8")
 
     _write_executable(
@@ -130,24 +164,38 @@ def _fake_setup_environment(repository_root: Path) -> tuple[dict[str, str], Path
         if [[ "${1:-}" == '-install' ]]; then
           exit 0
         fi
-        certificate_file=''
-        certificate_key_file=''
-        while (($#)); do
-          case "$1" in
-            -cert-file)
-              shift
-              certificate_file="$1"
-              ;;
-            -key-file)
-              shift
-              certificate_key_file="$1"
-              ;;
-          esac
-          shift
-        done
-        [[ -n "$certificate_file" && -n "$certificate_key_file" ]]
-        printf 'fixture certificate\n' > "$certificate_file"
-        printf 'fixture private key\n' > "$certificate_key_file"
+        CAROOT="$ATHENA_TEST_MKCERT_CAROOT" exec "$ATHENA_TEST_REAL_MKCERT" "$@"
+        """,
+    )
+    _write_executable(
+        binary_directory / "sysctl",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'sysctl:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        if [[ "$*" == '-n net.ipv4.ip_unprivileged_port_start' ]]; then
+          if [[ -f "$ATHENA_TEST_SYSCTL_STATE" ]]; then
+            cat "$ATHENA_TEST_SYSCTL_STATE"
+          else
+            printf '1024\n'
+          fi
+          exit 0
+        fi
+        if [[ "$*" == '-w net.ipv4.ip_unprivileged_port_start=80' ]]; then
+          printf '80\n' > "$ATHENA_TEST_SYSCTL_STATE"
+          printf 'net.ipv4.ip_unprivileged_port_start = 80\n'
+          exit 0
+        fi
+        exit 2
+        """,
+    )
+    _write_executable(
+        binary_directory / "sudo",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'sudo:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        exec "$@"
         """,
     )
 
@@ -155,7 +203,10 @@ def _fake_setup_environment(repository_root: Path) -> tuple[dict[str, str], Path
     environment.update(
         {
             "ATHENA_TEST_COMMAND_LOG": str(command_log_path),
+            "ATHENA_TEST_MKCERT_CAROOT": str(repository_root / "mkcert-ca"),
             "ATHENA_TEST_PRE_COMMIT_CONFIG": str(pre_commit_config_path),
+            "ATHENA_TEST_REAL_MKCERT": real_mkcert_path,
+            "ATHENA_TEST_SYSCTL_STATE": str(repository_root / "sysctl-state"),
             "ATHENA_WORKTREE_ROOT": str(repository_root),
             "PATH": f"{binary_directory}:{environment['PATH']}",
         }
@@ -191,14 +242,111 @@ def _run_just(
     )
 
 
+def _generate_nginx_certificate(
+    repository_root: Path,
+    *,
+    dns_name: str = "*.athena.localhost",
+    certificate_authority_root: Path | None = None,
+) -> tuple[Path, Path]:
+    """指定DNS名のNginx certificate pairをisolated mkcert CAで生成する.
+
+    Args:
+        repository_root (Path): `.state/certs`を所有するfixture repository root.
+        dns_name (str): Certificate SANへ記録するDNS名.
+        certificate_authority_root (Path | None): mkcert CA directory.
+            Noneの場合はfixture root配下を使う.
+
+    Returns:
+        tuple[Path, Path]: 生成したcertificate pathとprivate key pathの組.
+    """
+    certificate_directory = repository_root / ".state" / "certs"
+    certificate_directory.mkdir(parents=True, exist_ok=True)
+    certificate_path = certificate_directory / "_wildcard.athena.localhost.pem"
+    certificate_key_path = certificate_directory / "_wildcard.athena.localhost-key.pem"
+    mkcert_path = shutil.which("mkcert")
+    assert mkcert_path is not None, "mkcert must be available in the Nix development shell"
+    certificate_environment = os.environ.copy()
+    certificate_environment["CAROOT"] = str(
+        certificate_authority_root or repository_root / "fixture-mkcert-ca"
+    )
+    _ = subprocess.run(
+        [
+            mkcert_path,
+            "-cert-file",
+            str(certificate_path),
+            "-key-file",
+            str(certificate_key_path),
+            dns_name,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=certificate_environment,
+    )
+    return certificate_path, certificate_key_path
+
+
+def _replace_certificate_validity(
+    certificate_path: Path,
+    *,
+    not_before: str,
+    not_after: str,
+) -> None:
+    """Test certificateのASN.1 UTCTime validity bytesを指定値へ置換する.
+
+    Args:
+        certificate_path (Path): mkcertが生成したPEM certificate path.
+        not_before (str): 13文字のASN.1 UTCTime形式で指定する有効開始時刻.
+        not_after (str): 13文字のASN.1 UTCTime形式で指定する有効終了時刻.
+
+    Returns:
+        None: Public keyを保持したままvalidity bytesを置換して完了する.
+
+    Notes:
+        Validatorのtime-window分岐を隔離して検証するfixture helperであり、置換後のcertificate署名は
+        再計算しない. Nginx key pair読込とoffline metadata decodeに必要な構造は保持する.
+    """
+    replacements = (not_before.encode("ascii"), not_after.encode("ascii"))
+    assert all(
+        len(replacement) == 13 and replacement.endswith(b"Z") and replacement[:-1].isdigit()
+        for replacement in replacements
+    )
+    pem_lines = certificate_path.read_text(encoding="ascii").splitlines()
+    encoded_certificate = "".join(line for line in pem_lines if not line.startswith("-----"))
+    certificate_der = bytearray(base64.b64decode(encoded_certificate, validate=True))
+    utc_time_offsets: list[int] = []
+    for byte_index in range(len(certificate_der) - 14):
+        if bytes(certificate_der[byte_index : byte_index + 2]) != b"\x17\r":
+            continue
+        value_offset = byte_index + 2
+        value = bytes(certificate_der[value_offset : value_offset + 13])
+        if value.endswith(b"Z") and value[:-1].isdigit():
+            utc_time_offsets.append(value_offset)
+    assert len(utc_time_offsets) >= 2, "certificate must contain notBefore and notAfter UTCTime"
+    for value_offset, replacement in zip(utc_time_offsets[:2], replacements, strict=True):
+        certificate_der[value_offset : value_offset + 13] = replacement
+    encoded_lines = textwrap.wrap(base64.b64encode(certificate_der).decode("ascii"), width=64)
+    _ = certificate_path.write_text(
+        "\n".join(
+            (
+                "-----BEGIN CERTIFICATE-----",
+                *encoded_lines,
+                "-----END CERTIFICATE-----",
+                "",
+            )
+        ),
+        encoding="ascii",
+    )
+
+
 def _create_complete_core_state(repository_root: Path) -> None:
-    """Core development preflightを満たすworktree-local stateを作る.
+    """Core development preflightを満たす有効なworktree-local stateを作る.
 
     Args:
         repository_root (Path): `.venv`と`.state`を所有するfixture repository root.
 
     Returns:
-        None: Core profileに必要なPython、state directory、hook、certificateを作成する.
+        None: Python、state directory、hook、tracked configと有効なcertificate pairを作成する.
     """
     for directory in (
         repository_root / ".state" / "postgres",
@@ -215,11 +363,13 @@ def _create_complete_core_state(repository_root: Path) -> None:
     ):
         executable_path.parent.mkdir(parents=True, exist_ok=True)
         _write_executable(executable_path, "#!/usr/bin/env bash\nexit 0\n")
-    for certificate_path in (
-        repository_root / ".state" / "certs" / "_wildcard.athena.localhost.pem",
-        repository_root / ".state" / "certs" / "_wildcard.athena.localhost-key.pem",
-    ):
-        _ = certificate_path.write_text("fixture\n", encoding="utf-8")
+    _ = _generate_nginx_certificate(repository_root)
+    nginx_config_path = repository_root / ".state" / "nginx" / "nginx.conf"
+    _ = nginx_config_path.write_text(
+        NGINX_TEMPLATE_PATH.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    _ = (repository_root / "sysctl-state").write_text("80\n", encoding="utf-8")
 
 
 def test_setup_reexecution_converges_and_reconfirms_local_trust(tmp_path: Path) -> None:
@@ -242,6 +392,11 @@ def test_setup_reexecution_converges_and_reconfirms_local_trust(tmp_path: Path) 
     environment, command_log_path = _fake_setup_environment(repository_root)
 
     first_result = _run_just(repository_root, environment, "setup")
+    nginx_config_path = repository_root / ".state" / "nginx" / "nginx.conf"
+    expected_nginx_config = NGINX_TEMPLATE_PATH.read_text(encoding="utf-8")
+    assert nginx_config_path.read_text(encoding="utf-8") == expected_nginx_config
+    _ = nginx_config_path.write_text("stale generated config\n", encoding="utf-8")
+
     second_result = _run_just(repository_root, environment, "setup")
 
     assert first_result.returncode == 0, first_result.stderr
@@ -254,6 +409,7 @@ def test_setup_reexecution_converges_and_reconfirms_local_trust(tmp_path: Path) 
     assert (state_root / "hooks" / "commit-msg").is_file()
     assert (state_root / "certs" / "_wildcard.athena.localhost.pem").is_file()
     assert (state_root / "certs" / "_wildcard.athena.localhost-key.pem").is_file()
+    assert nginx_config_path.read_text(encoding="utf-8") == expected_nginx_config
     assert (repository_root / ".pre-commit-config.yaml").resolve() == (
         repository_root / "generated-pre-commit.yaml"
     )
@@ -271,6 +427,133 @@ def test_setup_reexecution_converges_and_reconfirms_local_trust(tmp_path: Path) 
     assert command_log.count(f"uv:sync --project {repository_root} --locked --all-groups") == 2
     assert command_log.count("mkcert:-install") == 2
     assert sum(line.startswith("mkcert:-cert-file ") for line in command_log) == 1
+    assert command_log.count("sudo:sysctl -w net.ipv4.ip_unprivileged_port_start=80") == 1
+
+
+def test_setup_reexecution_repairs_invalid_nginx_certificate_pair(tmp_path: Path) -> None:
+    """Setup再実行が不正なNginx certificate pairを再生成するcontractを検証する.
+
+    初回setup後にprivate keyを破損させ、2回目の`just setup`が同じworktree-local pathへvalid pairを
+    再生成し、後続development preflightで読み込める状態へ収束することを確認する.
+
+    Args:
+        tmp_path (Path): 隔離Git repositoryとisolated mkcert CA用temporary directory.
+
+    Returns:
+        None: Invalid certificate stateの検出、再生成、再検証を確認して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    _initialize_git_repository(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+
+    first_result = _run_just(repository_root, environment, "setup")
+    certificate_path = repository_root / ".state" / "certs" / "_wildcard.athena.localhost.pem"
+    certificate_key_path = (
+        repository_root / ".state" / "certs" / "_wildcard.athena.localhost-key.pem"
+    )
+    _ = certificate_key_path.write_text("corrupt private key\n", encoding="utf-8")
+
+    second_result = _run_just(repository_root, environment, "setup")
+
+    assert first_result.returncode == 0, first_result.stderr
+    assert second_result.returncode == 0, second_result.stderr
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certificate_path, certificate_key_path)
+    command_log = command_log_path.read_text(encoding="utf-8").splitlines()
+    assert sum(line.startswith("mkcert:-cert-file ") for line in command_log) == 2
+
+
+def test_setup_reexecution_repairs_wrong_host_nginx_certificate(tmp_path: Path) -> None:
+    """Setup再実行がrequired SANを持たないNginx certificateを再生成するcontractを検証する.
+
+    初回setup後に同じisolated CAで別DNS名のvalid pairへ置換し、2回目の`just setup`が
+    `*.athena.localhost` SANを持つpairへ収束させてvalidatorを通過することを確認する.
+
+    Args:
+        tmp_path (Path): 隔離Git repositoryとisolated mkcert CA用temporary directory.
+
+    Returns:
+        None: Wrong-host certificateの検出、再生成、再検証を確認して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    _initialize_git_repository(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+
+    first_result = _run_just(repository_root, environment, "setup")
+    _ = _generate_nginx_certificate(
+        repository_root,
+        dns_name="different.example.test",
+        certificate_authority_root=Path(environment["ATHENA_TEST_MKCERT_CAROOT"]),
+    )
+    second_result = _run_just(repository_root, environment, "setup")
+    validation_result = subprocess.run(
+        [
+            sys.executable,
+            str(repository_root / "infra" / "development" / "validate_state.py"),
+            "nginx-certificates",
+            str(repository_root),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert first_result.returncode == 0, first_result.stderr
+    assert second_result.returncode == 0, second_result.stderr
+    assert validation_result.returncode == 0, validation_result.stderr
+    command_log = command_log_path.read_text(encoding="utf-8").splitlines()
+    assert sum(line.startswith("mkcert:-cert-file ") for line in command_log) == 2
+
+
+def test_setup_reexecution_repairs_expired_nginx_certificate(tmp_path: Path) -> None:
+    """Setup再実行が期限切れNginx certificateを再生成するcontractを検証する.
+
+    初回setup後にkeyとSANを保ったcertificate validityを過去へ移し、2回目の`just setup`が
+    現在有効なpairへ収束させてvalidatorを通過することを確認する.
+
+    Args:
+        tmp_path (Path): 隔離Git repositoryとexpired certificate用temporary directory.
+
+    Returns:
+        None: Expired certificateの検出、再生成、再検証を確認して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    _initialize_git_repository(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+
+    first_result = _run_just(repository_root, environment, "setup")
+    certificate_path = repository_root / ".state" / "certs" / "_wildcard.athena.localhost.pem"
+    _replace_certificate_validity(
+        certificate_path,
+        not_before="200101000000Z",
+        not_after="200102000000Z",
+    )
+    second_result = _run_just(repository_root, environment, "setup")
+    validation_result = subprocess.run(
+        [
+            sys.executable,
+            str(repository_root / "infra" / "development" / "validate_state.py"),
+            "nginx-certificates",
+            str(repository_root),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert first_result.returncode == 0, first_result.stderr
+    assert second_result.returncode == 0, second_result.stderr
+    assert validation_result.returncode == 0, validation_result.stderr
+    command_log = command_log_path.read_text(encoding="utf-8").splitlines()
+    assert sum(line.startswith("mkcert:-cert-file ") for line in command_log) == 2
 
 
 def test_setup_propagates_locked_sync_failure_before_hooks_or_trust(tmp_path: Path) -> None:
@@ -350,7 +633,10 @@ def test_dev_starts_core_profile_without_tunnel_configuration(tmp_path: Path) ->
 
     assert result.returncode == 0, result.stderr
     command_log = command_log_path.read_text(encoding="utf-8").splitlines()
-    assert command_log == ["process-compose:up app worker nginx"]
+    assert command_log == [
+        "sysctl:-n net.ipv4.ip_unprivileged_port_start",
+        "process-compose:up app worker nginx",
+    ]
 
 
 def test_dev_reports_incomplete_core_state_without_starting_processes(tmp_path: Path) -> None:
@@ -371,7 +657,7 @@ def test_dev_reports_incomplete_core_state_without_starting_processes(tmp_path: 
     _initialize_git_repository(repository_root)
     environment, command_log_path = _fake_setup_environment(repository_root)
     _create_complete_core_state(repository_root)
-    (repository_root / ".state" / "nginx").rmdir()
+    (repository_root / ".state" / "nginx" / "nginx.conf").unlink()
     binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
     _write_executable(
         binary_directory / "process-compose",
@@ -387,6 +673,229 @@ def test_dev_reports_incomplete_core_state_without_starting_processes(tmp_path: 
     assert result.returncode != 0
     assert "just setup" in result.stderr
     assert not command_log_path.exists()
+
+
+def test_dev_rejects_stale_nginx_config_without_starting_processes(tmp_path: Path) -> None:
+    """devがtracked templateと異なるgenerated Nginx configを拒否するcontractを検証する.
+
+    Core stateのactual proxy configだけを古い内容へ変更し、`dev`がProcess Graphを開始せず
+    current worktreeの`just setup`による再生成を案内することを確認する.
+
+    Args:
+        tmp_path (Path): Stale Nginx configを持つ隔離worktree用temporary directory.
+
+    Returns:
+        None: Config driftのpreflight failureとactionable recoveryを検証して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    _initialize_git_repository(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+    _create_complete_core_state(repository_root)
+    nginx_config_path = repository_root / ".state" / "nginx" / "nginx.conf"
+    _ = nginx_config_path.write_text("stale generated config\n", encoding="utf-8")
+    binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
+    _write_executable(
+        binary_directory / "process-compose",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'process-compose:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        """,
+    )
+
+    result = _run_just(repository_root, environment, "dev")
+
+    assert result.returncode != 0
+    assert "Nginx config" in result.stderr
+    assert "just setup" in result.stderr
+    assert not command_log_path.exists()
+
+
+def test_dev_rejects_invalid_nginx_certificate_without_starting_processes(
+    tmp_path: Path,
+) -> None:
+    """devが読み込めないNginx certificate pairを拒否するcontractを検証する.
+
+    Valid core stateのcertificateだけを破損させ、`dev`がProcess Graphを開始せずcurrent worktreeの
+    `just setup`によるcertificate再生成を案内することを確認する.
+
+    Args:
+        tmp_path (Path): Invalid certificateを持つ隔離worktree用temporary directory.
+
+    Returns:
+        None: Certificate validation failureとactionable recoveryを検証して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    _initialize_git_repository(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+    _create_complete_core_state(repository_root)
+    certificate_path = repository_root / ".state" / "certs" / "_wildcard.athena.localhost.pem"
+    _ = certificate_path.write_text("corrupt certificate\n", encoding="utf-8")
+    binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
+    _write_executable(
+        binary_directory / "process-compose",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'process-compose:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        """,
+    )
+
+    result = _run_just(repository_root, environment, "dev")
+
+    assert result.returncode != 0
+    assert "certificate" in result.stderr
+    assert "just setup" in result.stderr
+    assert not command_log_path.exists()
+
+
+def test_dev_rejects_nginx_certificate_for_different_hostname(
+    tmp_path: Path,
+) -> None:
+    """devが対象SANを持たないvalid certificate pairを起動前に拒否するcontractを検証する.
+
+    鍵と一致して読み込める別DNS名のcertificateへ置換し、`dev`がProcess Graphを開始せず
+    `just setup`による`*.athena.localhost` certificate再生成を案内することを確認する.
+
+    Args:
+        tmp_path (Path): Wrong-host certificateを持つ隔離worktree用temporary directory.
+
+    Returns:
+        None: Certificate SAN validation failureとProcess Compose未起動を検証して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    _initialize_git_repository(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+    _create_complete_core_state(repository_root)
+    _ = _generate_nginx_certificate(repository_root, dns_name="different.example.test")
+    binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
+    _write_executable(
+        binary_directory / "process-compose",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'process-compose:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        """,
+    )
+
+    result = _run_just(repository_root, environment, "dev")
+
+    assert result.returncode != 0
+    assert "*.athena.localhost" in result.stderr
+    assert "just setup" in result.stderr
+    assert not command_log_path.exists()
+
+
+@pytest.mark.parametrize(
+    ("not_before", "not_after", "expected_diagnostic"),
+    [
+        pytest.param(
+            "200101000000Z",
+            "200102000000Z",
+            "expired",
+            id="expired",
+        ),
+        pytest.param(
+            "490101000000Z",
+            "491231235959Z",
+            "not valid before",
+            id="not-yet-valid",
+        ),
+    ],
+)
+def test_dev_rejects_nginx_certificate_outside_validity_window(
+    tmp_path: Path,
+    not_before: str,
+    not_after: str,
+    expected_diagnostic: str,
+) -> None:
+    """devが現在時刻を含まないNginx certificate validity windowを拒否するcontractを検証する.
+
+    KeyとSANが正しいcertificateのnotBefore/notAfterだけを過去または未来へ移し、`dev`が
+    Process Graphを開始せず期限状態を報告して`just setup`による再生成を案内することを確認する.
+
+    Args:
+        tmp_path (Path): 時間範囲外certificateを持つ隔離worktree用temporary directory.
+        not_before (str): Fixture certificateへ設定するASN.1 UTCTime開始値.
+        not_after (str): Fixture certificateへ設定するASN.1 UTCTime終了値.
+        expected_diagnostic (str): Standard errorへ含めるvalidity failure識別子.
+
+    Returns:
+        None: Certificate validity validation failureとProcess Compose未起動を検証して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    _initialize_git_repository(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+    _create_complete_core_state(repository_root)
+    certificate_path = repository_root / ".state" / "certs" / "_wildcard.athena.localhost.pem"
+    _replace_certificate_validity(
+        certificate_path,
+        not_before=not_before,
+        not_after=not_after,
+    )
+    binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
+    _write_executable(
+        binary_directory / "process-compose",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'process-compose:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        """,
+    )
+
+    result = _run_just(repository_root, environment, "dev")
+
+    assert result.returncode != 0
+    assert expected_diagnostic in result.stderr
+    assert "just setup" in result.stderr
+    assert not command_log_path.exists()
+
+
+def test_dev_reports_low_port_prerequisite_without_mutating_host(tmp_path: Path) -> None:
+    """devが80/443 prerequisite不足をsetupへ戻しhost stateを変更しないcontractを検証する.
+
+    Core file stateが揃っていてもLinuxのunprivileged port thresholdが80より大きい場合、
+    `dev`はread-only checkだけを行い、sudo、sysctl mutation、Process Graph起動へ進まない.
+
+    Args:
+        tmp_path (Path): Fake kernel settingとProcess Graph adapterを置くtemporary directory.
+
+    Returns:
+        None: Low-port prerequisite failureがactionableかつ非破壊であることを検証して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    _initialize_git_repository(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+    _create_complete_core_state(repository_root)
+    _ = (repository_root / "sysctl-state").write_text("1024\n", encoding="utf-8")
+    binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
+    _write_executable(
+        binary_directory / "process-compose",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'process-compose:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        """,
+    )
+
+    result = _run_just(repository_root, environment, "dev")
+
+    assert result.returncode != 0
+    assert "net.ipv4.ip_unprivileged_port_start" in result.stderr
+    assert "just setup" in result.stderr
+    assert command_log_path.read_text(encoding="utf-8").splitlines() == [
+        "sysctl:-n net.ipv4.ip_unprivileged_port_start",
+    ]
 
 
 def test_dev_tunnel_requires_tunnel_setup_and_fails_without_cloudflare_config(
@@ -440,7 +949,10 @@ def test_dev_tunnel_reports_missing_origin_certificate_without_starting_processe
     environment, command_log_path = _fake_setup_environment(repository_root)
     _create_complete_core_state(repository_root)
     tunnel_config_path = repository_root / ".state" / "cloudflared" / "config.yml"
-    _ = tunnel_config_path.write_text("tunnel: fixture\n", encoding="utf-8")
+    _ = tunnel_config_path.write_text(
+        "ingress:\n  - service: http_status:404\n",
+        encoding="utf-8",
+    )
     binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
     _write_executable(
         binary_directory / "process-compose",
@@ -456,20 +968,24 @@ def test_dev_tunnel_reports_missing_origin_certificate_without_starting_processe
     assert result.returncode != 0
     assert "just tunnel-setup" in result.stderr
     assert "origin certificate" in result.stderr
-    assert not command_log_path.exists()
+    assert command_log_path.read_text(encoding="utf-8").splitlines() == [
+        "sysctl:-n net.ipv4.ip_unprivileged_port_start",
+    ]
 
 
-def test_dev_tunnel_reads_worktree_local_cloudflare_config(tmp_path: Path) -> None:
-    """dev-tunnelが現在worktreeのgenerated tunnel stateだけを使うcontractを検証する.
+def test_dev_tunnel_requires_fixed_worktree_local_credentials_file(
+    tmp_path: Path,
+) -> None:
+    """dev-tunnelが固定pathのtunnel execution credentialを要求するcontractを検証する.
 
-    `.state/cloudflared`配下のconfigとorigin certificateを配置し、旧root pathや別worktreeへ
-    fallbackせずcore profileへcloudflared processを追加して起動することを確認する.
+    Core state、tunnel config、account origin certificateだけを用意し、execution credential不足時は
+    Process Graphを開始せず`.state/cloudflared/credentials.json`の回復案内を返すことを確認する.
 
     Args:
-        tmp_path (Path): 隔離worktreeとfake Process Graph adapterを置くtemporary directory.
+        tmp_path (Path): Execution credential不足の隔離worktree用temporary directory.
 
     Returns:
-        None: Worktree-local tunnel stateでtunnel profileが起動することを検証して完了する.
+        None: Fixed credential pathのpreflight failureを検証して完了する.
     """
     repository_root = tmp_path / "repository"
     repository_root.mkdir()
@@ -477,11 +993,12 @@ def test_dev_tunnel_reads_worktree_local_cloudflare_config(tmp_path: Path) -> No
     _initialize_git_repository(repository_root)
     environment, command_log_path = _fake_setup_environment(repository_root)
     _create_complete_core_state(repository_root)
-    tunnel_config_path = repository_root / ".state" / "cloudflared" / "config.yml"
-    _ = tunnel_config_path.write_text("tunnel: fixture\n", encoding="utf-8")
-    origin_certificate_path = (
-        tunnel_config_path.parent / "login-home" / ".cloudflared" / "cert.pem"
+    tunnel_state_path = repository_root / ".state" / "cloudflared"
+    _ = (tunnel_state_path / "config.yml").write_text(
+        "ingress:\n  - service: http_status:404\n",
+        encoding="utf-8",
     )
+    origin_certificate_path = tunnel_state_path / "login-home" / ".cloudflared" / "cert.pem"
     _ = origin_certificate_path.parent.mkdir(parents=True)
     _ = origin_certificate_path.write_text("fixture account credential\n", encoding="utf-8")
     binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
@@ -496,9 +1013,305 @@ def test_dev_tunnel_reads_worktree_local_cloudflare_config(tmp_path: Path) -> No
 
     result = _run_just(repository_root, environment, "dev-tunnel")
 
+    assert result.returncode != 0
+    assert ".state/cloudflared/credentials.json" in result.stderr
+    assert "tunnel-setup" in result.stderr
+    assert command_log_path.read_text(encoding="utf-8").splitlines() == [
+        "sysctl:-n net.ipv4.ip_unprivileged_port_start",
+    ]
+
+
+def test_dev_tunnel_rejects_malformed_execution_credentials(tmp_path: Path) -> None:
+    """dev-tunnelがparseできないexecution credential JSONを拒否するcontractを検証する.
+
+    Fixed credential pathへ不正なJSONを置き、`dev-tunnel`がProcess Graphを開始せずCloudflared
+    create schemaを満たすJSON objectへの置換を案内することを確認する.
+
+    Args:
+        tmp_path (Path): Malformed credentialを持つ隔離worktree用temporary directory.
+
+    Returns:
+        None: Credential content validation failureを検証して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    _initialize_git_repository(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+    _create_complete_core_state(repository_root)
+    tunnel_state_path = repository_root / ".state" / "cloudflared"
+    _ = (tunnel_state_path / "config.yml").write_text(
+        "ingress:\n  - service: http_status:404\n",
+        encoding="utf-8",
+    )
+    origin_certificate_path = tunnel_state_path / "login-home" / ".cloudflared" / "cert.pem"
+    _ = origin_certificate_path.parent.mkdir(parents=True)
+    _ = origin_certificate_path.write_text("fixture account credential\n", encoding="utf-8")
+    _ = (tunnel_state_path / "credentials.json").write_text(
+        "not-json\n",
+        encoding="utf-8",
+    )
+    binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
+    _write_executable(
+        binary_directory / "process-compose",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'process-compose:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        """,
+    )
+
+    result = _run_just(repository_root, environment, "dev-tunnel")
+
+    assert result.returncode != 0
+    assert "JSON object" in result.stderr
+    assert ".state/cloudflared/credentials.json" in result.stderr
+    assert not any(
+        line.startswith("process-compose:")
+        for line in command_log_path.read_text(encoding="utf-8").splitlines()
+    )
+
+
+@pytest.mark.parametrize(
+    ("credentials", "expected_diagnostic"),
+    [
+        pytest.param(
+            {
+                "TunnelSecret": VALID_TUNNEL_SECRET,
+                "TunnelID": VALID_TUNNEL_ID,
+            },
+            "AccountTag",
+            id="missing-account-tag",
+        ),
+        pytest.param(
+            {
+                "AccountTag": "fixture-account",
+                "TunnelID": VALID_TUNNEL_ID,
+            },
+            "TunnelSecret",
+            id="missing-tunnel-secret",
+        ),
+        pytest.param(
+            {
+                "AccountTag": "fixture-account",
+                "TunnelSecret": VALID_TUNNEL_SECRET,
+            },
+            "TunnelID",
+            id="missing-tunnel-id",
+        ),
+        pytest.param(
+            {**VALID_TUNNEL_CREDENTIALS, "AccountTag": 42},
+            "AccountTag",
+            id="non-string-account-tag",
+        ),
+        pytest.param(
+            {**VALID_TUNNEL_CREDENTIALS, "AccountTag": ""},
+            "AccountTag",
+            id="empty-account-tag",
+        ),
+        pytest.param(
+            {**VALID_TUNNEL_CREDENTIALS, "TunnelSecret": 42},
+            "TunnelSecret",
+            id="non-string-tunnel-secret",
+        ),
+        pytest.param(
+            {**VALID_TUNNEL_CREDENTIALS, "TunnelSecret": "not-base64"},
+            "Base64",
+            id="invalid-base64-tunnel-secret",
+        ),
+        pytest.param(
+            {
+                **VALID_TUNNEL_CREDENTIALS,
+                "TunnelSecret": base64.b64encode(bytes(31)).decode("ascii"),
+            },
+            "32 bytes",
+            id="short-tunnel-secret",
+        ),
+        pytest.param(
+            {**VALID_TUNNEL_CREDENTIALS, "TunnelID": 42},
+            "TunnelID",
+            id="non-string-tunnel-id",
+        ),
+        pytest.param(
+            {**VALID_TUNNEL_CREDENTIALS, "TunnelID": "not-a-uuid"},
+            "UUID",
+            id="invalid-tunnel-id",
+        ),
+    ],
+)
+def test_dev_tunnel_rejects_invalid_execution_credential_fields(
+    tmp_path: Path,
+    credentials: dict[str, object],
+    expected_diagnostic: str,
+) -> None:
+    """dev-tunnelが不正なcredential fieldを起動前に拒否するcontractを検証する.
+
+    Cloudflaredが生成するcredential schemaのrequired field、string type、Base64 secret長、UUIDを
+    1条件ずつ破り、`dev-tunnel`がProcess Graphを開始せず該当fieldを報告することを確認する.
+
+    Args:
+        tmp_path (Path): Invalid credentialを持つ隔離worktree用temporary directory.
+        credentials (dict[str, object]): 1つのschema条件を破るcredential mapping.
+        expected_diagnostic (str): Standard errorへ含めるfieldまたはencoding識別子.
+
+    Returns:
+        None: Credential schema validation failureとProcess Compose未起動を検証して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    _initialize_git_repository(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+    _create_complete_core_state(repository_root)
+    tunnel_state_path = repository_root / ".state" / "cloudflared"
+    _ = (tunnel_state_path / "config.yml").write_text(
+        "ingress:\n  - service: http_status:404\n",
+        encoding="utf-8",
+    )
+    origin_certificate_path = tunnel_state_path / "login-home" / ".cloudflared" / "cert.pem"
+    _ = origin_certificate_path.parent.mkdir(parents=True)
+    _ = origin_certificate_path.write_text("fixture account credential\n", encoding="utf-8")
+    _ = (tunnel_state_path / "credentials.json").write_text(
+        _serialize_tunnel_credentials(credentials),
+        encoding="utf-8",
+    )
+    binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
+    _write_executable(
+        binary_directory / "process-compose",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'process-compose:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        """,
+    )
+
+    result = _run_just(repository_root, environment, "dev-tunnel")
+
+    assert result.returncode != 0
+    assert expected_diagnostic in result.stderr
+    assert not any(
+        line.startswith("process-compose:")
+        for line in command_log_path.read_text(encoding="utf-8").splitlines()
+    )
+
+
+def test_dev_tunnel_rejects_invalid_cloudflared_ingress_config(tmp_path: Path) -> None:
+    """dev-tunnelがCloudflared ingress validation failureを伝播するcontractを検証する.
+
+    Fixed worktree-local tunnel stateを揃えた上でCloudflared validatorを失敗させ、Process Graphを
+    開始せずvalidatorのexit statusとdiagnosticを保持することを確認する.
+
+    Args:
+        tmp_path (Path): Invalid ingress configを持つ隔離worktree用temporary directory.
+
+    Returns:
+        None: Cloudflared config validationのfail-fast behaviorを検証して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    _initialize_git_repository(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+    _create_complete_core_state(repository_root)
+    tunnel_state_path = repository_root / ".state" / "cloudflared"
+    tunnel_config_path = tunnel_state_path / "config.yml"
+    _ = tunnel_config_path.write_text("invalid ingress config\n", encoding="utf-8")
+    _ = (tunnel_state_path / "credentials.json").write_text(
+        _serialize_tunnel_credentials(VALID_TUNNEL_CREDENTIALS),
+        encoding="utf-8",
+    )
+    origin_certificate_path = tunnel_state_path / "login-home" / ".cloudflared" / "cert.pem"
+    _ = origin_certificate_path.parent.mkdir(parents=True)
+    _ = origin_certificate_path.write_text("fixture account credential\n", encoding="utf-8")
+    binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
+    _write_executable(
+        binary_directory / "cloudflared",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'cloudflared:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        echo 'fixture ingress config is invalid' >&2
+        exit 47
+        """,
+    )
+    _write_executable(
+        binary_directory / "process-compose",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'process-compose:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        """,
+    )
+
+    result = _run_just(repository_root, environment, "dev-tunnel")
+
+    assert result.returncode == 47
+    assert "ingress config is invalid" in result.stderr
+    assert command_log_path.read_text(encoding="utf-8").splitlines() == [
+        "sysctl:-n net.ipv4.ip_unprivileged_port_start",
+        f"cloudflared:tunnel --config {tunnel_config_path} ingress validate",
+    ]
+
+
+def test_dev_tunnel_reads_worktree_local_cloudflare_config(tmp_path: Path) -> None:
+    """dev-tunnelが現在worktreeのgenerated tunnel stateだけを使うcontractを検証する.
+
+    `.state/cloudflared`配下のconfig、origin certificate、execution credentialを配置し、旧root
+    pathや別worktreeへfallbackせずvalidation後にcloudflared processを追加することを確認する.
+
+    Args:
+        tmp_path (Path): 隔離worktreeとfake Process Graph adapterを置くtemporary directory.
+
+    Returns:
+        None: Worktree-local tunnel stateでtunnel profileが起動することを検証して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    _initialize_git_repository(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+    _create_complete_core_state(repository_root)
+    tunnel_config_path = repository_root / ".state" / "cloudflared" / "config.yml"
+    _ = tunnel_config_path.write_text(
+        "ingress:\n  - service: http_status:404\n",
+        encoding="utf-8",
+    )
+    origin_certificate_path = (
+        tunnel_config_path.parent / "login-home" / ".cloudflared" / "cert.pem"
+    )
+    _ = origin_certificate_path.parent.mkdir(parents=True)
+    _ = origin_certificate_path.write_text("fixture account credential\n", encoding="utf-8")
+    _ = (tunnel_config_path.parent / "credentials.json").write_text(
+        _serialize_tunnel_credentials(VALID_TUNNEL_CREDENTIALS),
+        encoding="utf-8",
+    )
+    binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
+    _write_executable(
+        binary_directory / "cloudflared",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'cloudflared:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        """,
+    )
+    _write_executable(
+        binary_directory / "process-compose",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'process-compose:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        """,
+    )
+
+    result = _run_just(repository_root, environment, "dev-tunnel")
+
     assert result.returncode == 0, result.stderr
     command_log = command_log_path.read_text(encoding="utf-8").splitlines()
-    assert command_log == ["process-compose:up app worker nginx cloudflared"]
+    assert command_log == [
+        "sysctl:-n net.ipv4.ip_unprivileged_port_start",
+        f"cloudflared:tunnel --config {tunnel_config_path} ingress validate",
+        "process-compose:up app worker nginx cloudflared",
+    ]
 
 
 def test_tunnel_setup_isolated_validation_propagates_cloudflared_failure(
@@ -522,7 +1335,10 @@ def test_tunnel_setup_isolated_validation_propagates_cloudflared_failure(
     environment, command_log_path = _fake_setup_environment(repository_root)
     tunnel_config_path = repository_root / ".state" / "cloudflared" / "config.yml"
     _ = tunnel_config_path.parent.mkdir(parents=True)
-    _ = tunnel_config_path.write_text("tunnel: fixture\n", encoding="utf-8")
+    _ = tunnel_config_path.write_text(
+        "ingress:\n  - service: http_status:404\n",
+        encoding="utf-8",
+    )
     origin_certificate_path = (
         tunnel_config_path.parent / "login-home" / ".cloudflared" / "cert.pem"
     )
@@ -535,7 +1351,7 @@ def test_tunnel_setup_isolated_validation_propagates_cloudflared_failure(
         #!/usr/bin/env bash
         set -euo pipefail
         printf 'cloudflared:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
-        echo 'fixture Cloudflare account rejected the tunnel' >&2
+        echo 'fixture Cloudflared ingress validation failed' >&2
         exit 43
         """,
     )
@@ -543,35 +1359,30 @@ def test_tunnel_setup_isolated_validation_propagates_cloudflared_failure(
     result = _run_just(repository_root, environment, "tunnel-setup")
 
     assert result.returncode == 43
-    assert "Cloudflare account" in result.stderr
+    assert "ingress validation" in result.stderr
     command_log = command_log_path.read_text(encoding="utf-8").splitlines()
-    expected_validation_command = " ".join(
-        (
-            "cloudflared:tunnel",
-            "--origincert",
-            str(origin_certificate_path),
-            "--config",
-            str(tunnel_config_path),
-            "list",
-        )
+    expected_validation_command = (
+        f"cloudflared:tunnel --config {tunnel_config_path} ingress validate"
     )
     assert command_log == [expected_validation_command]
     assert not (repository_root / ".venv").exists()
     assert not (repository_root / ".state" / "postgres").exists()
 
 
-def test_tunnel_setup_initializes_worktree_local_cloudflare_credential(tmp_path: Path) -> None:
-    """tunnel-setupが対話的account credentialを現在worktreeへ初期化するcontractを検証する.
+def test_tunnel_setup_initializes_account_state_and_guides_execution_credential(
+    tmp_path: Path,
+) -> None:
+    """tunnel-setupがaccount stateを初期化しfixed execution credentialを案内するcontractを検証する.
 
-    Cloudflaredと同様にfake loginが`$HOME/.cloudflared/cert.pem`へcredentialを生成し、同じ
-    明示的recipe内でworktree-local configのvalidationへ進むことを確認する. Core setup stateは
-    作成しない.
+    Fake loginが`$HOME/.cloudflared/cert.pem`を生成した後、missing execution credentialにfixed
+    create commandを返すことを確認する. Credential配置後の再実行はloginを繰り返さずconfig、
+    account、credentialが利用可能な状態へ収束する.
 
     Args:
         tmp_path (Path): Tunnel-only stateとfake cloudflaredを置くtemporary directory.
 
     Returns:
-        None: Cloudflare loginとvalidationがworktree-local stateへ収束することを検証して完了する.
+        None: Account login、credential guidance、再実行の収束を検証して完了する.
     """
     repository_root = tmp_path / "repository"
     repository_root.mkdir()
@@ -583,7 +1394,10 @@ def test_tunnel_setup_initializes_worktree_local_cloudflare_credential(tmp_path:
     tunnel_config_path = tunnel_state_path / "config.yml"
     tunnel_login_home = tunnel_state_path / "login-home"
     origin_certificate_path = tunnel_login_home / ".cloudflared" / "cert.pem"
-    _ = tunnel_config_path.write_text("tunnel: fixture\n", encoding="utf-8")
+    _ = tunnel_config_path.write_text(
+        "ingress:\n  - service: http_status:404\n",
+        encoding="utf-8",
+    )
     environment["ATHENA_TEST_TUNNEL_LOGIN_HOME"] = str(tunnel_login_home)
     environment["ATHENA_TEST_ORIGIN_CERTIFICATE"] = str(origin_certificate_path)
     binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
@@ -599,6 +1413,10 @@ def test_tunnel_setup_initializes_worktree_local_cloudflare_credential(tmp_path:
           printf 'fixture account credential\n' > "$ATHENA_TEST_ORIGIN_CERTIFICATE"
           exit 0
         fi
+        expected_ingress="tunnel --config $PWD/.state/cloudflared/config.yml ingress validate"
+        if [[ "$*" == "$expected_ingress" ]]; then
+          exit 0
+        fi
         expected_validation="tunnel --origincert $ATHENA_TEST_ORIGIN_CERTIFICATE"
         expected_validation+=" --config $PWD/.state/cloudflared/config.yml list"
         [[ "$*" == "$expected_validation" && -f "$ATHENA_TEST_ORIGIN_CERTIFICATE" ]]
@@ -606,12 +1424,20 @@ def test_tunnel_setup_initializes_worktree_local_cloudflare_credential(tmp_path:
     )
 
     first_result = _run_just(repository_root, environment, "tunnel-setup")
+    credentials_path = tunnel_state_path / "credentials.json"
+    _ = credentials_path.write_text(
+        _serialize_tunnel_credentials(VALID_TUNNEL_CREDENTIALS),
+        encoding="utf-8",
+    )
     second_result = _run_just(repository_root, environment, "tunnel-setup")
 
-    assert first_result.returncode == 0, first_result.stderr
+    assert first_result.returncode != 0
+    assert str(credentials_path) in first_result.stderr
+    assert "create --credentials-file" in first_result.stderr
     assert second_result.returncode == 0, second_result.stderr
     assert origin_certificate_path.is_file()
     command_log = command_log_path.read_text(encoding="utf-8").splitlines()
+    expected_ingress_command = f"cloudflared:tunnel --config {tunnel_config_path} ingress validate"
     expected_validation_command = " ".join(
         (
             "cloudflared:tunnel",
@@ -624,7 +1450,8 @@ def test_tunnel_setup_initializes_worktree_local_cloudflare_credential(tmp_path:
     )
     assert command_log == [
         "cloudflared:tunnel login",
-        expected_validation_command,
+        expected_ingress_command,
+        expected_ingress_command,
         expected_validation_command,
     ]
     assert not (repository_root / ".venv").exists()
