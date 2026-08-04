@@ -6,6 +6,7 @@ import argparse
 import subprocess
 import sys
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -16,30 +17,48 @@ INITIAL_WORKSPACE_MEMBERS = (
     "apps/athena_server",
     "packages/athena_crypto",
 )
-LEGACY_ROOT_TEST_DIRECTORY = Path("tests")
-TEMPORARY_ROOT_GITLINT_TEST_PATH = LEGACY_ROOT_TEST_DIRECTORY / "unit" / "test_forbidden_words.py"
 APPLICATIONS_DIRECTORY = "apps"
 PACKAGES_DIRECTORY = "packages"
-REPOSITORY_TOOLING_DIRECTORIES = (
-    Path("tools"),
-    Path("gitlint_rules"),
+REPOSITORY_TOOLING_ROOT = Path("tools")
+REPOSITORY_TOOLING_OWNERS = (
+    REPOSITORY_TOOLING_ROOT / "monorepo_migration",
+    REPOSITORY_TOOLING_ROOT / "gitlint",
 )
 LOCKFILE_NAME = "uv.lock"
-LOCKFILE_SEARCH_EXCLUDED_DIRECTORIES = frozenset(
+SEARCH_EXCLUDED_DIRECTORIES = frozenset(
     {
         ".git",
         ".mypy_cache",
+        ".nox",
         ".pytest_cache",
         ".ruff_cache",
         ".state",
+        ".tox",
         ".venv",
         "__pycache__",
+        "build",
+        "dist",
         "node_modules",
         "target",
     }
 )
 
 type TomlTable = dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class PackageTestContract:
+    """Package testをisolated artifact verifierから実行するroot contractを表す.
+
+    Attributes:
+        test_root (Path): Package ownerが保持するtest source directory.
+        verifier (Path): Wheel-only consumerでpackage testを実行するentrypoint.
+        root_contract_test (Path): Direct pytest targetからverifierを一度だけ実行するtest file.
+    """
+
+    test_root: Path
+    verifier: Path
+    root_contract_test: Path
 
 
 class WorkspaceValidationError(RuntimeError):
@@ -80,7 +99,7 @@ def _validate_authoritative_lockfile(repository_root: Path) -> None:
     lockfile_paths: list[Path] = []
     for directory, directory_names, file_names in repository_root.walk():
         directory_names[:] = [
-            name for name in directory_names if name not in LOCKFILE_SEARCH_EXCLUDED_DIRECTORIES
+            name for name in directory_names if name not in SEARCH_EXCLUDED_DIRECTORIES
         ]
         if LOCKFILE_NAME in file_names:
             lockfile_paths.append(directory / LOCKFILE_NAME)
@@ -218,38 +237,38 @@ def _member_test_paths(repository_root: Path, member_path: Path) -> tuple[Path, 
     return test_paths
 
 
-def _tooling_test_roots(repository_root: Path) -> tuple[Path, ...]:
-    """Repository tooling owner配下のcanonical pytest rootを収集する.
+def _tooling_test_inventory(
+    repository_root: Path,
+) -> tuple[tuple[Path, ...], tuple[Path, ...]]:
+    """明示されたrepository tooling ownerのtest rootとtest fileを収集する.
 
     Args:
         repository_root (Path): tooling owner directoryを解決するrepository root.
 
     Returns:
-        tuple[Path, ...]: `tools`と`gitlint_rules`配下で検出したroot-relative `tests` directory.
+        tuple[tuple[Path, ...], tuple[Path, ...]]: ownerごとのroot-relative `tests` directoryと、
+            その配下で検出したtest file path.
 
     Raises:
-        WorkspaceValidationError: tooling test fileが`tests` directory外にある場合.
+        WorkspaceValidationError: owner testが欠落するか、`tests` directory外にある場合.
     """
     tooling_test_roots: list[Path] = []
+    tooling_test_paths: list[Path] = []
     invalid_paths: list[str] = []
-    for tooling_directory in REPOSITORY_TOOLING_DIRECTORIES:
-        tooling_root = repository_root / tooling_directory
-        owner_test_roots: set[Path] = set()
+    for tooling_owner in REPOSITORY_TOOLING_OWNERS:
+        tooling_root = repository_root / tooling_owner
+        canonical_test_root = tooling_root / "tests"
         test_paths = sorted(path for path in tooling_root.rglob("test_*.py") if path.is_file())
-        for test_path in test_paths:
-            test_root = next(
-                (
-                    parent
-                    for parent in test_path.parents
-                    if parent.name == "tests" and parent.is_relative_to(tooling_root)
-                ),
-                None,
-            )
-            if test_root is None:
-                invalid_paths.append(test_path.relative_to(repository_root).as_posix())
-                continue
-            owner_test_roots.add(test_root.relative_to(repository_root))
-        tooling_test_roots.extend(sorted(owner_test_roots, key=lambda path: path.as_posix()))
+        invalid_paths.extend(
+            test_path.relative_to(repository_root).as_posix()
+            for test_path in test_paths
+            if not test_path.is_relative_to(canonical_test_root)
+        )
+        if not test_paths:
+            message = f"Repository tooling owner has no tests: {tooling_owner}"
+            raise WorkspaceValidationError(message)
+        tooling_test_roots.append(canonical_test_root.relative_to(repository_root))
+        tooling_test_paths.extend(test_paths)
 
     if invalid_paths:
         message = (
@@ -257,36 +276,213 @@ def _tooling_test_roots(repository_root: Path) -> tuple[Path, ...]:
             f"{invalid_paths!r}"
         )
         raise WorkspaceValidationError(message)
-    return tuple(tooling_test_roots)
+    return tuple(tooling_test_roots), tuple(tooling_test_paths)
 
 
-def _validate_root_test_files(repository_root: Path) -> None:
-    """Root `tests`に一時Gitlint testだけが残ることを検証する.
+def _all_test_paths(repository_root: Path) -> tuple[Path, ...]:
+    """Generated stateを除くrepository treeからPython test fileを収集する.
 
     Args:
-        repository_root (Path): root test directoryを解決するrepository root.
+        repository_root (Path): test fileの探索を開始するrepository root.
 
     Returns:
-        None: `tests/unit/test_forbidden_words.py`だけが存在することを確認して完了する.
+        tuple[Path, ...]: rootからのrelative path順に並べた全test file.
+    """
+    test_paths: list[Path] = []
+    for directory, directory_names, file_names in repository_root.walk():
+        directory_names[:] = [
+            name for name in directory_names if name not in SEARCH_EXCLUDED_DIRECTORIES
+        ]
+        test_paths.extend(
+            (directory / file_name).relative_to(repository_root)
+            for file_name in file_names
+            if file_name.startswith("test_") and file_name.endswith(".py")
+        )
+    return tuple(sorted(test_paths, key=lambda path: path.as_posix()))
+
+
+def _validate_test_ownership(repository_root: Path, owned_test_paths: set[Path]) -> None:
+    """全test fileが明示されたworkspaceまたはtool ownerに属することを検証する.
+
+    Args:
+        repository_root (Path): repository全体のtest inventoryを解決するroot directory.
+        owned_test_paths (set[Path]): owner policyから収集したroot-relative test file path.
+
+    Returns:
+        None: 全test fileのownerが明示されていることを確認して完了する.
 
     Raises:
-        WorkspaceValidationError: 一時Gitlint testが欠落するか、他のroot test fileがある場合.
+        WorkspaceValidationError: root gateへ接続されていないtest locationが存在する場合.
     """
-    legacy_test_root = repository_root / LEGACY_ROOT_TEST_DIRECTORY
-    root_test_paths = tuple(
-        sorted(
-            path.relative_to(repository_root).as_posix()
-            for path in legacy_test_root.rglob("test_*.py")
-            if path.is_file()
-        )
+    unowned_test_paths = [
+        path.as_posix()
+        for path in _all_test_paths(repository_root)
+        if path not in owned_test_paths
+    ]
+    if unowned_test_paths:
+        message = f"Test files have no root validation owner: {unowned_test_paths!r}"
+        raise WorkspaceValidationError(message)
+
+
+def _configured_pytest_paths(repository_root: Path) -> tuple[Path, ...]:
+    """Root manifestが公開するpytest target pathを取得する.
+
+    Args:
+        repository_root (Path): root `pyproject.toml`を所有するrepository directory.
+
+    Returns:
+        tuple[Path, ...]: root manifestに宣言された順序付きpytest target path.
+
+    Raises:
+        WorkspaceValidationError: pytest設定またはtestpathsが不正な場合.
+    """
+    manifest_path = repository_root / "pyproject.toml"
+    manifest = _toml_table(
+        tomllib.loads(manifest_path.read_text(encoding="utf-8")),
+        "root manifest",
     )
-    expected_root_test_paths = (TEMPORARY_ROOT_GITLINT_TEST_PATH.as_posix(),)
-    if root_test_paths != expected_root_test_paths:
+    tool = _toml_table(manifest.get("tool"), "tool")
+    pytest_configuration = _toml_table(tool.get("pytest"), "tool.pytest")
+    ini_options = _toml_table(
+        pytest_configuration.get("ini_options"),
+        "tool.pytest.ini_options",
+    )
+    raw_testpaths = ini_options.get("testpaths")
+    if not isinstance(raw_testpaths, list):
+        message = "tool.pytest.ini_options.testpaths must be a string list"
+        raise WorkspaceValidationError(message)
+    testpaths = cast("list[object]", raw_testpaths)
+    if not all(isinstance(testpath, str) for testpath in testpaths):
+        message = "tool.pytest.ini_options.testpaths must be a string list"
+        raise WorkspaceValidationError(message)
+    return tuple(Path(testpath) for testpath in cast("list[str]", raw_testpaths))
+
+
+def _toml_string(table: TomlTable, field_name: str, context: str) -> str:
+    """TOML tableから必須string fieldを取得する.
+
+    Args:
+        table (TomlTable): fieldを取得するconfiguration table.
+        field_name (str): 取得するfield名.
+        context (str): failure messageに含めるtableの識別名.
+
+    Returns:
+        str: 検証済みconfiguration value.
+
+    Raises:
+        WorkspaceValidationError: fieldがstringでない場合.
+    """
+    value = table.get(field_name)
+    if not isinstance(value, str):
+        message = f"{context}.{field_name} must be a string"
+        raise WorkspaceValidationError(message)
+    return value
+
+
+def _safe_contract_path(raw_path: str, field_name: str) -> Path:
+    """Package test contract pathがrepository-relativeであることを検証する.
+
+    Args:
+        raw_path (str): Root configurationから取得したpath value.
+        field_name (str): failure messageに含めるconfiguration field名.
+
+    Returns:
+        Path: 安全なrelative pathとして扱えるpath.
+
+    Raises:
+        WorkspaceValidationError: absolute pathまたはparent traversalを含む場合.
+    """
+    path = Path(raw_path)
+    if path.is_absolute() or ".." in path.parts:
+        message = f"{field_name} must be a safe repository-relative path: {raw_path}"
+        raise WorkspaceValidationError(message)
+    return path
+
+
+def _package_test_contracts(
+    repository_root: Path,
+    member_paths: tuple[Path, ...],
+    application_pytest_roots: tuple[Path, ...],
+) -> tuple[PackageTestContract, ...]:
+    """Package-owned testをdirect pytest以外から実行するcontractを検証する.
+
+    Args:
+        repository_root (Path): Root policyとcontract artifactを解決するrepository root.
+        member_paths (tuple[Path, ...]): Validation済みworkspace member path.
+        application_pytest_roots (tuple[Path, ...]): Root gateが直接実行するapplication test root.
+
+    Returns:
+        tuple[PackageTestContract, ...]: Package member順のartifact test execution contract.
+
+    Raises:
+        WorkspaceValidationError: Package test contractが欠落、不正、またはowner外を参照する場合.
+    """
+    manifest = _toml_table(
+        tomllib.loads((repository_root / "pyproject.toml").read_text(encoding="utf-8")),
+        "root manifest",
+    )
+    tool = _toml_table(manifest.get("tool"), "tool")
+    athena = _toml_table(tool.get("athena", {}), "tool.athena")
+    validation = _toml_table(
+        athena.get("validation", {}),
+        "tool.athena.validation",
+    )
+    package_tests = _toml_table(
+        validation.get("package-tests", {}),
+        "tool.athena.validation.package-tests",
+    )
+    package_members = tuple(
+        member_path for member_path in member_paths if _member_kind(member_path) == "package"
+    )
+    expected_test_roots = tuple(member_path / "tests" for member_path in package_members)
+    configured_test_roots = tuple(Path(test_root) for test_root in package_tests)
+    if configured_test_roots != expected_test_roots:
         message = (
-            "Root test files must contain only the temporary Gitlint test: expected "
-            f"{list(expected_root_test_paths)!r}, got {list(root_test_paths)!r}"
+            "Package test execution contracts must match package workspace owners: expected "
+            f"{[path.as_posix() for path in expected_test_roots]!r}, got "
+            f"{[path.as_posix() for path in configured_test_roots]!r}"
         )
         raise WorkspaceValidationError(message)
+
+    contracts: list[PackageTestContract] = []
+    for member_path, test_root in zip(package_members, expected_test_roots, strict=True):
+        context = f"tool.athena.validation.package-tests.{test_root.as_posix()}"
+        configuration = _toml_table(package_tests.get(test_root.as_posix()), context)
+        verifier = _safe_contract_path(
+            _toml_string(configuration, "verifier", context),
+            f"{context}.verifier",
+        )
+        root_contract_test = _safe_contract_path(
+            _toml_string(configuration, "root-contract-test", context),
+            f"{context}.root-contract-test",
+        )
+        expected_contract_name = _artifact_contract_test_name(member_path)
+        if (
+            verifier.parent != member_path / "scripts"
+            or not (repository_root / verifier).is_file()
+        ):
+            message = f"Package artifact verifier is missing or outside its owner: {verifier}"
+            raise WorkspaceValidationError(message)
+        if root_contract_test.name != expected_contract_name or not any(
+            root_contract_test.is_relative_to(pytest_root)
+            for pytest_root in application_pytest_roots
+        ):
+            message = (
+                "Package root contract test must be an application pytest target named "
+                f"{expected_contract_name}: {root_contract_test}"
+            )
+            raise WorkspaceValidationError(message)
+        if not (repository_root / root_contract_test).is_file():
+            message = f"Package root contract test is missing: {root_contract_test}"
+            raise WorkspaceValidationError(message)
+        contracts.append(
+            PackageTestContract(
+                test_root=test_root,
+                verifier=verifier,
+                root_contract_test=root_contract_test,
+            )
+        )
+    return tuple(contracts)
 
 
 def _pytest_roots(repository_root: Path) -> tuple[Path, ...]:
@@ -299,16 +495,20 @@ def _pytest_roots(repository_root: Path) -> tuple[Path, ...]:
         tuple[Path, ...]: rootからのrelative pytest target directory.
 
     Raises:
-        WorkspaceValidationError: root Gitlint testまたはtest locationが不正で、package testの
+        WorkspaceValidationError: test ownershipまたはroot pytest設定が不正で、package testの
             artifact contract不足、またはpytest targetが一件もない場合.
     """
     members = _workspace_members(repository_root)
-    _validate_root_test_files(repository_root)
     application_pytest_roots: list[Path] = []
+    owned_test_paths: set[Path] = set()
 
     artifact_contract_test_names: list[str] = []
     for member_path in members:
         test_paths = _member_test_paths(repository_root, member_path)
+        if not test_paths:
+            message = f"Workspace member has no tests: {member_path}"
+            raise WorkspaceValidationError(message)
+        owned_test_paths.update(path.relative_to(repository_root) for path in test_paths)
         test_root = member_path / "tests"
         if _member_kind(member_path) == "application" and test_paths:
             application_pytest_roots.append(test_root)
@@ -335,11 +535,75 @@ def _pytest_roots(repository_root: Path) -> tuple[Path, ...]:
             f"{missing_contract_tests!r}"
         )
         raise WorkspaceValidationError(message)
-    return (
-        LEGACY_ROOT_TEST_DIRECTORY,
-        *application_pytest_roots,
-        *_tooling_test_roots(repository_root),
+    _ = _package_test_contracts(
+        repository_root,
+        members,
+        tuple(application_pytest_roots),
     )
+    tooling_test_roots, tooling_test_paths = _tooling_test_inventory(repository_root)
+    owned_test_paths.update(path.relative_to(repository_root) for path in tooling_test_paths)
+    _validate_test_ownership(repository_root, owned_test_paths)
+    pytest_roots = (*application_pytest_roots, *tooling_test_roots)
+    configured_pytest_paths = _configured_pytest_paths(repository_root)
+    if configured_pytest_paths != pytest_roots:
+        message = (
+            "Root pytest testpaths must match validation owners: expected "
+            f"{[path.as_posix() for path in pytest_roots]!r}, got "
+            f"{[path.as_posix() for path in configured_pytest_paths]!r}"
+        )
+        raise WorkspaceValidationError(message)
+    return pytest_roots
+
+
+def _test_coverage_lines(
+    repository_root: Path,
+    pytest_roots: tuple[Path, ...],
+) -> tuple[str, ...]:
+    """Root test gateが各ownerを実行する方法を順序付きで報告する.
+
+    Args:
+        repository_root (Path): Workspaceとpackage contractを解決するrepository root.
+        pytest_roots (tuple[Path, ...]): Validation済みdirect pytest target.
+
+    Returns:
+        tuple[str, ...]: Server、crypto、repository toolごとのtest execution contract.
+    """
+    members = _workspace_members(repository_root)
+    application_pytest_roots = tuple(
+        pytest_root
+        for pytest_root in pytest_roots
+        if pytest_root.parts[0] == APPLICATIONS_DIRECTORY
+    )
+    package_contracts = {
+        contract.test_root: contract
+        for contract in _package_test_contracts(
+            repository_root,
+            members,
+            application_pytest_roots,
+        )
+    }
+    coverage_lines: list[str] = []
+    for member_path in members:
+        test_root = member_path / "tests"
+        if _member_kind(member_path) == "application":
+            coverage_lines.append(f"{test_root.as_posix()}: pytest")
+            continue
+        contract = package_contracts[test_root]
+        verifier = contract.verifier.as_posix()
+        root_contract_test = contract.root_contract_test.as_posix()
+        execution_contract = ", ".join(
+            (
+                f"artifact-verifier={verifier}",
+                f"root-contract-test={root_contract_test}",
+            )
+        )
+        coverage_lines.append(f"{test_root.as_posix()}: {execution_contract}")
+    coverage_lines.extend(
+        f"{pytest_root.as_posix()}: pytest"
+        for pytest_root in pytest_roots
+        if pytest_root.parts[0] == REPOSITORY_TOOLING_ROOT.name
+    )
+    return tuple(coverage_lines)
 
 
 def _type_check_paths(
@@ -353,7 +617,7 @@ def _type_check_paths(
         pytest_roots (tuple[Path, ...]): validation済みroot pytest target directory.
 
     Returns:
-        tuple[Path, ...]: source、root/server test、public typing、repository toolingを一度ずつ含む
+        tuple[Path, ...]: source、workspace test、public typing、repository toolingを一度ずつ含む
             type target.
     """
     application_type_paths: list[Path] = []
@@ -375,17 +639,13 @@ def _type_check_paths(
         for pytest_root in pytest_roots
         if pytest_root.parts[0] == APPLICATIONS_DIRECTORY
     ]
-    root_test_paths = [
-        pytest_root for pytest_root in pytest_roots if pytest_root == LEGACY_ROOT_TEST_DIRECTORY
-    ]
     return tuple(
         dict.fromkeys(
             (
                 *application_type_paths,
-                *root_test_paths,
                 *application_test_paths,
                 *package_type_paths,
-                *REPOSITORY_TOOLING_DIRECTORIES,
+                *REPOSITORY_TOOLING_OWNERS,
             )
         )
     )
@@ -443,6 +703,11 @@ def _parser() -> argparse.ArgumentParser:
         help="検証済みBasedpyright targetをroot-relative pathで一行ずつ出力する.",
     )
     _ = output_mode.add_argument(
+        "--test-coverage",
+        action="store_true",
+        help="各workspace/tool test ownerのdirectまたはartifact execution contractを出力する.",
+    )
+    _ = output_mode.add_argument(
         "--run-basedpyright",
         action="store_true",
         help="検証済みBasedpyright targetにtype checkを実行する.",
@@ -463,6 +728,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     repository_root = cast("Path", arguments.repository_root).resolve()
     print_pytest_paths = cast("bool", arguments.pytest_paths)
     print_type_check_paths = cast("bool", arguments.type_check_paths)
+    print_test_coverage = cast("bool", arguments.test_coverage)
     run_basedpyright = cast("bool", arguments.run_basedpyright)
     try:
         pytest_roots = _pytest_roots(repository_root)
@@ -478,6 +744,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if print_pytest_paths:
         for pytest_root in pytest_roots:
             print(pytest_root.as_posix())
+    elif print_test_coverage:
+        for coverage_line in _test_coverage_lines(repository_root, pytest_roots):
+            print(coverage_line)
     elif print_type_check_paths:
         for type_check_path in type_check_paths:
             print(type_check_path.as_posix())

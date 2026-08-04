@@ -63,12 +63,12 @@
       "athena-crypto": "packages/athena_crypto"
     },
     "retired_paths": ["src", "alembic", "alembic.ini", "tests", "athena-crypto"],
-    "retired_path_exceptions": ["tests/unit/test_forbidden_words.py"],
+    "retired_path_exceptions": [],
     "validation": {
       "pytest_testpaths": [
-        "tests",
         "apps/athena_server/tests",
-        "tools/monorepo_migration/tests"
+        "tools/monorepo_migration/tests",
+        "tools/gitlint/tests"
       ]
     }
   },

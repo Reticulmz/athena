@@ -28,8 +28,11 @@ target-version = "py313"
 src = [
     "apps/athena_server/src",
     "apps/athena_server/tests",
-    "tests",
     "packages/athena_crypto/typings",
+    "packages/athena_crypto/scripts",
+    "packages/athena_crypto/tests",
+    "tools/monorepo_migration",
+    "tools/gitlint",
 ]
 line-length = 99
 
@@ -71,8 +74,9 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "apps/athena_server/tests/**/*.py" = ["PLR2004"]  # Magic numbers are common/expected in test assertions
-"tests/**/*.py" = ["PLR2004"]  # Magic numbers are common/expected in test assertions
+"packages/athena_crypto/tests/**/*.py" = ["PLR2004"]  # Native compatibility tests assert protocol sizes and vectors
 "tools/monorepo_migration/tests/**/*.py" = ["PLR2004"]  # Tooling test assertions use intentional literals
+"tools/gitlint/tests/**/*.py" = ["PLR2004"]  # Gitlint rule tests assert stable rule identifiers and sets
 "apps/athena_server/tests/unit/transports/bancho/test_di_registration.py" = ["PLC0415"]  # Requires local import to test laziness
 "apps/athena_server/tests/integration/test_login_flow.py" = ["PLC0415"]
 "apps/athena_server/tests/integration/test_polling_e2e.py" = ["PLC0415"]
@@ -114,12 +118,16 @@ venv = ".venv"
 
 [tool.pytest.ini_options]
 testpaths = [
-    "tests",
     "apps/athena_server/tests",
     "tools/monorepo_migration/tests",
+    "tools/gitlint/tests",
 ]
 pythonpath = [".", "apps/athena_server"]
 asyncio_mode = "auto"
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+
+[tool.athena.validation.package-tests."packages/athena_crypto/tests"]
+verifier = "packages/athena_crypto/scripts/verify_artifact.py"
+root-contract-test = "apps/athena_server/tests/unit/test_crypto_workspace_artifact.py"

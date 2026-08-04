@@ -1,11 +1,50 @@
-"""ForbiddenWords gitlint ルールのユニットテストを提供する."""
+"""Repository-owned ForbiddenWords Gitlint ruleのunit testを提供する."""
 
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from gitlint_rules.forbidden_words import FORBIDDEN_WORDS, ForbiddenWords
+from tools.gitlint.rules.forbidden_words import FORBIDDEN_WORDS, ForbiddenWords
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+
+
+def test_root_gitlint_configuration_loads_repository_owned_rules(tmp_path: Path) -> None:
+    """Root Gitlint configurationがtool ownerのcustom rule directoryをloadすることを検証する.
+
+    Args:
+        tmp_path (Path): 検証用commit messageを隔離するtemporary directory.
+
+    Returns:
+        None: `.gitlint`経由でcustom ruleが実行されUC1を報告することを検証して完了する.
+    """
+    configuration = (REPOSITORY_ROOT / ".gitlint").read_text(encoding="utf-8")
+    commit_message = tmp_path / "commit-message.txt"
+    _ = commit_message.write_text("feat: update\n", encoding="utf-8")
+
+    assert "extra-path = tools/gitlint/rules/" in configuration
+    assert "gitlint_rules/" not in configuration
+    assert (REPOSITORY_ROOT / "tools/gitlint/rules/forbidden_words.py").is_file()
+    result = subprocess.run(
+        [
+            "gitlint",
+            "--config",
+            str(REPOSITORY_ROOT / ".gitlint"),
+            "--msg-filename",
+            str(commit_message),
+        ],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode != 0
+    assert "UC1" in result.stderr
 
 
 def _make_commit(title: str) -> MagicMock:

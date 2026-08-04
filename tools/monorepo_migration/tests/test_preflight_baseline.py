@@ -365,9 +365,11 @@ def _make_post_cutover_repository(tmp_path: Path) -> Path:
         server_root / "alembic.ini",
     )
     _ = shutil.copy2(REPOSITORY_ROOT / "pyproject.toml", repository_root / "pyproject.toml")
-    root_gitlint_test = repository_root / "tests/unit/test_forbidden_words.py"
-    root_gitlint_test.parent.mkdir(parents=True)
-    _ = shutil.copy2(REPOSITORY_ROOT / "tests/unit/test_forbidden_words.py", root_gitlint_test)
+    _ = shutil.copytree(
+        REPOSITORY_ROOT / "tools/gitlint",
+        repository_root / "tools/gitlint",
+        ignore=ignored_paths,
+    )
     _ = shutil.copy2(REPOSITORY_ROOT / ".gitignore", repository_root / ".gitignore")
     _ = shutil.copy2(
         REPOSITORY_ROOT / "process-compose.yml",
@@ -740,10 +742,9 @@ def test_post_cutover_mode_accepts_relocated_contract_without_pre_cutover_invent
     """Post-cutover modeが予定済みrelocation後も意味的contractを比較することを検証する.
 
     旧root source、Alembic、manifest、legacy script、root task gatewayを持たないfixtureに対して
-    post-cutover modeが成功することを確認する. Task 3.4のGitlint移設まで許可する
-    `tests/unit/test_forbidden_words.py`とgenerated cacheだけがroot `tests`に残る場合も、server
-    source authorityの重複ではないため同じ成功を維持する. 同じtreeをpre-cutover modeで検証した
-    場合はinventory mismatchになる.
+    post-cutover modeが成功することを確認する. Gitlint rule/testはrepository tool ownerへ移設し、
+    generated cacheだけを含むroot `tests`はsource authorityの重複と扱わない. 同じtreeを
+    pre-cutover modeで検証した場合はinventory mismatchになる.
 
     Args:
         tmp_path (Path): relocation済みfixtureを隔離する一時directory.
@@ -778,7 +779,7 @@ def test_post_cutover_mode_accepts_relocated_contract_without_pre_cutover_invent
     mutated_baseline = _load_baseline_document()
     compatibility = _nested_mapping(mutated_baseline, "post_cutover_compatibility")
     validation = _nested_mapping(compatibility, "validation")
-    validation["pytest_testpaths"] = ["tests"]
+    validation["pytest_testpaths"] = ["apps/athena_server/tests"]
     compatibility["validation"] = validation
     mutated_baseline["post_cutover_compatibility"] = compatibility
 
@@ -792,14 +793,13 @@ def test_post_cutover_mode_accepts_relocated_contract_without_pre_cutover_invent
     assert "Pytest target paths changed" in mutated_post_cutover_result.stderr
 
 
-def test_post_cutover_mode_rejects_root_test_outside_gitlint_exception(
+def test_post_cutover_mode_rejects_root_test_without_an_owner(
     tmp_path: Path,
 ) -> None:
-    """Post-cutover modeが一時Gitlint test以外のroot testを拒否することを検証する.
+    """Post-cutover modeがownerのないroot testを拒否することを検証する.
 
-    Server test移設後に`tests/test_forbidden_words.py`が残ると、root testの一時例外がowner
-    boundaryの抜け穴になる。許可された`tests/unit/test_forbidden_words.py`以外のtest fileを
-    追加したfixtureがnon-zeroで停止することを確認する.
+    Server/Gitlint test移設後にroot testが残るとowner boundaryの抜け穴になるため、任意のtest
+    fileを追加したfixtureがnon-zeroで停止することを確認する.
 
     Args:
         tmp_path (Path): relocation済みfixtureを隔離する一時directory.
@@ -808,7 +808,8 @@ def test_post_cutover_mode_rejects_root_test_outside_gitlint_exception(
         None: 非許可root testを含むpost-cutover fixtureの拒否を検証して完了する.
     """
     repository_root = _make_post_cutover_repository(tmp_path)
-    unexpected_root_test = repository_root / "tests/test_forbidden_words.py"
+    unexpected_root_test = repository_root / "tests/test_repository_tooling.py"
+    unexpected_root_test.parent.mkdir(parents=True)
     _ = unexpected_root_test.write_text("", encoding="utf-8")
 
     result = _run_checker(

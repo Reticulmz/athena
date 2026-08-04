@@ -114,7 +114,7 @@
   - _Requirements: 5.1, 5.2, 5.4, 5.5, 5.6, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 10.4, 10.5_
   - _Boundary: Process Graph, Development Infra_
 
-- [ ] 3.4 Repository-wide validation policyとtool ownershipを構築する (P)
+- [x] 3.4 Repository-wide validation policyとtool ownershipを構築する (P)
   - Format、lint、docstring、type、import-boundary、testの対象をserver、crypto、repository toolsへ明示する。
   - Workspace/test omissionを機械的に検出し、future empty system-test memberを要求しない。
   - Gitlint rule/testをrepository tooling ownerへ移し、root configurationからloadする。
@@ -238,3 +238,4 @@
 - 2026-08-03: Task 3.1はserver/crypto workspace module、root composed devShell、Nix checksを追加し、`nix develop`のsync/state/hook/certificate副作用を除去した。`nix flake check`、関連validation test 28件、side-effect-free shell実測、`prek run --all-files`が成功した。
 - Task 3.1ではworkspace artifact buildとNix-native structural checksを先に分離し、project dependencyを必要とする全hook実行はexplicit setupとTask 3.4のvalidation ownerへ残す。Flakeはhook configurationの生成とconsumer pathを検証する。
 - 2026-08-04: Task 3.2のCloudflared 2026.6.0 loginはcredentialを`$HOME/.cloudflared/cert.pem`へ出力するため、`HOME`をworktree-local stateへ隔離した。`dev-tunnel` preflightはconfigとorigin certificateの両方を要求する。
+- 2026-08-04: Task 3.4のroot test policyはcrypto package testsをdirect pytestで重複実行せず、`test_crypto_workspace_artifact.py`からwheel-only artifact verifierを一度だけ実行する。`--test-coverage`がserver、crypto、monorepo tooling、Gitlint toolingのexecution contractを列挙する。

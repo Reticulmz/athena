@@ -1,4 +1,4 @@
-"""禁止ワードのみの description を拒否するカスタムルール."""
+"""禁止ワードだけのcommit descriptionを拒否するGitlint custom rule."""
 
 from __future__ import annotations
 

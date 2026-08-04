@@ -20,7 +20,13 @@ WORKSPACE_VALIDATION_TOOL_PATH = (
 )
 SERVER_WORKSPACE_PATH = "apps/athena_server"
 CRYPTO_WORKSPACE_PATH = "packages/athena_crypto"
-ROOT_GITLINT_TEST_PATH = "tests/unit/test_forbidden_words.py"
+CRYPTO_TEST_PATH = f"{CRYPTO_WORKSPACE_PATH}/tests"
+CRYPTO_ARTIFACT_VERIFIER_PATH = f"{CRYPTO_WORKSPACE_PATH}/scripts/verify_artifact.py"
+CRYPTO_ROOT_CONTRACT_TEST_PATH = (
+    f"{SERVER_WORKSPACE_PATH}/tests/unit/test_crypto_workspace_artifact.py"
+)
+GITLINT_TOOL_PATH = "tools/gitlint"
+MONOREPO_TOOL_PATH = "tools/monorepo_migration"
 SERVER_WORKSPACE_TASKS_PATH = (
     REPOSITORY_ROOT / SERVER_WORKSPACE_PATH / "scripts" / "workspace_tasks.py"
 )
@@ -28,13 +34,12 @@ EXPECTED_WORKSPACE_MEMBERS = [SERVER_WORKSPACE_PATH, CRYPTO_WORKSPACE_PATH]
 REQUIRED_TYPE_CHECK_PATHS = (
     "apps/athena_server/src",
     "apps/athena_server/scripts",
-    "tests",
     "apps/athena_server/tests",
     "packages/athena_crypto/typings",
     "packages/athena_crypto/scripts",
     "packages/athena_crypto/tests",
-    "tools",
-    "gitlint_rules",
+    MONOREPO_TOOL_PATH,
+    GITLINT_TOOL_PATH,
 )
 TYPE_CHECKER_COMMAND = "tools/monorepo_migration/verify_workspace_validation.py --run-basedpyright"
 type TomlTable = dict[str, object]
@@ -112,26 +117,44 @@ def _write_workspace_fixture(tmp_path: Path, *, include_artifact_tests: bool) ->
     repository_root = tmp_path / "repository"
     server_root = repository_root / SERVER_WORKSPACE_PATH
     crypto_root = repository_root / CRYPTO_WORKSPACE_PATH
-    root_tests = repository_root / "tests"
     server_tests = server_root / "tests"
     crypto_tests = crypto_root / "tests"
-    for directory in (root_tests, server_tests, crypto_tests):
+    monorepo_tool_tests = repository_root / MONOREPO_TOOL_PATH / "tests"
+    gitlint_tests = repository_root / GITLINT_TOOL_PATH / "tests"
+    for directory in (server_tests, crypto_tests, monorepo_tool_tests, gitlint_tests):
         directory.mkdir(parents=True)
     _ = (repository_root / "pyproject.toml").write_text(
-        '[tool.uv.workspace]\nmembers = ["apps/athena_server", "packages/athena_crypto"]\n',
+        """[tool.uv.workspace]
+members = ["apps/athena_server", "packages/athena_crypto"]
+
+[tool.pytest.ini_options]
+testpaths = [
+    "apps/athena_server/tests",
+    "tools/monorepo_migration/tests",
+    "tools/gitlint/tests",
+]
+
+[tool.athena.validation.package-tests."packages/athena_crypto/tests"]
+verifier = "packages/athena_crypto/scripts/verify_artifact.py"
+root-contract-test = "apps/athena_server/tests/unit/test_crypto_workspace_artifact.py"
+""",
         encoding="utf-8",
     )
     for manifest_path in (server_root / "pyproject.toml", crypto_root / "pyproject.toml"):
         _ = manifest_path.write_text('[project]\nname = "fixture"\n', encoding="utf-8")
     _ = (repository_root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
-    root_gitlint_test = repository_root / ROOT_GITLINT_TEST_PATH
-    root_gitlint_test.parent.mkdir(parents=True)
-    _ = root_gitlint_test.write_text("", encoding="utf-8")
+    _ = (gitlint_tests / "test_forbidden_words.py").write_text("", encoding="utf-8")
+    _ = (monorepo_tool_tests / "test_tooling_behavior.py").write_text("", encoding="utf-8")
     _ = (server_tests / "test_server_behavior.py").write_text("", encoding="utf-8")
     _ = (crypto_tests / "test_crypto_behavior.py").write_text("", encoding="utf-8")
+    crypto_verifier = repository_root / CRYPTO_ARTIFACT_VERIFIER_PATH
+    crypto_verifier.parent.mkdir(parents=True)
+    _ = crypto_verifier.write_text("", encoding="utf-8")
     if include_artifact_tests:
         _ = (server_tests / "test_server_workspace_artifact.py").write_text("", encoding="utf-8")
-        _ = (server_tests / "test_crypto_workspace_artifact.py").write_text("", encoding="utf-8")
+        crypto_contract_test = repository_root / CRYPTO_ROOT_CONTRACT_TEST_PATH
+        crypto_contract_test.parent.mkdir(parents=True)
+        _ = crypto_contract_test.write_text("", encoding="utf-8")
     return repository_root
 
 
@@ -197,8 +220,8 @@ def test_root_quality_type_checks_initial_workspace_and_repository_tooling() -> 
     assert result.stdout.splitlines() == list(REQUIRED_TYPE_CHECK_PATHS)
 
 
-def test_root_test_gate_covers_current_member_test_contracts() -> None:
-    """Root test gateと設定が移設済みtestと一時Gitlint testを通すことを検証する.
+def test_root_test_gate_covers_current_workspace_and_tool_test_contracts() -> None:
+    """Root test gateと設定がworkspace/tool ownerのtestを明示することを検証する.
 
     Server artifact testはapp/worker/CLI wheel entrypointを、crypto artifact testはisolated native
     consumer testとpublic typing artifactを検証する。root gateはworkspace verifierからcurrent
@@ -214,12 +237,29 @@ def test_root_test_gate_covers_current_member_test_contracts() -> None:
 
     assert verifier_command in test_body
     result = _run_workspace_validation("--pytest-paths", repository_root=REPOSITORY_ROOT)
+    coverage_result = _run_workspace_validation(
+        "--test-coverage",
+        repository_root=REPOSITORY_ROOT,
+    )
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == [
-        "tests",
         "apps/athena_server/tests",
         "tools/monorepo_migration/tests",
+        "tools/gitlint/tests",
+    ]
+    assert CRYPTO_TEST_PATH not in result.stdout.splitlines()
+    assert coverage_result.returncode == 0, coverage_result.stderr
+    assert coverage_result.stdout.splitlines() == [
+        "apps/athena_server/tests: pytest",
+        (
+            "packages/athena_crypto/tests: artifact-verifier="
+            "packages/athena_crypto/scripts/verify_artifact.py, "
+            "root-contract-test="
+            "apps/athena_server/tests/unit/test_crypto_workspace_artifact.py"
+        ),
+        "tools/monorepo_migration/tests: pytest",
+        "tools/gitlint/tests: pytest",
     ]
     manifest = _toml_table(tomllib.loads(ROOT_MANIFEST_PATH.read_text(encoding="utf-8")))
     tool = _toml_table(manifest["tool"])
@@ -232,17 +272,20 @@ def test_root_test_gate_covers_current_member_test_contracts() -> None:
     per_file_ignores = _toml_table(ruff_lint_configuration["per-file-ignores"])
 
     assert raw_test_paths == [
-        "tests",
         "apps/athena_server/tests",
         "tools/monorepo_migration/tests",
+        "tools/gitlint/tests",
     ]
     assert raw_source_paths == [
         "apps/athena_server/src",
         "apps/athena_server/tests",
-        "tests",
         "packages/athena_crypto/typings",
+        "packages/athena_crypto/scripts",
+        "packages/athena_crypto/tests",
+        "tools/monorepo_migration",
+        "tools/gitlint",
     ]
-    assert "tests/**/*.py" in per_file_ignores
+    assert "tools/gitlint/tests/**/*.py" in per_file_ignores
 
 
 def test_workspace_verifier_rejects_member_tests_without_artifact_contracts(
@@ -304,7 +347,7 @@ def test_workspace_verifier_rejects_nested_lockfiles(tmp_path: Path) -> None:
     """
     repository_root = _write_workspace_fixture(tmp_path, include_artifact_tests=True)
     nested_lockfile = repository_root / "tools" / "monorepo_migration" / "uv.lock"
-    nested_lockfile.parent.mkdir(parents=True)
+    nested_lockfile.parent.mkdir(parents=True, exist_ok=True)
     _ = nested_lockfile.write_text("version = 1\n", encoding="utf-8")
 
     result = _run_workspace_validation("--pytest-paths", repository_root=repository_root)
@@ -366,37 +409,39 @@ members = [
     assert "Initial workspace members changed" in result.stderr
 
 
-def test_workspace_verifier_permits_only_transitional_root_gitlint_test(
+def test_workspace_verifier_rejects_root_owned_tests(
     tmp_path: Path,
 ) -> None:
-    """Workspace verifierが一時的なroot Gitlint testだけを許可することを検証する.
+    """Workspace verifierがownerを持たないroot testを拒否することを検証する.
 
-    Task 3.4でGitlint toolingを移設するまで、`tests/unit/test_forbidden_words.py`だけはrootに
-    残る。一方、server testまたは別のtooling testがrootに残るとowner boundaryが曖昧になるため、
-    verifierはnon-zeroで停止させる.
+    Gitlint test移設後はroot `tests`に例外を残さず、server、crypto、repository toolのいずれにも
+    属さないtest locationをroot gateが明示的に拒否する.
 
     Args:
-        tmp_path (Path): test physical move後を模したworkspace fixtureを隔離するdirectory.
+        tmp_path (Path): root testを追加するworkspace fixtureを隔離するdirectory.
 
     Returns:
-        None: 許可されたGitlint testのdiscoveryと、他root testの拒否を検証して完了する.
+        None: root testがnon-zeroになり、owner配下だけのfixtureは成功することを検証して完了する.
     """
     repository_root = _write_workspace_fixture(tmp_path, include_artifact_tests=True)
-    root_tests = repository_root / "tests"
-    allowed_root_test = repository_root / ROOT_GITLINT_TEST_PATH
     pytest_result = _run_workspace_validation("--pytest-paths", repository_root=repository_root)
     type_check_result = _run_workspace_validation(
         "--type-check-paths",
         repository_root=repository_root,
     )
 
-    assert allowed_root_test.is_file()
     assert pytest_result.returncode == 0, pytest_result.stderr
     assert type_check_result.returncode == 0, type_check_result.stderr
-    assert pytest_result.stdout.splitlines() == ["tests", "apps/athena_server/tests"]
+    assert pytest_result.stdout.splitlines() == [
+        "apps/athena_server/tests",
+        "tools/monorepo_migration/tests",
+        "tools/gitlint/tests",
+    ]
     assert type_check_result.stdout.splitlines() == list(REQUIRED_TYPE_CHECK_PATHS)
+    assert not (repository_root / "tests/system").exists()
 
-    root_direct_test_path = root_tests / "test_forbidden_words.py"
+    root_direct_test_path = repository_root / "tests" / "test_repository_tooling.py"
+    root_direct_test_path.parent.mkdir(parents=True)
     _ = root_direct_test_path.write_text("", encoding="utf-8")
 
     root_direct_result = _run_workspace_validation(
@@ -408,18 +453,6 @@ def test_workspace_verifier_permits_only_transitional_root_gitlint_test(
     assert (
         root_direct_test_path.relative_to(repository_root).as_posix() in root_direct_result.stderr
     )
-
-    root_direct_test_path.unlink()
-    root_unit_test_path = root_tests / "unit" / "test_repository_tooling.py"
-    _ = root_unit_test_path.write_text("", encoding="utf-8")
-
-    root_unit_result = _run_workspace_validation(
-        "--pytest-paths",
-        repository_root=repository_root,
-    )
-
-    assert root_unit_result.returncode != 0
-    assert root_unit_test_path.relative_to(repository_root).as_posix() in root_unit_result.stderr
 
 
 def test_workspace_verifier_discovers_canonical_repository_tooling_test_roots(
@@ -438,21 +471,13 @@ def test_workspace_verifier_discovers_canonical_repository_tooling_test_roots(
             完了する.
     """
     repository_root = _write_workspace_fixture(tmp_path, include_artifact_tests=True)
-    tool_tests = repository_root / "tools" / "monorepo_migration" / "tests"
-    gitlint_tests = repository_root / "gitlint_rules" / "tests"
-    for test_directory in (tool_tests, gitlint_tests):
-        test_directory.mkdir(parents=True)
-    _ = (tool_tests / "test_tooling_behavior.py").write_text("", encoding="utf-8")
-    _ = (gitlint_tests / "test_rule_behavior.py").write_text("", encoding="utf-8")
-
     result = _run_workspace_validation("--pytest-paths", repository_root=repository_root)
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == [
-        "tests",
         "apps/athena_server/tests",
         "tools/monorepo_migration/tests",
-        "gitlint_rules/tests",
+        "tools/gitlint/tests",
     ]
 
 
@@ -461,8 +486,8 @@ def test_workspace_verifier_rejects_tooling_tests_outside_a_canonical_test_root(
 ) -> None:
     """Workspace verifierがtooling owner配下の非canonical test fileを拒否する.
 
-    `tools`または`gitlint_rules`直下へtest fileを置いてroot gateが見落とす状態を防ぐため、
-    tooling testはowner配下の`tests` directoryへ明示的に配置させる.
+    Tool owner直下へtest fileを置いてroot gateが見落とす状態を防ぐため、tooling testはowner配下の
+    `tests` directoryへ明示的に配置させる.
 
     Args:
         tmp_path (Path): 非canonical tooling test fileを置く隔離workspace fixtureのroot directory.
@@ -472,13 +497,100 @@ def test_workspace_verifier_rejects_tooling_tests_outside_a_canonical_test_root(
     """
     repository_root = _write_workspace_fixture(tmp_path, include_artifact_tests=True)
     orphaned_test = repository_root / "tools" / "monorepo_migration" / "test_orphaned.py"
-    orphaned_test.parent.mkdir(parents=True)
+    orphaned_test.parent.mkdir(parents=True, exist_ok=True)
     _ = orphaned_test.write_text("", encoding="utf-8")
 
     result = _run_workspace_validation("--pytest-paths", repository_root=repository_root)
 
     assert result.returncode != 0
     assert orphaned_test.relative_to(repository_root).as_posix() in result.stderr
+
+
+def test_workspace_verifier_rejects_unowned_repository_tool_tests(tmp_path: Path) -> None:
+    """Workspace verifierがvalidation policyにないrepository tool testを拒否する.
+
+    新しいtool ownerを追加したのにroot validation inventoryを更新しない状態を成功扱いせず、
+    omissionを機械的なcontract mismatchとして報告する.
+
+    Args:
+        tmp_path (Path): unowned tooling testを置くworkspace fixtureのroot directory.
+
+    Returns:
+        None: 未宣言tool testを含むworkspaceがnon-zeroになることを検証して完了する.
+    """
+    repository_root = _write_workspace_fixture(tmp_path, include_artifact_tests=True)
+    unowned_test = repository_root / "tools" / "release" / "tests" / "test_release.py"
+    unowned_test.parent.mkdir(parents=True)
+    _ = unowned_test.write_text("", encoding="utf-8")
+
+    result = _run_workspace_validation("--pytest-paths", repository_root=repository_root)
+
+    assert result.returncode != 0
+    assert unowned_test.relative_to(repository_root).as_posix() in result.stderr
+
+
+def test_workspace_verifier_rejects_pytest_configuration_omission(tmp_path: Path) -> None:
+    """Workspace verifierがroot pytest設定からtool testを省く状態を拒否する.
+
+    Dynamic inventoryだけがtool testを発見してもstatic root policyが別の対象を示す状態はlocal/CIの
+    contractを曖昧にするため、両者が完全一致しない限りvalidationを成功させない.
+
+    Args:
+        tmp_path (Path): pytest設定を変更するworkspace fixtureのroot directory.
+
+    Returns:
+        None: Gitlint test rootを省いたroot manifestがnon-zeroになることを検証して完了する.
+    """
+    repository_root = _write_workspace_fixture(tmp_path, include_artifact_tests=True)
+    root_manifest = repository_root / "pyproject.toml"
+    _ = root_manifest.write_text(
+        """[tool.uv.workspace]
+members = ["apps/athena_server", "packages/athena_crypto"]
+
+[tool.pytest.ini_options]
+testpaths = [
+    "apps/athena_server/tests",
+    "tools/monorepo_migration/tests",
+]
+
+[tool.athena.validation.package-tests."packages/athena_crypto/tests"]
+verifier = "packages/athena_crypto/scripts/verify_artifact.py"
+root-contract-test = "apps/athena_server/tests/unit/test_crypto_workspace_artifact.py"
+""",
+        encoding="utf-8",
+    )
+
+    result = _run_workspace_validation("--pytest-paths", repository_root=repository_root)
+
+    assert result.returncode != 0
+    assert "tools/gitlint/tests" in result.stderr
+
+
+def test_workspace_verifier_rejects_missing_crypto_execution_contract(tmp_path: Path) -> None:
+    """Workspace verifierがcrypto test execution contractの欠落を拒否する.
+
+    Crypto testsはdirect pytest targetへ追加せずwheel-only artifact verifierから一度だけ実行する。
+    Root policyからそのentrypointが欠落した場合はcoverage omissionとしてvalidationを失敗させる.
+
+    Args:
+        tmp_path (Path): package execution contractを除くworkspace fixtureのroot directory.
+
+    Returns:
+        None: crypto test contractを宣言しないroot manifestがnon-zeroになることを検証して完了する.
+    """
+    repository_root = _write_workspace_fixture(tmp_path, include_artifact_tests=True)
+    root_manifest = repository_root / "pyproject.toml"
+    manifest_source = root_manifest.read_text(encoding="utf-8")
+    contract_marker = '[tool.athena.validation.package-tests."packages/athena_crypto/tests"]'
+    _ = root_manifest.write_text(
+        manifest_source[: manifest_source.index(contract_marker)],
+        encoding="utf-8",
+    )
+
+    result = _run_workspace_validation("--test-coverage", repository_root=repository_root)
+
+    assert result.returncode != 0
+    assert CRYPTO_TEST_PATH in result.stderr
 
 
 @pytest.mark.timeout(600)

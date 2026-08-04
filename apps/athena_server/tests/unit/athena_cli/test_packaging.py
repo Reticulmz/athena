@@ -226,13 +226,12 @@ def test_current_quality_gateway_uses_server_workspace_paths() -> None:
     expected_type_check_paths = [
         "apps/athena_server/src",
         "apps/athena_server/scripts",
-        "tests",
         "apps/athena_server/tests",
         "packages/athena_crypto/typings",
         "packages/athena_crypto/scripts",
         "packages/athena_crypto/tests",
-        "tools",
-        "gitlint_rules",
+        "tools/monorepo_migration",
+        "tools/gitlint",
     ]
 
     assert "tools/monorepo_migration/verify_workspace_validation.py" in quality_script
@@ -263,6 +262,7 @@ def test_current_quality_gateway_uses_server_workspace_paths() -> None:
 
     assert inventory_result.returncode == 0, inventory_result.stderr
     assert inventory_result.stdout.splitlines() == expected_type_check_paths
-    assert (PROJECT_ROOT / "tests/unit/test_forbidden_words.py").is_file()
-    assert not (PROJECT_ROOT / "tests/test_forbidden_words.py").exists()
-    assert not (PROJECT_ROOT / "tools/monorepo_migration/tests/test_forbidden_words.py").exists()
+    assert (PROJECT_ROOT / "tools/gitlint/rules/forbidden_words.py").is_file()
+    assert (PROJECT_ROOT / "tools/gitlint/tests/test_forbidden_words.py").is_file()
+    assert not any((PROJECT_ROOT / "tests").rglob("test_*.py"))
+    assert not any((PROJECT_ROOT / "gitlint_rules").rglob("*.py"))
