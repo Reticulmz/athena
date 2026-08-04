@@ -327,8 +327,8 @@ def _extract_recorded_pre_cutover_paths(destination: Path, relative_paths: list[
 def _make_post_cutover_repository(tmp_path: Path) -> Path:
     """予定済みのserver/crypto relocationだけを再現するtemporary repositoryを作る.
 
-    旧root source、Alembic、legacy script、root task gatewayを作らず、Task 1.1のpost-cutover
-    compatibility modeがowner workspaceから意味的contractを検証できるかを確認するfixtureである.
+    旧root source、Alembic、legacy scriptを作らず、current root task gatewayとowner workspaceを
+    配置してTask 1.1のpost-cutover compatibility modeを確認するfixtureである.
 
     Args:
         tmp_path (Path): fixture repositoryを作成する一時directory.
@@ -365,6 +365,15 @@ def _make_post_cutover_repository(tmp_path: Path) -> Path:
         server_root / "alembic.ini",
     )
     _ = shutil.copy2(REPOSITORY_ROOT / "pyproject.toml", repository_root / "pyproject.toml")
+    _ = shutil.copy2(REPOSITORY_ROOT / "justfile", repository_root / "justfile")
+    _ = shutil.copy2(REPOSITORY_ROOT / "flake.nix", repository_root / "flake.nix")
+    monorepo_tooling_root = repository_root / "tools/monorepo_migration"
+    monorepo_tooling_root.mkdir(parents=True)
+    for helper_name in ("repository_validation.sh", "test_database_tasks.sh"):
+        _ = shutil.copy2(
+            REPOSITORY_ROOT / "tools/monorepo_migration" / helper_name,
+            monorepo_tooling_root / helper_name,
+        )
     _ = shutil.copytree(
         REPOSITORY_ROOT / "tools/gitlint",
         repository_root / "tools/gitlint",
@@ -736,13 +745,107 @@ def test_preflight_baseline_matches_current_repository_contract(tmp_path: Path) 
     assert "Alembic current was not checked." in result.stdout
 
 
+def test_post_cutover_mode_requires_root_task_interface(tmp_path: Path) -> None:
+    """Post-cutover validationがcanonical root task interfaceの欠落を拒否する契約を検証する.
+
+    Owner workspaceとpytest policyだけを持つfixtureからroot Just interfaceを除き、current
+    validation contractがlegacy helperへfallbackせずmigration incompleteとして報告することを
+    確認する.
+
+    Args:
+        tmp_path (Path): Root task interfaceを欠くpost-cutover fixtureを置くtemporary directory.
+
+    Returns:
+        None: Missing public task sourceがnon-zeroとdiagnosticを返すことを検証して完了する.
+    """
+    repository_root = _make_post_cutover_repository(tmp_path)
+    task_interface_path = repository_root / "justfile"
+    if task_interface_path.exists():
+        task_interface_path.unlink()
+
+    result = _run_checker(
+        BASELINE_PATH,
+        mode="post-cutover",
+        repository_root=repository_root,
+    )
+
+    assert result.returncode != 0
+    assert "Root task interface source is missing: justfile" in result.stderr
+
+
+def test_post_cutover_mode_rejects_legacy_task_consumer(tmp_path: Path) -> None:
+    """Post-cutover validationがroot recipeを迂回するcurrent consumerを拒否する契約を検証する.
+
+    Flake hookをlegacy docstring helperへ戻したfixtureを検査し、public Just interfaceとの乖離を
+    current validation contractが明示的に報告することを確認する.
+
+    Args:
+        tmp_path (Path): Legacy Flake consumerを持つpost-cutover fixture用temporary directory.
+
+    Returns:
+        None: Current consumerのdeprecated helper参照がnon-zeroになることを検証して完了する.
+    """
+    repository_root = _make_post_cutover_repository(tmp_path)
+    flake_path = repository_root / "flake.nix"
+    flake_source = flake_path.read_text(encoding="utf-8").replace(
+        'entry = "just docstrings";',
+        'entry = "./scripts/ci.sh docstrings";',
+    )
+    _ = flake_path.write_text(flake_source, encoding="utf-8")
+
+    result = _run_checker(
+        BASELINE_PATH,
+        mode="post-cutover",
+        repository_root=repository_root,
+    )
+
+    assert result.returncode != 0
+    assert "Root task consumer still uses legacy helper: flake.nix scripts/ci.sh" in result.stderr
+
+
+def test_post_cutover_mode_rejects_incomplete_or_legacy_root_task_interface(
+    tmp_path: Path,
+) -> None:
+    """Post-cutover validationがmissing recipeとlegacy helper dependencyを同時に拒否する.
+
+    Public `fix` recipeをprivate名へ変更し、Just sourceへdeprecated database helper参照を加えた
+    fixtureで、discoverabilityとconsumer-free ownershipの両方を検査する.
+
+    Args:
+        tmp_path (Path): Mutated root task interfaceを持つfixture用temporary directory.
+
+    Returns:
+        None: Missing recipeとlegacy dependencyのdiagnosticを検証して完了する.
+    """
+    repository_root = _make_post_cutover_repository(tmp_path)
+    justfile_path = repository_root / "justfile"
+    justfile_source = justfile_path.read_text(encoding="utf-8")
+    assert "fix:\n" in justfile_source
+    mutated_source = justfile_source.replace("fix:\n", "_fix:\n", 1)
+    mutated_source += "\n# forbidden current consumer: scripts/dev-tasks.sh\n"
+    _ = justfile_path.write_text(mutated_source, encoding="utf-8")
+
+    result = _run_checker(
+        BASELINE_PATH,
+        mode="post-cutover",
+        repository_root=repository_root,
+    )
+
+    assert result.returncode != 0
+    assert "Root task interface is missing public recipes: ['fix']" in result.stderr
+    assert (
+        "Root task interface still consumes legacy helper: scripts/dev-tasks.sh" in result.stderr
+    )
+
+
 def test_post_cutover_mode_accepts_relocated_contract_without_pre_cutover_inventory(
     tmp_path: Path,
 ) -> None:
     """Post-cutover modeが予定済みrelocation後も意味的contractを比較することを検証する.
 
-    旧root source、Alembic、manifest、legacy script、root task gatewayを持たないfixtureに対して
-    post-cutover modeが成功することを確認する. Gitlint rule/testはrepository tool ownerへ移設し、
+    旧root source、Alembic、manifest、legacy scriptを持たずcurrent root task gatewayを持つfixtureに
+    対してpost-cutover modeが成功することを確認する. Gitlint rule/testはrepository tool ownerへ
+    移設し、
     generated cacheだけを含むroot `tests`はsource authorityの重複と扱わない. 同じtreeを
     pre-cutover modeで検証した場合はinventory mismatchになる.
 
@@ -754,7 +857,7 @@ def test_post_cutover_mode_accepts_relocated_contract_without_pre_cutover_invent
             compatibility modeの分離を検証する.
     """
     repository_root = _make_post_cutover_repository(tmp_path)
-    assert not (repository_root / "justfile").exists()
+    assert (repository_root / "justfile").is_file()
     stale_cache_path = repository_root / "tests/unit/__pycache__/test_stale.cpython-314.pyc"
     stale_cache_path.parent.mkdir(parents=True)
     stale_cache_path.touch()

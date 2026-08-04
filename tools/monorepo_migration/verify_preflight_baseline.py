@@ -1379,13 +1379,18 @@ def _check_validation_contract(
 ) -> list[str]:
     """現在のquality/test対象とlayoutごとのpublic validation interfaceを検証する.
 
+    Pre-cutoverではlegacy validation command evidenceを、post-cutoverではroot Just recipe、
+    root-owned implementation source、current consumerを検証する. Crypto-cutoverでは共通の
+    pytest path contractだけを検証する.
+
     Args:
-        semantic_root (Path): baselineのpre-cutover pathを解決するread-only semantic view.
+        semantic_root (Path): modeに対応するmanifestとtask sourceを解決するread-only tree root.
         baseline (Baseline): validation policy baselineを含むsnapshot.
-        mode (VerificationMode): legacy command evidenceを検証するpre-cutover modeかを表す.
+        mode (VerificationMode): Legacy command evidence、crypto中間layoutの共通contract、
+            post-cutover task interfaceのどれを検証するかを表すmode.
 
     Returns:
-        list[str]: test pathまたはrequired command evidenceの差分.
+        list[str]: Test path、required command evidence、またはroot task interfaceの差分.
     """
     validation = _mapping(baseline.field("validation"), "validation")
     manifest_path = _string(_field(validation, "manifest", "validation"), "validation.manifest")
@@ -1407,6 +1412,7 @@ def _check_validation_contract(
     expected_test_paths = _string_list(
         _field(validation, "pytest_testpaths", "validation"), "validation.pytest_testpaths"
     )
+    post_cutover_validation: JsonMapping | None = None
     if mode is VerificationMode.POST_CUTOVER:
         compatibility = _post_cutover_compatibility(baseline)
         post_cutover_validation = _mapping(
@@ -1425,6 +1431,15 @@ def _check_validation_contract(
         differences.append(
             f"Pytest target paths changed: expected {expected_test_paths}, got {actual_test_paths}"
         )
+    if mode is VerificationMode.POST_CUTOVER:
+        assert post_cutover_validation is not None
+        differences.extend(
+            _check_root_task_interface(
+                semantic_root,
+                post_cutover_validation,
+            )
+        )
+        return differences
     if mode is not VerificationMode.PRE_CUTOVER:
         return differences
 
@@ -1522,6 +1537,123 @@ def _check_validation_contract(
                 fragments, f"validation.required_command_evidence[{relative_path!r}]"
             )
             if fragment not in content
+        )
+    return differences
+
+
+def _check_root_task_interface(
+    repository_root: Path,
+    post_cutover_validation: JsonMapping,
+) -> list[str]:
+    """Post-cutoverのpublic Just recipeとroot-owned implementation sourceを検証する.
+
+    Args:
+        repository_root (Path): Canonical task sourceとimplementation helperを所有するroot.
+        post_cutover_validation (Mapping[str, object]): Current task interface contractを含む
+            post-cutover validation設定.
+
+    Returns:
+        list[str]: Missing recipe、source、legacy helper consumer、またはJust parse failureの差分.
+    """
+    task_interface = _mapping(
+        _field(
+            post_cutover_validation,
+            "task_interface",
+            "post_cutover_compatibility.validation",
+        ),
+        "post_cutover_compatibility.validation.task_interface",
+    )
+    task_source = _string(
+        _field(task_interface, "source", "task_interface"),
+        "task_interface.source",
+    )
+    task_source_path = repository_root / task_source
+    if not task_source_path.is_file():
+        return [f"Root task interface source is missing: {task_source}"]
+
+    differences: list[str] = []
+    try:
+        summary = subprocess.run(
+            ("just", "--justfile", str(task_source_path), "--summary"),
+            cwd=repository_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as error:
+        differences.append(f"Root task interface could not be inspected: {error}")
+    else:
+        if summary.returncode != 0:
+            diagnostic = summary.stderr.strip() or f"exit code {summary.returncode}"
+            differences.append(f"Root task interface could not be inspected: {diagnostic}")
+        else:
+            available_recipes = frozenset(summary.stdout.split())
+            required_recipes = _string_list(
+                _field(task_interface, "required_recipes", "task_interface"),
+                "task_interface.required_recipes",
+            )
+            missing_recipes = [
+                recipe for recipe in required_recipes if recipe not in available_recipes
+            ]
+            if missing_recipes:
+                differences.append(
+                    f"Root task interface is missing public recipes: {missing_recipes!r}"
+                )
+
+    task_source_content = task_source_path.read_text(encoding="utf-8")
+    differences.extend(
+        f"Root task interface still consumes legacy helper: {fragment}"
+        for fragment in _string_list(
+            _field(task_interface, "forbidden_fragments", "task_interface"),
+            "task_interface.forbidden_fragments",
+        )
+        if fragment in task_source_content
+    )
+    differences.extend(
+        f"Root task implementation source is missing: {relative_path}"
+        for relative_path in _string_list(
+            _field(task_interface, "required_sources", "task_interface"),
+            "task_interface.required_sources",
+        )
+        if not (repository_root / relative_path).is_file()
+    )
+    consumers = _mapping(
+        _field(task_interface, "consumers", "task_interface"),
+        "task_interface.consumers",
+    )
+    for relative_path, raw_contract in consumers.items():
+        consumer_contract = _mapping(
+            raw_contract,
+            f"task_interface.consumers[{relative_path!r}]",
+        )
+        consumer_path = repository_root / relative_path
+        if not consumer_path.is_file():
+            differences.append(f"Root task consumer source is missing: {relative_path}")
+            continue
+        consumer_source = consumer_path.read_text(encoding="utf-8")
+        differences.extend(
+            f"Root task consumer evidence is missing: {relative_path} {fragment}"
+            for fragment in _string_list(
+                _field(
+                    consumer_contract,
+                    "required_fragments",
+                    f"task_interface.consumers[{relative_path!r}]",
+                ),
+                f"task_interface.consumers[{relative_path!r}].required_fragments",
+            )
+            if fragment not in consumer_source
+        )
+        differences.extend(
+            f"Root task consumer still uses legacy helper: {relative_path} {fragment}"
+            for fragment in _string_list(
+                _field(
+                    consumer_contract,
+                    "forbidden_fragments",
+                    f"task_interface.consumers[{relative_path!r}]",
+                ),
+                f"task_interface.consumers[{relative_path!r}].forbidden_fragments",
+            )
+            if fragment in consumer_source
         )
     return differences
 

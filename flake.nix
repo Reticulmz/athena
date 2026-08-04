@@ -81,7 +81,7 @@
               docstrings = {
                 enable = true;
                 name = "docstrings";
-                entry = "./scripts/ci.sh docstrings";
+                entry = "just docstrings";
                 files = "\\.py$";
                 pass_filenames = false;
                 priority = 20;
@@ -182,6 +182,7 @@
                 test -s "$configFile"
                 grep -q 'verify_workspace_validation.py' "$configFile"
                 grep -q 'apps/athena_server/pyproject.toml' "$configFile"
+                grep -q 'just docstrings' "$configFile"
                 touch "$out"
               '';
             };

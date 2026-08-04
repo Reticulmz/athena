@@ -17,8 +17,12 @@ import pytest
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 JUSTFILE_PATH = REPOSITORY_ROOT / "justfile"
 SETUP_SCRIPT_PATH = REPOSITORY_ROOT / "scripts" / "setup-worktree.sh"
+LEGACY_DEV_TASKS_PATH = REPOSITORY_ROOT / "scripts" / "dev-tasks.sh"
 NGINX_TEMPLATE_PATH = REPOSITORY_ROOT / "infra" / "development" / "nginx" / "nginx.conf.template"
 STATE_VALIDATOR_PATH = REPOSITORY_ROOT / "infra" / "development" / "validate_state.py"
+TEST_DATABASE_TASKS_PATH = (
+    REPOSITORY_ROOT / "tools" / "monorepo_migration" / "test_database_tasks.sh"
+)
 VALID_TUNNEL_ID = "123e4567-e89b-12d3-a456-426614174000"
 VALID_TUNNEL_SECRET = base64.b64encode(bytes(32)).decode("ascii")
 VALID_TUNNEL_CREDENTIALS: dict[str, object] = {
@@ -61,7 +65,8 @@ def _copy_root_task_gateway(repository_root: Path) -> None:
         repository_root (Path): gateway fixtureを配置するrepository root.
 
     Returns:
-        None: public justfileとsetup helperを複製して完了する.
+        None: Public justfile、setup helper、development infra、database task helperを複製して
+            完了する.
     """
     scripts_directory = repository_root / "scripts"
     scripts_directory.mkdir(parents=True)
@@ -72,6 +77,9 @@ def _copy_root_task_gateway(repository_root: Path) -> None:
     _ = shutil.copy2(SETUP_SCRIPT_PATH, scripts_directory / "setup-worktree.sh")
     _ = shutil.copy2(NGINX_TEMPLATE_PATH, nginx_directory / "nginx.conf.template")
     _ = shutil.copy2(STATE_VALIDATOR_PATH, development_infra_directory / "validate_state.py")
+    tooling_directory = repository_root / "tools" / "monorepo_migration"
+    tooling_directory.mkdir(parents=True)
+    _ = shutil.copy2(TEST_DATABASE_TASKS_PATH, tooling_directory / "test_database_tasks.sh")
 
 
 def _initialize_git_repository(repository_root: Path) -> None:
@@ -1458,13 +1466,78 @@ def test_tunnel_setup_initializes_account_state_and_guides_execution_credential(
     assert not (repository_root / ".state" / "postgres").exists()
 
 
+def test_validation_recipes_use_root_owned_library_and_propagate_exit_status(
+    tmp_path: Path,
+) -> None:
+    """Validation recipeがroot-owned実装へ委譲してfailureを保持する契約を検証する.
+
+    Public Just interfaceからquality、docstring、test、fix、Python inventoryを実行し、legacy
+    scriptを経由せず内部libraryの対応functionへ到達して各exit statusをそのまま返すことを確認する.
+
+    Args:
+        tmp_path (Path): Isolated justfileとfake validation libraryを置くtemporary directory.
+
+    Returns:
+        None: Public validation recipeの委譲先とfailure propagationを検証して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+    validation_library_path = (
+        repository_root / "tools" / "monorepo_migration" / "repository_validation.sh"
+    )
+    validation_library_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_executable(
+        validation_library_path,
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        _record_validation_call() {
+          printf '%s\n' "$1" >> "$ATHENA_TEST_COMMAND_LOG"
+          return "$2"
+        }
+        run_quality() { _record_validation_call quality 21; }
+        run_docstrings() { _record_validation_call docstrings 22; }
+        run_test() { _record_validation_call test 23; }
+        run_fix() { _record_validation_call fix 24; }
+        run_python_files() { _record_validation_call python-files 25; }
+        """,
+    )
+
+    expected_exit_statuses = {
+        "quality": 21,
+        "docstrings": 22,
+        "test": 23,
+        "fix": 24,
+        "python-files": 25,
+    }
+    results = {
+        recipe: _run_just(repository_root, environment, recipe)
+        for recipe in expected_exit_statuses
+    }
+    ci_result = _run_just(repository_root, environment, "ci")
+    all_result = _run_just(repository_root, environment, "all")
+
+    assert {
+        recipe: result.returncode for recipe, result in results.items()
+    } == expected_exit_statuses
+    assert ci_result.returncode == expected_exit_statuses["quality"]
+    assert all_result.returncode == expected_exit_statuses["quality"]
+    assert command_log_path.read_text(encoding="utf-8").splitlines() == [
+        *expected_exit_statuses,
+        "quality",
+        "quality",
+    ]
+
+
 def test_database_and_worktree_recipes_preserve_specialized_helper_contracts(
     tmp_path: Path,
 ) -> None:
     """Database operationとworktree lifecycleの既存導線をroot recipeから検証する.
 
-    Alembicはserver workspaceから実行し、test database operationはlegacy capability ownerへ、
-    worktree lifecycleはspecialized helperへargumentとexit statusを変えずに委譲する.
+    Alembicはserver workspaceから実行し、test database operationはroot-owned環境解決からAthena
+    CLIへ、worktree lifecycleはspecialized helperへargumentとexit statusを変えずに委譲する.
 
     Args:
         tmp_path (Path): Fake delegate scriptsとcommand logを置くtemporary directory.
@@ -1477,23 +1550,24 @@ def test_database_and_worktree_recipes_preserve_specialized_helper_contracts(
     _copy_root_task_gateway(repository_root)
     _initialize_git_repository(repository_root)
     environment, command_log_path = _fake_setup_environment(repository_root)
+    _ = environment.pop("ATHENA_TEST_DATABASE_URL", None)
+    _ = environment.pop("ATHENA_TEST_VALKEY_URL", None)
+    _ = environment.pop("DATABASE_URL", None)
+    _ = environment.pop("VALKEY_URL", None)
     binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
     _write_executable(
         binary_directory / "uv",
         """
         #!/usr/bin/env bash
         set -euo pipefail
-        printf 'uv:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        if [[ "$*" == "run --directory"* ]]; then
+          printf 'uv:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        else
+          printf 'uv:%s|ENVIRONMENT=%s|DATABASE_URL=%s|VALKEY_URL=%s\n' \
+            "$*" "${ENVIRONMENT:-<unset>}" "${DATABASE_URL:-<unset>}" \
+            "${VALKEY_URL:-<unset>}" >> "$ATHENA_TEST_COMMAND_LOG"
+        fi
         exit 31
-        """,
-    )
-    _write_executable(
-        repository_root / "scripts" / "dev-tasks.sh",
-        """
-        #!/usr/bin/env bash
-        set -euo pipefail
-        printf 'dev-tasks:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
-        exit 23
         """,
     )
     _write_executable(
@@ -1521,15 +1595,165 @@ def test_database_and_worktree_recipes_preserve_specialized_helper_contracts(
     )
 
     assert migration_result.returncode == 31
-    assert all(result.returncode == 23 for result in database_results.values())
+    assert all(result.returncode == 31 for result in database_results.values())
     assert worktree_result.returncode == 29
     command_log = command_log_path.read_text(encoding="utf-8").splitlines()
+    default_database_url = "postgresql://localhost:5432/athena_test"
+    default_valkey_url = "redis://localhost:6379/1"
+    default_environment_summary = (
+        "ENVIRONMENT=test|DATABASE_URL="
+        + default_database_url
+        + "|VALKEY_URL="
+        + default_valkey_url
+    )
     assert command_log == [
         f"uv:run --directory {repository_root}/apps/athena_server alembic upgrade head",
-        "dev-tasks:db:test:create",
-        "dev-tasks:db:test:migrate",
-        "dev-tasks:db:test:run",
+        f"uv:run athena db create --env test|{default_environment_summary}",
+        f"uv:run athena db migrate --env test|{default_environment_summary}",
+        f"uv:run athena test --env test|{default_environment_summary}",
         "agent-worktree:fixture-task --agent codex",
+    ]
+
+
+def test_database_recipes_prefer_explicit_overrides_and_server_environment_file(
+    tmp_path: Path,
+) -> None:
+    """Test database recipeがexplicit overrideとserver env fileを優先する契約を検証する.
+
+    Explicit `ATHENA_TEST_*` valueを親process値より優先し、server-owned `.env.test`が存在する
+    場合は親processの`DATABASE_URL`と`VALKEY_URL`をCLIへ渡さないことを確認する.
+
+    Args:
+        tmp_path (Path): Isolated task gatewayとfake uv commandを置くtemporary directory.
+
+    Returns:
+        None: Test environment resolutionのobservable subprocess inputを検証して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    base_environment, command_log_path = _fake_setup_environment(repository_root)
+    binary_directory = Path(base_environment["PATH"].split(os.pathsep, maxsplit=1)[0])
+    _write_executable(
+        binary_directory / "uv",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'uv:%s|DATABASE_URL=%s|VALKEY_URL=%s\n' \
+          "$*" "${DATABASE_URL:-<unset>}" "${VALKEY_URL:-<unset>}" \
+          >> "$ATHENA_TEST_COMMAND_LOG"
+        """,
+    )
+
+    override_database_url = "postgresql://override/athena_test"
+    override_valkey_url = "redis://override/9"
+    override_environment = base_environment.copy()
+    override_environment.update(
+        {
+            "ATHENA_TEST_DATABASE_URL": override_database_url,
+            "ATHENA_TEST_VALKEY_URL": override_valkey_url,
+            "DATABASE_URL": "postgresql://parent/ignored",
+            "VALKEY_URL": "redis://parent/8",
+        }
+    )
+    override_result = _run_just(
+        repository_root,
+        override_environment,
+        "db-test-run",
+    )
+
+    server_environment_file = repository_root / "apps" / "athena_server" / ".env.test"
+    server_environment_file.parent.mkdir(parents=True)
+    _ = server_environment_file.write_text("fixture=true\n", encoding="utf-8")
+    server_file_environment = base_environment.copy()
+    _ = server_file_environment.pop("ATHENA_TEST_DATABASE_URL", None)
+    _ = server_file_environment.pop("ATHENA_TEST_VALKEY_URL", None)
+    server_file_environment.update(
+        {
+            "DATABASE_URL": "postgresql://parent/must-not-leak",
+            "VALKEY_URL": "redis://parent/7",
+        }
+    )
+    server_file_result = _run_just(
+        repository_root,
+        server_file_environment,
+        "db-test-run",
+    )
+
+    assert override_result.returncode == 0, override_result.stderr
+    assert server_file_result.returncode == 0, server_file_result.stderr
+    override_environment_summary = (
+        "DATABASE_URL=" + override_database_url + "|VALKEY_URL=" + override_valkey_url
+    )
+    assert command_log_path.read_text(encoding="utf-8").splitlines() == [
+        f"uv:run athena test --env test|{override_environment_summary}",
+        "uv:run athena test --env test|DATABASE_URL=<unset>|VALKEY_URL=<unset>",
+    ]
+
+
+def test_legacy_database_entrypoint_delegates_to_root_task_interface(tmp_path: Path) -> None:
+    """Task 4.6前のdatabase helperがcanonical Just recipeだけを呼ぶ契約を検証する.
+
+    Legacy subcommandを実行し、root justfileと対応recipeへargumentを写像してdelegateのexit statusを
+    そのまま返すことを確認する. 旧helper内でAthena CLIを直接再実装しない.
+
+    Args:
+        tmp_path (Path): Legacy entrypoint、fake Just、command logを置くtemporary directory.
+
+    Returns:
+        None: Legacy database入口のmappingとfailure propagationを検証して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    scripts_directory = repository_root / "scripts"
+    scripts_directory.mkdir(parents=True)
+    _ = shutil.copy2(LEGACY_DEV_TASKS_PATH, scripts_directory / "dev-tasks.sh")
+    fake_binary_directory = repository_root / "fake-bin"
+    fake_binary_directory.mkdir()
+    command_log_path = repository_root / "commands.log"
+    _write_executable(
+        fake_binary_directory / "just",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'just:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        exit 27
+        """,
+    )
+    _write_executable(
+        fake_binary_directory / "uv",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'uv:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        exit 26
+        """,
+    )
+    environment = os.environ.copy()
+    environment["ATHENA_TEST_COMMAND_LOG"] = str(command_log_path)
+    environment["PATH"] = f"{fake_binary_directory}{os.pathsep}{environment['PATH']}"
+
+    command_to_recipe = {
+        "db:test:create": "db-test-create",
+        "db:test:migrate": "db-test-migrate",
+        "db:test:run": "db-test-run",
+    }
+    results = {
+        command: subprocess.run(
+            [str(scripts_directory / "dev-tasks.sh"), command],
+            cwd=tmp_path,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=environment,
+            timeout=30,
+        )
+        for command in command_to_recipe
+    }
+
+    assert all(result.returncode == 27 for result in results.values())
+    assert command_log_path.read_text(encoding="utf-8").splitlines() == [
+        f"just:--justfile {repository_root}/justfile {recipe}"
+        for recipe in command_to_recipe.values()
     ]
 
 
@@ -1570,12 +1794,15 @@ def test_public_recipe_catalog_exposes_root_workflows(tmp_path: Path) -> None:
         "quality",
         "docstrings",
         "test",
+        "fix",
+        "python-files",
         "build",
         "db-migrate",
         "db-test-create",
         "db-test-migrate",
         "db-test-run",
         "ci",
+        "all",
         "audit-monorepo",
         "worktree",
     ):

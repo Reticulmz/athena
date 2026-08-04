@@ -15,6 +15,9 @@ if TYPE_CHECKING:
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 CI_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "ci.sh"
+VALIDATION_LIBRARY_PATH = (
+    PROJECT_ROOT / "tools" / "monorepo_migration" / "repository_validation.sh"
+)
 FLAKE_PATH = PROJECT_ROOT / "flake.nix"
 PYPROJECT_PATH = PROJECT_ROOT / "pyproject.toml"
 UV_LOCK_PATH = PROJECT_ROOT / "uv.lock"
@@ -520,11 +523,35 @@ def test_docstrings_command_runs_only_active_quality_tools() -> None:
     Returns:
         None: 必須toolのcommandが欠落するかpydoclintが再導入された場合はassertionで失敗する.
     """
+    library = VALIDATION_LIBRARY_PATH.read_text(encoding="utf-8")
+
+    assert "run_first_party_python_tool uv run ruff check --select D" in library
+    assert "run_first_party_python_tool uv run interrogate --config pyproject.toml" in library
+    assert "uv run pydoclint" not in library
+
+
+def test_legacy_ci_entrypoint_delegates_to_root_owned_validation_library() -> None:
+    """Task 4.1前のCI entrypointがcanonical validation実装だけを呼ぶ契約を検証する.
+
+    Returns:
+        None: Legacy pathがquality/test logicを複製するかroot-owned libraryを欠く場合に失敗する.
+    """
     script = CI_SCRIPT_PATH.read_text(encoding="utf-8")
 
-    assert "run_first_party_python_tool uv run ruff check --select D" in script
-    assert "run_first_party_python_tool uv run interrogate --config pyproject.toml" in script
-    assert "uv run pydoclint" not in script
+    assert (
+        'source "${REPOSITORY_ROOT}/tools/monorepo_migration/repository_validation.sh"' in script
+    )
+    assert "run_quality() {" not in script
+    assert "run_test() {" not in script
+    assert "collect_first_party_python_files() {" not in script
+    for command_name, function_name in (
+        ("quality", "run_quality"),
+        ("fix", "run_fix"),
+        ("test", "run_test"),
+        ("python-files", "run_python_files"),
+        ("docstrings", "run_docstrings"),
+    ):
+        assert f"{command_name}) {function_name} ;;" in script
 
 
 def test_quality_and_fix_commands_share_the_first_party_python_inventory() -> None:
@@ -538,9 +565,9 @@ def test_quality_and_fix_commands_share_the_first_party_python_inventory() -> No
         None: qualityまたはfixが異なるinventoryを使うか,qualityにinterrogateが含まれない場合は
             assertionで失敗する.
     """
-    script = CI_SCRIPT_PATH.read_text(encoding="utf-8")
-    quality_body = _shell_function_body(script, "run_quality")
-    fix_body = _shell_function_body(script, "run_fix")
+    library = VALIDATION_LIBRARY_PATH.read_text(encoding="utf-8")
+    quality_body = _shell_function_body(library, "run_quality")
+    fix_body = _shell_function_body(library, "run_fix")
 
     assert "collect_first_party_python_files || return 1" in quality_body
     assert "run_first_party_python_tool uv run ruff format --check" in quality_body
@@ -559,21 +586,17 @@ def test_quality_and_fix_commands_share_the_first_party_python_inventory() -> No
     assert fix_body.index(lint_fix_command) < fix_body.index(format_command)
 
 
-def test_quality_usage_distinguishes_full_inventory_from_scoped_checks() -> None:
-    """Qualityの説明がtoolごとのscope差を隠さないことを検証する.
+def test_quality_output_distinguishes_full_inventory_from_scoped_checks() -> None:
+    """Quality outputがtoolごとのscope差を隠さないことを検証する.
 
     Returns:
         None: 全quality toolがtracked Python全件を検査するという誤解を招く場合は
             assertionで失敗する.
     """
-    script = CI_SCRIPT_PATH.read_text(encoding="utf-8")
-    quality_body = _shell_function_body(script, "run_quality")
-    scope_description = (
-        "quality - Run Ruff/docstrings on tracked Python plus scoped type/import checks"
-    )
+    library = VALIDATION_LIBRARY_PATH.read_text(encoding="utf-8")
+    quality_body = _shell_function_body(library, "run_quality")
 
-    assert script.count(scope_description) == 2
-    assert "Run quality checks for all tracked first-party Python files" not in script
+    assert "Run quality checks for all tracked first-party Python files" not in library
     assert 'echo "--> Basedpyright type check (workspace and repository tooling)"' in quality_body
     assert "tools/monorepo_migration/verify_workspace_validation.py" in quality_body
     assert "--run-basedpyright" in quality_body
@@ -586,11 +609,11 @@ def test_first_party_python_paths_follow_cli_option_terminators() -> None:
         None: Ruffまたはinterrogateへinventoryを渡すcommandがoption terminatorを欠く場合は
             assertionで失敗する.
     """
-    script = CI_SCRIPT_PATH.read_text(encoding="utf-8")
-    execution_body = _shell_function_body(script, "run_first_party_python_tool")
+    library = VALIDATION_LIBRARY_PATH.read_text(encoding="utf-8")
+    execution_body = _shell_function_body(library, "run_first_party_python_tool")
     inventory_tool_lines = [
         line.strip()
-        for line in script.splitlines()
+        for line in library.splitlines()
         if "run_first_party_python_tool uv run " in line
     ]
 
@@ -673,8 +696,8 @@ def test_first_party_python_inventory_does_not_require_bash_nameref() -> None:
     Returns:
         None: `local -n`が再導入されるか共有inventory変数が使われない場合はassertionで失敗する.
     """
-    script = CI_SCRIPT_PATH.read_text(encoding="utf-8")
-    collection_body = _shell_function_body(script, "collect_first_party_python_files")
+    library = VALIDATION_LIBRARY_PATH.read_text(encoding="utf-8")
+    collection_body = _shell_function_body(library, "collect_first_party_python_files")
 
     assert "local -n" not in collection_body
     assert "FIRST_PARTY_PYTHON_FILES" in collection_body
@@ -702,6 +725,19 @@ def test_precommit_runs_ruff_fixes_before_ruff_format() -> None:
     assert ruff_fix is not None
     assert ruff_format is not None
     assert int(ruff_fix["priority"]) < int(ruff_format["priority"])
+
+
+def test_precommit_docstrings_hook_uses_root_task_interface() -> None:
+    """Pre-commit docstring hookがcanonical root recipeだけを呼ぶ契約を検証する.
+
+    Returns:
+        None: Flake hookがlegacy CI helperを参照するかJust recipeを欠く場合はassertionで失敗する.
+    """
+    flake = FLAKE_PATH.read_text(encoding="utf-8")
+
+    assert 'entry = "just docstrings";' in flake
+    assert 'entry = "./scripts/ci.sh docstrings";' not in flake
+    assert "grep -q 'just docstrings' \"$configFile\"" in flake
 
 
 def test_precommit_type_and_import_hooks_use_server_owned_validation_paths() -> None:

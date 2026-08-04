@@ -69,7 +69,41 @@
         "apps/athena_server/tests",
         "tools/monorepo_migration/tests",
         "tools/gitlint/tests"
-      ]
+      ],
+      "task_interface": {
+        "source": "justfile",
+        "required_recipes": [
+          "setup",
+          "tunnel-setup",
+          "dev",
+          "dev-tunnel",
+          "quality",
+          "docstrings",
+          "test",
+          "fix",
+          "python-files",
+          "build",
+          "db-migrate",
+          "db-test-create",
+          "db-test-migrate",
+          "db-test-run",
+          "ci",
+          "all",
+          "audit-monorepo",
+          "worktree"
+        ],
+        "required_sources": [
+          "tools/monorepo_migration/repository_validation.sh",
+          "tools/monorepo_migration/test_database_tasks.sh"
+        ],
+        "forbidden_fragments": ["scripts/ci.sh", "scripts/dev-tasks.sh"],
+        "consumers": {
+          "flake.nix": {
+            "required_fragments": ["entry = \"just docstrings\";"],
+            "forbidden_fragments": ["scripts/ci.sh", "scripts/dev-tasks.sh"]
+          }
+        }
+      }
     }
   },
   "crypto_cutover_compatibility": {

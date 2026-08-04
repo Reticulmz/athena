@@ -13,7 +13,9 @@ import pytest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 ROOT_MANIFEST_PATH = REPOSITORY_ROOT / "pyproject.toml"
-ROOT_CI_SCRIPT_PATH = REPOSITORY_ROOT / "scripts" / "ci.sh"
+ROOT_VALIDATION_LIBRARY_PATH = (
+    REPOSITORY_ROOT / "tools" / "monorepo_migration" / "repository_validation.sh"
+)
 FLAKE_PATH = REPOSITORY_ROOT / "flake.nix"
 WORKSPACE_VALIDATION_TOOL_PATH = (
     REPOSITORY_ROOT / "tools" / "monorepo_migration" / "verify_workspace_validation.py"
@@ -197,9 +199,9 @@ def test_root_quality_type_checks_initial_workspace_and_repository_tooling() -> 
     Returns:
         None: workspace memberとroot/pre-commit type check inventoryを検証して完了する.
     """
-    script = ROOT_CI_SCRIPT_PATH.read_text(encoding="utf-8")
+    library = ROOT_VALIDATION_LIBRARY_PATH.read_text(encoding="utf-8")
     flake = FLAKE_PATH.read_text(encoding="utf-8")
-    quality_body = _shell_function_body(script, "run_quality")
+    quality_body = _shell_function_body(library, "run_quality")
 
     assert _workspace_members() == EXPECTED_WORKSPACE_MEMBERS
     assert "tools/monorepo_migration/verify_workspace_validation.py" in quality_body
@@ -230,8 +232,8 @@ def test_root_test_gate_covers_current_workspace_and_tool_test_contracts() -> No
     Returns:
         None: root pytest target、static設定、動的member test pathのcoverageを検証して完了する.
     """
-    script = ROOT_CI_SCRIPT_PATH.read_text(encoding="utf-8")
-    test_body = _shell_function_body(script, "run_test")
+    library = ROOT_VALIDATION_LIBRARY_PATH.read_text(encoding="utf-8")
+    test_body = _shell_function_body(library, "run_test")
 
     verifier_command = "tools/monorepo_migration/verify_workspace_validation.py --pytest-paths"
 

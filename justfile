@@ -10,6 +10,8 @@ tunnel_credentials := tunnel_state / "credentials.json"
 tunnel_login_home := tunnel_state / "login-home"
 tunnel_origin_certificate := tunnel_login_home / ".cloudflared/cert.pem"
 state_validator := repository_root / "infra/development/validate_state.py"
+validation_library := repository_root / "tools/monorepo_migration/repository_validation.sh"
+test_database_tasks := repository_root / "tools/monorepo_migration/test_database_tasks.sh"
 
 default:
     @just --list
@@ -51,13 +53,19 @@ dev-tunnel: _tunnel-preflight
     @process-compose up app worker nginx cloudflared
 
 quality:
-    @{{ repository_root }}/scripts/ci.sh quality
+    @source "{{ validation_library }}"; run_quality
 
 docstrings:
-    @{{ repository_root }}/scripts/ci.sh docstrings
+    @source "{{ validation_library }}"; run_docstrings
 
 test:
-    @{{ repository_root }}/scripts/ci.sh test
+    @source "{{ validation_library }}"; run_test
+
+fix:
+    @source "{{ validation_library }}"; run_fix
+
+python-files:
+    @source "{{ validation_library }}"; run_python_files
 
 build:
     @mkdir -p "{{ repository_root }}/.state/build/server" "{{ repository_root }}/.state/build/crypto"
@@ -68,15 +76,17 @@ db-migrate:
     @uv run --directory "{{ server_root }}" alembic upgrade head
 
 db-test-create:
-    @{{ repository_root }}/scripts/dev-tasks.sh db:test:create
+    @source "{{ test_database_tasks }}"; run_test_database_create "{{ repository_root }}"
 
 db-test-migrate:
-    @{{ repository_root }}/scripts/dev-tasks.sh db:test:migrate
+    @source "{{ test_database_tasks }}"; run_test_database_migrate "{{ repository_root }}"
 
 db-test-run:
-    @{{ repository_root }}/scripts/dev-tasks.sh db:test:run
+    @source "{{ test_database_tasks }}"; run_test_database_tests "{{ repository_root }}"
 
 ci: quality test build
+
+all: quality test
 
 audit-monorepo:
     @uv run python "{{ repository_root }}/tools/monorepo_migration/verify_preflight_baseline.py" --baseline "{{ repository_root }}/.kiro/specs/monorepo-migration/preflight-baseline.json" --mode post-cutover

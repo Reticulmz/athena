@@ -123,7 +123,7 @@
   - _Requirements: 4.1, 4.3, 6.1, 6.2, 6.3, 6.4, 6.5, 8.4_
   - _Boundary: Validation Policy_
 
-- [ ] 3.5 Task、process、validation contractをroot interfaceへ統合する
+- [x] 3.5 Task、process、validation contractをroot interfaceへ統合する
   - Quality、docstring、test、build、migration、aggregate CI、monorepo auditをpublic root recipeとして接続する。
   - Legacy quality/test/database helperのcapabilityとmeaningful exit propagationを移管する。
   - Process profileとvalidation policyをroot taskから同じworkspace/state resolutionで実行する。
@@ -239,3 +239,4 @@
 - Task 3.1ではworkspace artifact buildとNix-native structural checksを先に分離し、project dependencyを必要とする全hook実行はexplicit setupとTask 3.4のvalidation ownerへ残す。Flakeはhook configurationの生成とconsumer pathを検証する。
 - 2026-08-04: Task 3.2のCloudflared 2026.6.0 loginはcredentialを`$HOME/.cloudflared/cert.pem`へ出力するため、`HOME`をworktree-local stateへ隔離した。`dev-tunnel` preflightはconfigとorigin certificateの両方を要求する。
 - 2026-08-04: Task 3.4のroot test policyはcrypto package testsをdirect pytestで重複実行せず、`test_crypto_workspace_artifact.py`からwheel-only artifact verifierを一度だけ実行する。`--test-coverage`がserver、crypto、monorepo tooling、Gitlint toolingのexecution contractを列挙する。
+- 2026-08-05: Task 3.5はvalidationとtest database operationをroot-owned helperへ移し、Justを唯一のpublic task catalogにした。Legacy helperはTask 4.1/4.6まで同じimplementationまたはJustへdelegateするcompatibility entrypointに限定し、Flake docstring hookも`just docstrings`へ切り替えた。`just ci`、isolated PostgreSQL/Valkeyでのdatabase recipes、monorepo audit、independent Standards/Spec reviewが成功した。

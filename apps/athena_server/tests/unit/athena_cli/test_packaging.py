@@ -206,20 +206,22 @@ def test_server_manifest_owns_cli_import_boundary() -> None:
     assert get_string_list(runtime_contract, "forbidden_modules") == ["athena_cli"]
 
 
-def test_current_quality_gateway_uses_server_workspace_paths() -> None:
-    """Current quality gatewayが検証済みworkspace inventoryを型検査することを検証する.
+def test_root_validation_uses_server_workspace_paths() -> None:
+    """Root validation実装が検証済みworkspace inventoryを型検査することを検証する.
 
-    Root Just gatewayへ移管するTask 3.4/3.5までは既存scriptを実行可能に保ち、存在しないlegacy
-    `src/`やroot import-linter configへfallbackせず、server/cryptoとrepository toolingをdynamic
-    verifierのinventoryからBasedpyrightへ渡すことを確認する.
+    Canonical Just recipeが利用するroot-owned libraryは、存在しないlegacy `src/`やroot
+    import-linter configへfallbackせず、server/cryptoとrepository toolingをdynamic verifierの
+    inventoryからBasedpyrightへ渡す.
 
     Returns:
-        None: transitional quality consumerのcanonical pathを検証して完了する.
+        None: Canonical quality implementationのworkspace pathを検証して完了する.
     """
     root_manifest = load_manifest(ROOT_MANIFEST_PATH)
     root_tool_config = get_table(root_manifest, "tool")
     basedpyright_config = get_table(root_tool_config, "basedpyright")
-    quality_script = (PROJECT_ROOT / "scripts" / "ci.sh").read_text(encoding="utf-8")
+    quality_library = (
+        PROJECT_ROOT / "tools" / "monorepo_migration" / "repository_validation.sh"
+    ).read_text(encoding="utf-8")
     workspace_validation_tool = (
         PROJECT_ROOT / "tools" / "monorepo_migration" / "verify_workspace_validation.py"
     )
@@ -234,13 +236,13 @@ def test_current_quality_gateway_uses_server_workspace_paths() -> None:
         "tools/gitlint",
     ]
 
-    assert "tools/monorepo_migration/verify_workspace_validation.py" in quality_script
-    assert "uv run lint-imports --config apps/athena_server/pyproject.toml" in quality_script
-    type_check_command_start = quality_script.index(
+    assert "tools/monorepo_migration/verify_workspace_validation.py" in quality_library
+    assert "uv run lint-imports --config apps/athena_server/pyproject.toml" in quality_library
+    type_check_command_start = quality_library.index(
         "uv run python tools/monorepo_migration/verify_workspace_validation.py",
     )
-    type_check_command = quality_script[
-        type_check_command_start : quality_script.index(
+    type_check_command = quality_library[
+        type_check_command_start : quality_library.index(
             'echo "--> Import linter"',
             type_check_command_start,
         )
