@@ -1615,6 +1615,49 @@ def test_database_and_worktree_recipes_preserve_specialized_helper_contracts(
     ]
 
 
+def test_migration_check_applies_head_before_current_revision_verification(
+    tmp_path: Path,
+) -> None:
+    """Migration checkがhead適用後にrecorded currentとの一致を検証する契約を検証する.
+
+    Args:
+        tmp_path (Path): Isolated task gatewayとfake uv commandを置くtemporary directory.
+
+    Returns:
+        None: Migrationとcurrent/head verifierの順序またはargumentが異なる場合に失敗する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+    binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
+    _write_executable(
+        binary_directory / "uv",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'uv:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        """,
+    )
+
+    result = _run_just(repository_root, environment, "migration-check")
+
+    assert result.returncode == 0, result.stderr
+    expected_current_check = " ".join(
+        (
+            "uv:run python",
+            f"{repository_root}/tools/monorepo_migration/verify_preflight_baseline.py",
+            "--baseline",
+            f"{repository_root}/.kiro/specs/monorepo-migration/preflight-baseline.json",
+            "--mode post-cutover --alembic-current",
+        )
+    )
+    assert command_log_path.read_text(encoding="utf-8").splitlines() == [
+        f"uv:run --directory {repository_root}/apps/athena_server alembic upgrade head",
+        expected_current_check,
+    ]
+
+
 def test_database_recipes_prefer_explicit_overrides_and_server_environment_file(
     tmp_path: Path,
 ) -> None:
@@ -1801,6 +1844,7 @@ def test_public_recipe_catalog_exposes_root_workflows(tmp_path: Path) -> None:
         "db-test-create",
         "db-test-migrate",
         "db-test-run",
+        "migration-check",
         "ci",
         "all",
         "audit-monorepo",

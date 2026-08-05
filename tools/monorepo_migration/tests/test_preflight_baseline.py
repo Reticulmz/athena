@@ -367,6 +367,12 @@ def _make_post_cutover_repository(tmp_path: Path) -> Path:
     _ = shutil.copy2(REPOSITORY_ROOT / "pyproject.toml", repository_root / "pyproject.toml")
     _ = shutil.copy2(REPOSITORY_ROOT / "justfile", repository_root / "justfile")
     _ = shutil.copy2(REPOSITORY_ROOT / "flake.nix", repository_root / "flake.nix")
+    workflow_directory = repository_root / ".github" / "workflows"
+    workflow_directory.mkdir(parents=True)
+    _ = shutil.copy2(
+        REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml",
+        workflow_directory / "ci.yml",
+    )
     monorepo_tooling_root = repository_root / "tools/monorepo_migration"
     monorepo_tooling_root.mkdir(parents=True)
     for helper_name in ("repository_validation.sh", "test_database_tasks.sh"):
@@ -801,6 +807,44 @@ def test_post_cutover_mode_rejects_legacy_task_consumer(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "Root task consumer still uses legacy helper: flake.nix scripts/ci.sh" in result.stderr
+
+
+def test_post_cutover_mode_rejects_ci_workflow_divergence(tmp_path: Path) -> None:
+    """Post-cutover validationがCIによるcanonical quality recipeの迂回を拒否する契約を検証する.
+
+    Quality jobだけをlegacy helperへ戻したfixtureを検査し、required recipe evidenceの欠落と
+    deprecated consumerの両方をmonorepo auditが報告することを確認する.
+
+    Args:
+        tmp_path (Path): Divergent CI workflowを持つpost-cutover fixture用temporary directory.
+
+    Returns:
+        None: CI workflow divergenceがnon-zeroと明示的diagnosticを返すことを検証して完了する.
+    """
+    repository_root = _make_post_cutover_repository(tmp_path)
+    workflow_path = repository_root / ".github" / "workflows" / "ci.yml"
+    workflow_source = workflow_path.read_text(encoding="utf-8")
+    assert "run: just quality" in workflow_source
+    _ = workflow_path.write_text(
+        workflow_source.replace("run: just quality", "run: ./scripts/ci.sh quality", 1),
+        encoding="utf-8",
+    )
+
+    result = _run_checker(
+        BASELINE_PATH,
+        mode="post-cutover",
+        repository_root=repository_root,
+    )
+
+    assert result.returncode != 0
+    assert (
+        "Root task consumer evidence is missing: .github/workflows/ci.yml run: just quality"
+        in result.stderr
+    )
+    assert (
+        "Root task consumer still uses legacy helper: .github/workflows/ci.yml scripts/ci.sh"
+        in result.stderr
+    )
 
 
 def test_post_cutover_mode_rejects_incomplete_or_legacy_root_task_interface(

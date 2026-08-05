@@ -84,6 +84,9 @@ db-test-migrate:
 db-test-run:
     @source "{{ test_database_tasks }}"; run_test_database_tests "{{ repository_root }}"
 
+migration-check: db-migrate
+    @uv run python "{{ repository_root }}/tools/monorepo_migration/verify_preflight_baseline.py" --baseline "{{ repository_root }}/.kiro/specs/monorepo-migration/preflight-baseline.json" --mode post-cutover --alembic-current
+
 ci: quality test build
 
 all: quality test

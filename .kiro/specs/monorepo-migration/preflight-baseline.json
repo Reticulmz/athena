@@ -87,6 +87,7 @@
           "db-test-create",
           "db-test-migrate",
           "db-test-run",
+          "migration-check",
           "ci",
           "all",
           "audit-monorepo",
@@ -101,6 +102,31 @@
           "flake.nix": {
             "required_fragments": ["entry = \"just docstrings\";"],
             "forbidden_fragments": ["scripts/ci.sh", "scripts/dev-tasks.sh"]
+          },
+          ".github/workflows/ci.yml": {
+            "required_fragments": [
+              "  quality:",
+              "  test:",
+              "  build:",
+              "  migration:",
+              "  nix:",
+              "  audit:",
+              "run: just quality",
+              "run: just db-migrate",
+              "run: just test",
+              "run: just build",
+              "run: just migration-check",
+              "run: nix flake check",
+              "run: just audit-monorepo"
+            ],
+            "forbidden_fragments": [
+              "scripts/ci.sh",
+              "scripts/dev-tasks.sh",
+              "uv run pytest",
+              "alembic upgrade head",
+              "just setup",
+              "just tunnel-setup"
+            ]
           }
         }
       }

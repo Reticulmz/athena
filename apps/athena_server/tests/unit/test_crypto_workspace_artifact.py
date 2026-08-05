@@ -93,18 +93,19 @@ raise SystemExit("Verifier accepted zero discovered native tests")
 def test_ci_rebuilds_editable_crypto_extension_after_each_venv_restore() -> None:
     """CI consumer jobがcache外のeditable native extensionを各checkoutで再構築することを検証する.
 
-    Setup jobの`.venv` cacheにはsource treeへ生成されるnative extensionが含まれないため、qualityと
-    testの各jobはcache restore後にcurrent sourceからathena-cryptoだけを明示的に再installする.
+    Setup jobの`.venv` cacheにはsource treeへ生成されるnative extensionが含まれないため、native
+    validationを実行する各consumer jobはcache restore後にcurrent sourceからathena-cryptoだけを
+    明示的に再installする.
 
     Returns:
-        None: 2つのrestore stepそれぞれに対応するreinstall commandを検証して完了する.
+        None: 5つのconsumer jobでrestore後にreinstallする順序を検証して完了する.
     """
     workflow_source = CI_WORKFLOW_PATH.read_text(encoding="utf-8")
     restore_step = "uses: actions/cache/restore@v4"
     reinstall_command = "run: uv sync --locked --reinstall-package athena-crypto"
 
-    assert workflow_source.count(restore_step) == 2
-    assert workflow_source.count(reinstall_command) == 2
+    assert workflow_source.count(restore_step) == 5
+    assert workflow_source.count(reinstall_command) == 5
     restore_offsets = [
         offset
         for offset in range(len(workflow_source))

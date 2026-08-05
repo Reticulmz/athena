@@ -132,7 +132,7 @@
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 6.1, 6.2, 7.1, 7.2, 8.1, 8.6_
 
 - [ ] 4. CI、governance、cleanupを統合する
-- [ ] 4.1 CIをcanonical task contractへ切り替える
+- [x] 4.1 CIをcanonical task contractへ切り替える
   - Native dependency/tool setupとservice containerを維持し、quality/test/build/migration/auditをroot recipeから実行する。
   - Quality、test、build、migration、Nix、auditをdistinct statusとして報告する。
   - Test jobはmigration head適用後に全workspace testを実行する。
@@ -240,3 +240,4 @@
 - 2026-08-04: Task 3.2のCloudflared 2026.6.0 loginはcredentialを`$HOME/.cloudflared/cert.pem`へ出力するため、`HOME`をworktree-local stateへ隔離した。`dev-tunnel` preflightはconfigとorigin certificateの両方を要求する。
 - 2026-08-04: Task 3.4のroot test policyはcrypto package testsをdirect pytestで重複実行せず、`test_crypto_workspace_artifact.py`からwheel-only artifact verifierを一度だけ実行する。`--test-coverage`がserver、crypto、monorepo tooling、Gitlint toolingのexecution contractを列挙する。
 - 2026-08-05: Task 3.5はvalidationとtest database operationをroot-owned helperへ移し、Justを唯一のpublic task catalogにした。Legacy helperはTask 4.1/4.6まで同じimplementationまたはJustへdelegateするcompatibility entrypointに限定し、Flake docstring hookも`just docstrings`へ切り替えた。`just ci`、isolated PostgreSQL/Valkeyでのdatabase recipes、monorepo audit、independent Standards/Spec reviewが成功した。
+- 2026-08-05: Task 4.1はCIのquality、test、build、migration、Nix、auditをdistinct jobへ分離し、native jobをroot Just recipeへ統一した。Test jobは`db-migrate`後に全workspace testを実行し、post-cutover baselineとfocused contract testがworkflow driftおよびlocal-only setupを拒否する。Full test 3526件、quality、build、Nix、isolated PostgreSQL migration、audit、independent reviewが成功した。
