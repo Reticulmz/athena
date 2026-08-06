@@ -84,16 +84,19 @@ def _write_fixture_policy(tmp_path: Path) -> tuple[Path, Path]:
     return repository_root, policy_path
 
 
-def test_current_repository_has_no_unallowlisted_moved_path_consumers() -> None:
-    """Current consumerにstale pathがないことを検証する.
+def test_current_repository_reports_only_expected_pre_cleanup_artifacts() -> None:
+    """Current repository auditがcleanup前のexpected artifactだけを報告することを検証する.
 
     Returns:
-        None: 監査CLIがclean statusを返すことを確認して完了する.
+        None: stale consumerやunexpected artifactがなく、削除予定artifactだけが残ることを確認する.
     """
     result = _run_audit()
 
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.splitlines() == ["path consumer audit passed"]
+    assert result.returncode == 1
+    assert "expected cleanup artifact remains: scripts/ci.sh" in result.stderr
+    assert "expected cleanup artifact remains: scripts/dev-tasks.sh" in result.stderr
+    assert "stale path reference" not in result.stderr
+    assert "forbidden monorepo artifact" not in result.stderr
 
 
 def test_audit_reports_stale_consumer_with_replacement_and_line_number(tmp_path: Path) -> None:
@@ -139,6 +142,37 @@ def test_audit_excludes_declared_historical_paths(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_audit_distinguishes_forbidden_artifacts_from_expected_cleanup(
+    tmp_path: Path,
+) -> None:
+    """Forbidden artifactとexpected cleanup artifactを別のfindingとして報告する.
+
+    Args:
+        tmp_path (Path): fixture repositoryとpolicyを置くtemporary directory.
+
+    Returns:
+        None: scope外artifactと削除予定artifactの両方が区別されることを検証して完了する.
+    """
+    repository_root, policy_path = _write_fixture_policy(tmp_path)
+    forbidden_path = repository_root / "apps" / "athena_web"
+    forbidden_path.mkdir(parents=True)
+    _ = (repository_root / "legacy.sh").write_text("", encoding="utf-8")
+    policy = cast("dict[str, object]", json.loads(policy_path.read_text(encoding="utf-8")))
+    policy["expected_cleanup_artifacts"] = [
+        {"path": "legacy.sh", "reason": "legacy helper is removed in cleanup"}
+    ]
+    policy["forbidden_artifacts"] = [
+        {"path": "apps/athena_web", "reason": "frontend workspace is out of scope"}
+    ]
+    _ = policy_path.write_text(json.dumps(policy), encoding="utf-8")
+
+    result = _run_audit("--policy", str(policy_path), repository_root=repository_root)
+
+    assert result.returncode == 1
+    assert "forbidden monorepo artifact: apps/athena_web" in result.stderr
+    assert "expected cleanup artifact remains: legacy.sh" in result.stderr
+
+
 def test_repository_policy_declares_historical_kiro_and_transitional_exceptions() -> None:
     """Repository policyがhistorical Kiro snapshotとtransitional artifactの理由を検証する.
 
@@ -155,6 +189,14 @@ def test_repository_policy_declares_historical_kiro_and_transitional_exceptions(
         cast("dict[str, str]", entry)["glob"]: cast("dict[str, str]", entry)["reason"]
         for entry in raw_exclusions
     }
+    expected_cleanup_paths = {
+        cast("dict[str, str]", entry)["path"]
+        for entry in cast("list[object]", policy["expected_cleanup_artifacts"])
+    }
+    forbidden_artifact_paths = {
+        cast("dict[str, str]", entry)["path"]
+        for entry in cast("list[object]", policy["forbidden_artifacts"])
+    }
 
     assert ".kiro/specs/**" in exclusions
     assert "historical" in exclusions[".kiro/specs/**"].lower()
@@ -168,3 +210,12 @@ def test_repository_policy_declares_historical_kiro_and_transitional_exceptions(
         "transitional"
         in exclusions["tools/monorepo_migration/verify_preflight_baseline.py"].lower()
     )
+    assert {"scripts/ci.sh", "scripts/dev-tasks.sh"} <= expected_cleanup_paths
+    assert {
+        "apps/athena_web",
+        "tests/system",
+        "apps/athena_server/uv.lock",
+        "packages/athena_crypto/uv.lock",
+        "packages/athena_pp",
+        "package.json",
+    } <= forbidden_artifact_paths

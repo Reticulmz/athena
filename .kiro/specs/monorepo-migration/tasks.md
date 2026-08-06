@@ -164,7 +164,7 @@
   - Completed specを失わず、TODO削除後も全durable itemのownerを辿れる状態を完了条件とする。
   - _Requirements: 9.5, 9.6, 9.7, 10.3_
 
-- [ ] 4.5 Monorepo cutover auditを完成させる
+- [x] 4.5 Monorepo cutover auditを完成させる
   - Old canonical directory、member lock、legacy helper、root generated infra path、stale normative referenceを検出する。
   - Unexpected frontend workspace、JavaScript workspace files、Web process、system-test workspace、PP binding decisionを検出する。
   - Repository guide、validation policy、package layout、public task interfaceのownership一致とMarkdown link integrityを検査する。
@@ -242,3 +242,4 @@
 - 2026-08-05: Task 3.5はvalidationとtest database operationをroot-owned helperへ移し、Justを唯一のpublic task catalogにした。Legacy helperはTask 4.1/4.6まで同じimplementationまたはJustへdelegateするcompatibility entrypointに限定し、Flake docstring hookも`just docstrings`へ切り替えた。`just ci`、isolated PostgreSQL/Valkeyでのdatabase recipes、monorepo audit、independent Standards/Spec reviewが成功した。
 - 2026-08-05: Task 4.1はCIのquality、test、build、migration、Nix、auditをdistinct jobへ分離し、native jobをroot Just recipeへ統一した。Test jobは`db-migrate`後に全workspace testを実行し、post-cutover baselineとfocused contract testがworkflow driftおよびlocal-only setupを拒否する。Full test 3526件、quality、build、Nix、isolated PostgreSQL migration、audit、independent reviewが成功した。
 - 2026-08-06: Task 4.4は`.kiro/specs/README.md`でspec authority/lifecycle/current-vs-historical policyを明文化し、root `TODO.md`の7項目をroadmap/spec ownerへ移管して`TODO.md`を削除した。Focused authority testsとpost-cutover auditが成功した。
+- 2026-08-06: Task 4.5は`verify_path_consumers.py`をexpected cleanup artifact、forbidden artifact、stale current consumerを区別する完成版cutover auditへ拡張した。Cleanup前の`just audit-monorepo`はexpected cleanup artifactだけをnon-zeroで報告し、unexpected findingは0件である。

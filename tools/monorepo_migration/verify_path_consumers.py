@@ -52,6 +52,19 @@ class AuditException:
 
 
 @dataclass(frozen=True, slots=True)
+class AuditArtifact:
+    """Repository tree上の存在を監査するartifactを表す.
+
+    Attributes:
+        path (str): repository rootからの相対path.
+        reason (str): artifactがexpected cleanupまたはforbiddenである理由.
+    """
+
+    path: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
 class AuditPolicy:
     """Path consumer監査の対象、rule、例外を保持するpolicy.
 
@@ -60,12 +73,16 @@ class AuditPolicy:
         excluded_paths (tuple[AuditException, ...]): 監査対象外とするhistorical path.
         rules (tuple[AuditRule, ...]): stale pathを検出するrule.
         allowed_references (tuple[AuditException, ...]): current file内の理由付き例外.
+        expected_cleanup_artifacts (tuple[AuditArtifact, ...]): cleanup前だけ残る削除予定path.
+        forbidden_artifacts (tuple[AuditArtifact, ...]): 現在treeへ作成してはいけないpath.
     """
 
     scan_paths: tuple[str, ...]
     excluded_paths: tuple[AuditException, ...]
     rules: tuple[AuditRule, ...]
     allowed_references: tuple[AuditException, ...]
+    expected_cleanup_artifacts: tuple[AuditArtifact, ...]
+    forbidden_artifacts: tuple[AuditArtifact, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,6 +186,34 @@ def _exceptions(value: object, label: str) -> tuple[AuditException, ...]:
     return tuple(exceptions)
 
 
+def _artifacts(value: object, label: str) -> tuple[AuditArtifact, ...]:
+    """JSON artifact listをtyped audit artifactへ変換する.
+
+    Args:
+        value (object): JSON parserから返された未検証artifact list.
+        label (str): error messageへ表示するfield名.
+
+    Returns:
+        tuple[AuditArtifact, ...]: 検証済みartifact tuple.
+
+    Raises:
+        PathConsumerAuditError: artifact shapeまたはfield typeが不正な場合.
+    """
+    if not isinstance(value, list):
+        raise PathConsumerAuditError(f"{label} must be a JSON list")
+    artifacts: list[AuditArtifact] = []
+    raw_artifacts = cast("list[object]", value)
+    for index, raw_artifact in enumerate(raw_artifacts):
+        artifact = _object(raw_artifact, f"{label}[{index}]")
+        path = _string(artifact.get("path"), f"{label}[{index}].path")
+        relative_path = Path(path)
+        if relative_path.is_absolute() or ".." in relative_path.parts:
+            raise PathConsumerAuditError(f"{label}[{index}].path must be repository-relative")
+        reason = _string(artifact.get("reason"), f"{label}[{index}].reason")
+        artifacts.append(AuditArtifact(path=path, reason=reason))
+    return tuple(artifacts)
+
+
 def load_policy(policy_path: Path) -> AuditPolicy:
     """JSON policyを読み込み、監査に利用できる型へ変換する.
 
@@ -219,6 +264,14 @@ def load_policy(policy_path: Path) -> AuditPolicy:
         excluded_paths=_exceptions(policy.get("excluded_paths", []), "excluded_paths"),
         rules=tuple(rules),
         allowed_references=allowed_references,
+        expected_cleanup_artifacts=_artifacts(
+            policy.get("expected_cleanup_artifacts", []),
+            "expected_cleanup_artifacts",
+        ),
+        forbidden_artifacts=_artifacts(
+            policy.get("forbidden_artifacts", []),
+            "forbidden_artifacts",
+        ),
     )
 
 
@@ -345,6 +398,27 @@ def audit_repository(repository_root: Path, policy: AuditPolicy) -> tuple[AuditF
     return tuple(findings)
 
 
+def audit_existing_artifacts(
+    repository_root: Path,
+    artifacts: Iterable[AuditArtifact],
+) -> tuple[AuditArtifact, ...]:
+    """Policyで指定されたartifactのうち存在するものを返す.
+
+    Args:
+        repository_root (Path): 監査対象repositoryのroot path.
+        artifacts (Iterable[AuditArtifact]): 存在確認するartifact定義.
+
+    Returns:
+        tuple[AuditArtifact, ...]: repository上に存在するartifact.
+    """
+    return tuple(
+        artifact
+        for artifact in artifacts
+        if (repository_root / artifact.path).exists()
+        or (repository_root / artifact.path).is_symlink()
+    )
+
+
 def _parser() -> argparse.ArgumentParser:
     """Path consumer audit CLIのargument parserを作る.
 
@@ -384,11 +458,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         policy = load_policy(policy_path)
         findings = audit_repository(repository_root, policy)
+        forbidden_artifacts = audit_existing_artifacts(
+            repository_root,
+            policy.forbidden_artifacts,
+        )
+        expected_cleanup_artifacts = audit_existing_artifacts(
+            repository_root,
+            policy.expected_cleanup_artifacts,
+        )
     except PathConsumerAuditError as error:
         print(f"Path consumer audit failed: {error}", file=sys.stderr)
         return 1
 
-    if findings:
+    if findings or forbidden_artifacts or expected_cleanup_artifacts:
+        for artifact in forbidden_artifacts:
+            print(
+                f"forbidden monorepo artifact: {artifact.path}; {artifact.reason}",
+                file=sys.stderr,
+            )
         for finding in findings:
             location = f"{finding.path}:{finding.line_number}"
             message = " ".join(
@@ -398,6 +485,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
             print(message, file=sys.stderr)
+        for artifact in expected_cleanup_artifacts:
+            print(
+                f"expected cleanup artifact remains: {artifact.path}; {artifact.reason}",
+                file=sys.stderr,
+            )
         return 1
     print("path consumer audit passed")
     return 0
