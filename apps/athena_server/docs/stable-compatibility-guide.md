@@ -894,8 +894,8 @@ nix develop --command uv run pytest \
   apps/athena_server/tests/integration/test_getscores_unavailable_paths.py \
   apps/athena_server/tests/integration/test_getscores_status_fixtures.py \
   apps/athena_server/tests/integration/test_getscores_diagnostics.py
-nix develop --command ./scripts/ci.sh quality
-nix develop --command ./scripts/ci.sh test
+nix develop --command just quality
+nix develop --command just test
 nix develop --command prek run --all-files
 git diff --check main...HEAD
 ```

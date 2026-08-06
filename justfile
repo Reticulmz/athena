@@ -96,8 +96,8 @@ ci: quality test build
 all: quality test
 
 audit-monorepo:
-    @uv run python "{{ repository_root }}/tools/monorepo_migration/verify_preflight_baseline.py" --baseline "{{ repository_root }}/.kiro/specs/monorepo-migration/preflight-baseline.json" --mode post-cutover
-    @uv run python "{{ repository_root }}/tools/monorepo_migration/verify_path_consumers.py"
+    @python "{{ repository_root }}/tools/monorepo_migration/verify_preflight_baseline.py" --baseline "{{ repository_root }}/.kiro/specs/monorepo-migration/preflight-baseline.json" --mode post-cutover
+    @python "{{ repository_root }}/tools/monorepo_migration/verify_path_consumers.py"
 
 worktree task_slug *options:
     @{{ repository_root }}/scripts/agent-worktree.sh {{ task_slug }} {{ options }}

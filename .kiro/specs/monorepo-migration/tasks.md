@@ -173,7 +173,7 @@
   - _Depends: 4.3, 4.4_
   - _Requirements: 6.3, 9.7, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7_
 
-- [ ] 4.6 Legacy artifactをconsumer-free状態で削除する
+- [x] 4.6 Legacy artifactをconsumer-free状態で削除する
   - Capability移管が完了し、pre-cleanup auditのunexpected findingが0件でexpected deletion setが固定された後だけlegacy scripts、old directories、member lock、moved root templatesを削除する。
   - Generated/machine-specific stateをsource treeから除き、per-worktree locationだけを残す。
   - Deprecated command/pathをcanonical sourceとして残さず、specialized worktree helperだけを維持する。
@@ -243,3 +243,4 @@
 - 2026-08-05: Task 4.1はCIのquality、test、build、migration、Nix、auditをdistinct jobへ分離し、native jobをroot Just recipeへ統一した。Test jobは`db-migrate`後に全workspace testを実行し、post-cutover baselineとfocused contract testがworkflow driftおよびlocal-only setupを拒否する。Full test 3526件、quality、build、Nix、isolated PostgreSQL migration、audit、independent reviewが成功した。
 - 2026-08-06: Task 4.4は`.kiro/specs/README.md`でspec authority/lifecycle/current-vs-historical policyを明文化し、root `TODO.md`の7項目をroadmap/spec ownerへ移管して`TODO.md`を削除した。Focused authority testsとpost-cutover auditが成功した。
 - 2026-08-06: Task 4.5は`verify_path_consumers.py`をexpected cleanup artifact、forbidden artifact、stale current consumerを区別する完成版cutover auditへ拡張した。Cleanup前の`just audit-monorepo`はexpected cleanup artifactだけをnon-zeroで報告し、unexpected findingは0件である。
+- 2026-08-06: Task 4.6はlegacy public helperの`scripts/ci.sh`と`scripts/dev-tasks.sh`を削除し、root生成物の`alembic/`、`tests/`、`gitlint_rules/`、`.state/`、`.venv/`、`certs/`をsource treeから除去した。`audit-monorepo`はcleanup対象の`.venv`を再生成しないよう標準ライブラリのみのverifierを`python`で直接実行する。

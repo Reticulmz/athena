@@ -84,19 +84,16 @@ def _write_fixture_policy(tmp_path: Path) -> tuple[Path, Path]:
     return repository_root, policy_path
 
 
-def test_current_repository_reports_only_expected_pre_cleanup_artifacts() -> None:
-    """Current repository auditがcleanup前のexpected artifactだけを報告することを検証する.
+def test_current_repository_audit_passes_after_cleanup() -> None:
+    """Current repository auditがcleanup後に成功することを検証する.
 
     Returns:
-        None: stale consumerやunexpected artifactがなく、削除予定artifactだけが残ることを確認する.
+        None: stale consumer、unexpected artifact、削除予定artifactが残っていないことを確認する.
     """
     result = _run_audit()
 
-    assert result.returncode == 1
-    assert "expected cleanup artifact remains: scripts/ci.sh" in result.stderr
-    assert "expected cleanup artifact remains: scripts/dev-tasks.sh" in result.stderr
-    assert "stale path reference" not in result.stderr
-    assert "forbidden monorepo artifact" not in result.stderr
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "path consumer audit passed"
 
 
 def test_audit_reports_stale_consumer_with_replacement_and_line_number(tmp_path: Path) -> None:

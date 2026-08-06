@@ -34,18 +34,18 @@ Frozen オブジェクトの属性変更など、型システム上は不正な�
 
 ## ローカルでのテストと品質検証
 
-CI と同等の検証を手元で行うには、`scripts/ci.sh` を使用します。
+CI と同等の検証を手元で行うには、root Just recipe を使用します。
 
 ```bash
 # フォーマット、lint、型チェック、import lint の実行
-./scripts/ci.sh quality
+just quality
 
 # テストの実行
-./scripts/ci.sh test
+just test
 
 # quality と test の両方を実行
-./scripts/ci.sh all
+just all
 
 # 自動修正可能な lint/format の適用
-./scripts/ci.sh fix
+just fix
 ```

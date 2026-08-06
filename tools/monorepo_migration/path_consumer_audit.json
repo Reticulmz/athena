@@ -13,6 +13,7 @@
     "process-compose.yml",
     ".worktreeinclude",
     "apps/athena_server/docs",
+    "apps/athena_server/tests/README.md",
     "apps/athena_server/src/athena_cli/stable_verification",
     "apps/athena_server/tests/unit/athena_cli/stable_verification",
     "apps/athena_server/tests/unit/athena_cli/test_packaging.py"
@@ -193,6 +194,16 @@
       "id": "gitlint_root",
       "regex": "(?<![A-Za-z0-9_./-])gitlint_rules/",
       "replacement": "tools/gitlint/"
+    },
+    {
+      "id": "legacy_ci_helper",
+      "regex": "(?<![A-Za-z0-9_./-])(?:\\./)?scripts/ci\\.sh",
+      "replacement": "root Just recipes such as just quality, just test, and just docstrings"
+    },
+    {
+      "id": "legacy_dev_tasks_helper",
+      "regex": "(?<![A-Za-z0-9_./-])(?:\\./)?scripts/dev-tasks\\.sh",
+      "replacement": "root Just database recipes or Athena CLI commands"
     },
     {
       "id": "web_process",

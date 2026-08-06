@@ -120,17 +120,17 @@ Do not add compatibility facades for deprecated service, repository, domain, or 
 
 Architecture documentation and mechanical validation must describe the same boundaries. `import-linter` contracts in `pyproject.toml` enforce dependency direction and forbidden imports. Tests cover provider replacement, startup failure, Unit of Work commit/rollback behavior, command/query separation, transport-family isolation, job adapter thinness, and deprecated path detection for finalized packages.
 
-The local quality gate is `./scripts/ci.sh quality`, which runs Ruff formatting,
+The local quality gate is `just quality`, which runs Ruff formatting,
 linting, and interrogate over Git's tracked first-party `.py` inventory while
 basedpyright and import-linter retain their `apps/athena_server/src/` and
 `apps/athena_server/tests/` scopes. The test gate is
-`./scripts/ci.sh test`. A refactor phase is incomplete if the guide, validation
+`just test`. A refactor phase is incomplete if the guide, validation
 rules, and package layout disagree.
 
 ### Docstring Quality Contract
 
 [AGENTS.md](../AGENTS.md) is the sole canonical standard for Python docstrings.
-`./scripts/ci.sh docstrings` runs Ruff `D` for Google Style presence and format
+`just docstrings` runs Ruff `D` for Google Style presence and format
 and interrogate for definition coverage. Section types and meanings are reviewed
 against the canonical standard, implementation, call sites, and relevant tests.
 The architecture guide records the gate boundary only and does not restate the
@@ -138,7 +138,7 @@ authoring rules.
 
 `flake.nix` owns the generated pre-commit configuration. It invokes the uv
 lockfile's Ruff formatter and linter for changed `.py` files, then invokes the
-full `./scripts/ci.sh docstrings` gate once without passing filenames. `.pyi`
+full `just docstrings` gate once without passing filenames. `.pyi`
 changes do not trigger that docstring gate.
 
 Sphinx configuration, themes, generated output, and publishing are owned by an
