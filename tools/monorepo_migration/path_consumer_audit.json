@@ -44,10 +44,6 @@
       "reason": "Generated worktree state is removed from source tree during cleanup."
     },
     {
-      "path": ".venv",
-      "reason": "Generated virtual environment is removed from source tree during cleanup."
-    },
-    {
       "path": "certs",
       "reason": "Generated certificate state is removed from source tree during cleanup."
     },

@@ -208,6 +208,7 @@ def test_repository_policy_declares_historical_kiro_and_transitional_exceptions(
         in exclusions["tools/monorepo_migration/verify_preflight_baseline.py"].lower()
     )
     assert {"scripts/ci.sh", "scripts/dev-tasks.sh"} <= expected_cleanup_paths
+    assert ".venv" not in expected_cleanup_paths
     assert {
         "apps/athena_web",
         "tests/system",
