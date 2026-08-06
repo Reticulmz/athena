@@ -54,10 +54,22 @@ AUTHORITY_DOCUMENT_PATHS = (
     Path("AGENTS.md"),
     Path("CLAUDE.md"),
     Path("docs/monorepo-layout.md"),
+    Path(".kiro/specs/README.md"),
     Path("apps/athena_server/README.md"),
     Path("apps/athena_server/AGENTS.md"),
     Path("packages/athena_crypto/README.md"),
     Path("packages/athena_crypto/AGENTS.md"),
+)
+ROADMAP_PATH = REPOSITORY_ROOT / ".kiro" / "steering" / "roadmap.md"
+RETIRED_BACKLOG_PATH = REPOSITORY_ROOT / "TODO.md"
+MIGRATED_TODO_BACKLOG_ITEMS = (
+    ("ログファイルの仕様", "log-rotation"),
+    ("テストで型を回避するハック的手法", "test-type-safety"),
+    ("DB分離をする仕組み", "athena-cli-management"),
+    ("権限別コマンド", "banchobot-admin-commands"),
+    ("監査ログ機能", "athena-web-app"),
+    ("!role !ban !silence !restrictなどのコマンド用", "banchobot-admin-commands"),
+    ("session-authorization-refreshの検証", "session-authorization-refresh"),
 )
 ROOT_PUBLIC_RECIPES = (
     "just setup",
@@ -366,6 +378,41 @@ def test_repository_technical_authority_docs_follow_workspace_ownership() -> Non
         if not target.exists()
     ]
     assert broken_links == []
+
+
+def test_kiro_lifecycle_and_backlog_authority_are_current() -> None:
+    """Kiro lifecycleとroot backlogのauthorityが現在の移行状態に揃うことを検証する.
+
+    Current behavior、ADR、feature specの正本を分け、完了済みspecをhistorical evidenceとして
+    保持しつつ、root `TODO.md`をdurable backlog authorityとして残さないことを確認する.
+
+    Returns:
+        None: Kiro lifecycle文書とTODO移管台帳を検証して完了し、呼び出し側へ値を返さない.
+    """
+    spec_authority = (REPOSITORY_ROOT / ".kiro" / "specs" / "README.md").read_text(
+        encoding="utf-8"
+    )
+    roadmap = ROADMAP_PATH.read_text(encoding="utf-8")
+
+    for required_phrase in (
+        "Current observable behaviorの正本はcodeとtest",
+        "ADRは横断的で長期的なarchitecture decision",
+        "feature specはrequirements、design、research、implementation history",
+        "active",
+        "completed",
+        "superseded",
+        "abandoned",
+        "completed specはhistorical evidence",
+        "active/current specだけをcurrent instruction",
+        "TODO.mdはbacklog authorityではない",
+    ):
+        assert required_phrase in spec_authority
+
+    assert not RETIRED_BACKLOG_PATH.exists()
+    assert "TODO.md migration ledger" in roadmap
+    for item, owner in MIGRATED_TODO_BACKLOG_ITEMS:
+        assert item in roadmap
+        assert owner in roadmap
 
 
 def test_root_quality_type_checks_initial_workspace_and_repository_tooling() -> None:

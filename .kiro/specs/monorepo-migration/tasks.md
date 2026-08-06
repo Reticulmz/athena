@@ -157,7 +157,7 @@
   - _Depends: 4.2_
   - _Requirements: 4.5, 9.1, 9.2, 9.3, 9.4, 9.7_
 
-- [ ] 4.4 Kiro lifecycleとbacklog authorityを整合させる
+- [x] 4.4 Kiro lifecycleとbacklog authorityを整合させる
   - Current behavior、ADR、feature specのauthorityとactive/completed/superseded/abandoned lifecycleを明文化する。
   - Active/current specのphase、task、implementation evidenceを監査し、historical path exceptionをcurrent instructionから区別する。
   - TODO backlogをroadmap/specへ照合し、未登録durable itemだけを移管する。
@@ -241,3 +241,4 @@
 - 2026-08-04: Task 3.4のroot test policyはcrypto package testsをdirect pytestで重複実行せず、`test_crypto_workspace_artifact.py`からwheel-only artifact verifierを一度だけ実行する。`--test-coverage`がserver、crypto、monorepo tooling、Gitlint toolingのexecution contractを列挙する。
 - 2026-08-05: Task 3.5はvalidationとtest database operationをroot-owned helperへ移し、Justを唯一のpublic task catalogにした。Legacy helperはTask 4.1/4.6まで同じimplementationまたはJustへdelegateするcompatibility entrypointに限定し、Flake docstring hookも`just docstrings`へ切り替えた。`just ci`、isolated PostgreSQL/Valkeyでのdatabase recipes、monorepo audit、independent Standards/Spec reviewが成功した。
 - 2026-08-05: Task 4.1はCIのquality、test、build、migration、Nix、auditをdistinct jobへ分離し、native jobをroot Just recipeへ統一した。Test jobは`db-migrate`後に全workspace testを実行し、post-cutover baselineとfocused contract testがworkflow driftおよびlocal-only setupを拒否する。Full test 3526件、quality、build、Nix、isolated PostgreSQL migration、audit、independent reviewが成功した。
+- 2026-08-06: Task 4.4は`.kiro/specs/README.md`でspec authority/lifecycle/current-vs-historical policyを明文化し、root `TODO.md`の7項目をroadmap/spec ownerへ移管して`TODO.md`を削除した。Focused authority testsとpost-cutover auditが成功した。

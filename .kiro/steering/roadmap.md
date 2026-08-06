@@ -59,6 +59,20 @@
 - email-verification / athena-web-app / supporter-entitlements は方針を先に固めるが、正式 spec は stable bancho の基本機能（chat、presence、score、leaderboard、stats）の実用体験が固まってから生成する
 - ログ writer パイプラインは現行のファイルロック方式を置き換える可能性があるが、Valkey / writer の起動順・障害時にもログを失わないことを最優先の設計条件にする
 
+## TODO.md migration ledger
+
+Root `TODO.md`はbacklog authorityとして廃止済み。残項目は次のownerで追跡する。
+
+| 移管元メモ | Owner |
+| --- | --- |
+| ログファイルの仕様(latest.log + 過去ログ形式) | `.kiro/specs/log-rotation` |
+| テストで型を回避するハック的手法やPyrightの抑制 | `.kiro/specs/test-type-safety` |
+| DB分離をする仕組み(テスト用、開発用、プロダクション用) | `.kiro/specs/athena-cli-management` |
+| 権限別コマンド | `.kiro/specs/banchobot-admin-commands` |
+| 監査ログ機能 | `athena-web-app` roadmap item |
+| !role !ban !silence !restrictなどのコマンド用 | `.kiro/specs/banchobot-admin-commands` |
+| session-authorization-refreshの検証 | `.kiro/specs/session-authorization-refresh` |
+
 ## 将来 spec メモ（channel-system grill-me で洗い出し）
 
 - **channel-management-api** — チャンネル CRUD の REST API エンドポイント設計（WebUI / Lazer から呼び出し）

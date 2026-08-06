@@ -132,7 +132,7 @@ Root `pyproject.toml`はnon-package uv workspaceとrepository-wide Python develo
 - Root `AGENTS.md`は共通規約、child AGENTS.mdは差分規約だけを所有する。
 - ADRはroot `docs/adr/`で単一連番を維持する。
 - Workspace固有architecture、protocol、researchはownerの`docs/`へ置く。
-- `.kiro/specs/`はactive planとcompleted feature specificationの両方を保持する。
+- `.kiro/specs/`はactive planとcompleted feature specificationの両方を保持する。lifecycleとauthorityは[spec README](../.kiro/specs/README.md)で定義する。
 
 ## Migration status and remaining cleanup
 
@@ -140,7 +140,7 @@ Root `pyproject.toml`はnon-package uv workspaceとrepository-wide Python develo
 - Native crypto source、test、manifest、public typingは`packages/athena_crypto/`が所有する。Root uv workspaceは単一lockを使う。
 - Root README/AGENTSはrepository overview、共通policy、Just task interfaceを所有し、server/crypto README/AGENTSはworkspace固有runbookと差分だけを所有する。
 - Stable compatibility fixture、catalog、verification reportはserver owner配下のpathをcurrent evidenceとして参照する。
-- Gitlint rule、development task gateway、tracked ingress template、root backlogの最終cleanupは後続Task 3/4で実施する。移行完了まで暫定artifactを削除せず、path consumer auditの理由付きallowlistで管理する。
+- Gitlint rule、development task gateway、tracked ingress templateの最終cleanupは後続Task 4.5/4.6で実施する。移行完了まで暫定artifactを削除せず、path consumer auditの理由付きallowlistで管理する。
 
 ## Deferred decisions
 
@@ -170,8 +170,8 @@ Root `pyproject.toml`はnon-package uv workspaceとrepository-wide Python develo
 ### 3. Documentation and backlog audit
 
 - Root、server、cryptoのREADMEとAGENTS.md、およびClaude固有差分を新しいownershipへ更新する。Web用文書はfrontend workspace作成時に追加する。
-- Kiro specのphase、task completion、実装状態を監査する。
-- Root `TODO.md`の残項目をroadmap/specへ移して削除する。
+- Kiro specのphase、task completion、実装状態を監査し、current instructionとhistorical evidenceを区別する。
+- Root `TODO.md`の残項目はroadmap/specへ移管済みで、root backlog authorityとしては残さない。
 - Stale path、重複規約、廃止commandをrepository全体で検査する。
 
 Frontend workspace bootstrapはこのmigrationに含めず、最初のfrontend feature specとPRで行う。
