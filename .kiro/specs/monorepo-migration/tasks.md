@@ -191,7 +191,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 2.2, 2.3, 2.7, 6.6_
   - _Boundary: Server Workspace, Crypto Workspace_
 
-- [ ] 5.2 Explicit setupとlinked worktree isolationを最終検証する (P)
+- [x] 5.2 Explicit setupとlinked worktree isolationを最終検証する (P)
   - Environment entryがrepository、state、hooks、certificate、trust storeを変更しないことを検証する。
   - Setupのidempotencyとactionable failure contractを検証する。
   - 2 linked worktreeの`.venv`、state、certificate、proxy/tunnel config、hook stateが独立しfallbackしないことを検証する。
@@ -245,3 +245,4 @@
 - 2026-08-06: Task 4.5は`verify_path_consumers.py`をexpected cleanup artifact、forbidden artifact、stale current consumerを区別する完成版cutover auditへ拡張した。Cleanup前の`just audit-monorepo`はexpected cleanup artifactだけをnon-zeroで報告し、unexpected findingは0件である。
 - 2026-08-06: Task 4.6はlegacy public helperの`scripts/ci.sh`と`scripts/dev-tasks.sh`を削除し、root生成物の`alembic/`、`tests/`、`gitlint_rules/`、`.state/`、`.venv/`、`certs/`をsource treeから除去した。`audit-monorepo`はcleanup対象の`.venv`を再生成しないよう標準ライブラリのみのverifierを`python`で直接実行する。
 - 2026-08-06: Task 5.1はserver/crypto clean wheel artifact verifier、isolated PostgreSQL上の`just migration-check`、Stable/Lazer/API/worker focused regression 111件でruntime import、app/worker/CLI entrypoint、worker task名、Alembic head/current、representative client behaviorが維持されることを確認した。
+- 2026-08-06: Task 5.2はfake setupのidempotency、temporary linked worktree間の`.venv`、`.state`、certificate、tunnel config、hook state隔離、dev preflight failure、database/worktree recipe contract、Nix environment entryのside-effect-free性をfocused testsで確認した。
