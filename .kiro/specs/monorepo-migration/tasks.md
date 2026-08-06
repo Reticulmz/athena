@@ -140,7 +140,7 @@
   - _Depends: 3.5_
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6_
 
-- [ ] 4.2 Boundary 2のtooling compatibility checkpointを通す
+- [x] 4.2 Boundary 2のtooling compatibility checkpointを通す
   - Environment entry前後にrepository、state、hook、certificate、trust storeの差分がないことを検証する。
   - Explicit setupのidempotencyと、2 linked worktree間のvirtual environment、runtime state、certificate、proxy/tunnel config、hook stateの隔離を検証する。
   - Credential-free core ingress、optional tunnel、process readiness/dependency/graceful shutdownを検証する。

@@ -16,6 +16,7 @@ ROOT_MANIFEST_PATH = REPOSITORY_ROOT / "pyproject.toml"
 ROOT_VALIDATION_LIBRARY_PATH = (
     REPOSITORY_ROOT / "tools" / "monorepo_migration" / "repository_validation.sh"
 )
+JUSTFILE_PATH = REPOSITORY_ROOT / "justfile"
 FLAKE_PATH = REPOSITORY_ROOT / "flake.nix"
 WORKSPACE_VALIDATION_TOOL_PATH = (
     REPOSITORY_ROOT / "tools" / "monorepo_migration" / "verify_workspace_validation.py"
@@ -44,6 +45,35 @@ REQUIRED_TYPE_CHECK_PATHS = (
     GITLINT_TOOL_PATH,
 )
 TYPE_CHECKER_COMMAND = "tools/monorepo_migration/verify_workspace_validation.py --run-basedpyright"
+DEVELOPMENT_INFRASTRUCTURE_TEST_PATH = (
+    "tools/monorepo_migration/tests/test_development_infrastructure.py"
+)
+EXPECTED_DEVELOPMENT_INFRASTRUCTURE_NODES = {
+    (
+        f"{DEVELOPMENT_INFRASTRUCTURE_TEST_PATH}::"
+        "test_core_process_graph_reaches_named_https_and_stops_dependents_first"
+    ),
+    (
+        f"{DEVELOPMENT_INFRASTRUCTURE_TEST_PATH}::"
+        "test_linux_namespace_tools_resolve_directly_from_nix_store"
+    ),
+    (
+        f"{DEVELOPMENT_INFRASTRUCTURE_TEST_PATH}::"
+        "test_nix_environment_entry_preserves_explicit_worktree_state"
+    ),
+    (
+        f"{DEVELOPMENT_INFRASTRUCTURE_TEST_PATH}::"
+        "test_process_compose_installed_schema_accepts_root_graph"
+    ),
+    (
+        f"{DEVELOPMENT_INFRASTRUCTURE_TEST_PATH}::"
+        "test_nginx_tls_ingress_routes_health_request_to_internal_app"
+    ),
+    (
+        f"{DEVELOPMENT_INFRASTRUCTURE_TEST_PATH}::"
+        "test_nginx_tls_probe_rejects_certificate_for_different_hostname"
+    ),
+}
 type TomlTable = dict[str, object]
 
 
@@ -104,6 +134,41 @@ def _shell_function_body(script: str, function_name: str) -> str:
     body_end = script.find("\n}\n", body_start)
     assert body_end >= 0
     return script[body_start:body_end]
+
+
+def _collected_development_infrastructure_nodes(marker_expression: str) -> set[str]:
+    """Development infrastructure testからmarkerで選択されたnode IDを返す.
+
+    Args:
+        marker_expression (str): Pytest `-m`へ渡すselection expression.
+
+    Returns:
+        set[str]: Repository-relative node IDの集合.
+
+    Raises:
+        AssertionError: Collection commandが成功しない場合.
+    """
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-p",
+            "no:cacheprovider",
+            "--collect-only",
+            "-q",
+            "-m",
+            marker_expression,
+            DEVELOPMENT_INFRASTRUCTURE_TEST_PATH,
+        ],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+    return {line for line in result.stdout.splitlines() if "::" in line}
 
 
 def _write_workspace_fixture(tmp_path: Path, *, include_artifact_tests: bool) -> Path:
@@ -288,6 +353,29 @@ def test_root_test_gate_covers_current_workspace_and_tool_test_contracts() -> No
         "tools/gitlint",
     ]
     assert "tools/gitlint/tests/**/*.py" in per_file_ignores
+
+
+def test_root_test_separates_real_development_infrastructure_checkpoint() -> None:
+    """通常testとNix限定development infrastructure nodeの選択境界を検証する.
+
+    Canonical root testはreal Nix、mkcert、Process Compose、Nginxを必要とするnodeを除外し、
+    専用recipeだけが全checkpoint nodeを選択する. Markerで分類したnodeが通常testと重複しない
+    ことも確認する.
+
+    Returns:
+        None: Root recipe selectorと実pytest collectionの分離を検証して完了する.
+    """
+    validation_library = ROOT_VALIDATION_LIBRARY_PATH.read_text(encoding="utf-8")
+    root_test_body = _shell_function_body(validation_library, "run_test")
+    justfile_source = JUSTFILE_PATH.read_text(encoding="utf-8")
+
+    assert '-m "not development_infrastructure"' in root_test_body
+    assert "-m development_infrastructure" in justfile_source
+
+    checkpoint_nodes = _collected_development_infrastructure_nodes("development_infrastructure")
+    default_nodes = _collected_development_infrastructure_nodes("not development_infrastructure")
+    assert checkpoint_nodes == EXPECTED_DEVELOPMENT_INFRASTRUCTURE_NODES
+    assert checkpoint_nodes.isdisjoint(default_nodes)
 
 
 def test_workspace_verifier_rejects_member_tests_without_artifact_contracts(

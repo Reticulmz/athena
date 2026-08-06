@@ -63,7 +63,8 @@ run_test() {
         mapfile -t pytest_path_arguments <<< "${pytest_paths}"
 
         if command -v valkey-server >/dev/null 2>&1 && command -v valkey-cli >/dev/null 2>&1; then
-            run_with_test_valkey uv run pytest "${pytest_path_arguments[@]}" -v
+            run_with_test_valkey \
+                uv run pytest -m "not development_infrastructure" "${pytest_path_arguments[@]}" -v
             return
         fi
 
@@ -73,7 +74,7 @@ run_test() {
         fi
 
         export ENVIRONMENT=test
-        uv run pytest "${pytest_path_arguments[@]}" -v
+        uv run pytest -m "not development_infrastructure" "${pytest_path_arguments[@]}" -v
     )
 }
 

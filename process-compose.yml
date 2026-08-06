@@ -49,14 +49,15 @@ processes:
       restart: "no"
 
   valkey:
-    command: >-
-      exec valkey-server
-      --port 6379
-      --dir "$ATHENA_WORKTREE_ROOT/.state/valkey"
-      --daemonize no
+    command: |
+      valkey_port="${VALKEY_PORT:-6379}"
+      exec valkey-server \
+        --port "$valkey_port" \
+        --dir "$ATHENA_WORKTREE_ROOT/.state/valkey" \
+        --daemonize no
     readiness_probe:
       exec:
-        command: valkey-cli -p 6379 ping
+        command: valkey-cli -p "${VALKEY_PORT:-6379}" ping
       initial_delay_seconds: 1
       period_seconds: 5
     shutdown:
@@ -75,10 +76,11 @@ processes:
     readiness_probe:
       exec:
         command: >-
-          python -c 'from urllib.request import urlopen;
-          response = urlopen("http://127.0.0.1:8000/health", timeout=2);
-          response.close()'
-      initial_delay_seconds: 2
+          python -c 'import sys; from urllib.request import urlopen;
+          response = urlopen(sys.argv[1], timeout=2); response.close()'
+          "http://127.0.0.1:${SERVER_PORT:-8000}/health"
+      # Development StatReloadの初回起動をprobe failureとして扱わないgrace period.
+      initial_delay_seconds: 15
       period_seconds: 2
     shutdown:
       signal: 15
@@ -115,7 +117,8 @@ processes:
           exec python \
             "$ATHENA_WORKTREE_ROOT/tools/monorepo_migration/nginx_tls_probe.py" \
             probe \
-            "$ca_root/rootCA.pem"
+            "$ca_root/rootCA.pem" \
+            --port "${ATHENA_NGINX_TLS_PORT:-443}"
       initial_delay_seconds: 1
       period_seconds: 2
     shutdown:

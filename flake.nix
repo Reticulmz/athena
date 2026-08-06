@@ -32,18 +32,26 @@
           serverWorkspace = import ./apps/athena_server/default.nix { inherit pkgs lib; };
           cryptoWorkspace = import ./packages/athena_crypto/default.nix { inherit pkgs lib; };
 
-          rootPackages = with pkgs; [
-            cloudflared
-            git
-            gitleaks
-            just
-            mkcert
-            nginx
-            postgresql_17
-            prek
-            process-compose
-            valkey
-          ];
+          rootPackages =
+            (with pkgs; [
+              cloudflared
+              git
+              gitleaks
+              just
+              mkcert
+              nginx
+              postgresql_17
+              prek
+              process-compose
+              valkey
+            ])
+            ++ lib.optionals pkgs.stdenv.isLinux (
+              with pkgs;
+              [
+                iproute2
+                util-linux
+              ]
+            );
           workspacePackages = lib.unique (
             serverWorkspace.toolchain ++ cryptoWorkspace.toolchain
           );

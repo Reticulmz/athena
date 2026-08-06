@@ -122,7 +122,9 @@ def test_native_jobs_share_locked_setup_without_local_development_mutations() ->
         "just tunnel-setup",
         "just dev",
         "just dev-tunnel",
+        "just process-lifecycle-check",
         "mkcert",
+        "process-compose",
         "cloudflared",
         "prek install",
     ):

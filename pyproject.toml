@@ -122,6 +122,9 @@ testpaths = [
     "tools/monorepo_migration/tests",
     "tools/gitlint/tests",
 ]
+markers = [
+    "development_infrastructure: Nix toolchain上で明示実行するdevelopment infrastructure検証",
+]
 pythonpath = [".", "apps/athena_server"]
 asyncio_mode = "auto"
 python_files = ["test_*.py"]

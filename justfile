@@ -61,6 +61,10 @@ docstrings:
 test:
     @source "{{ validation_library }}"; run_test
 
+process-lifecycle-check:
+    @if [[ "$(uname -s)" != "Linux" ]]; then echo "process-lifecycle-check requires a Linux Nix development shell; run this checkpoint on a supported Linux host" >&2; exit 1; fi
+    @ATHENA_RUN_PROCESS_LIFECYCLE_CHECK=1 uv run pytest -p no:cacheprovider -m development_infrastructure "{{ repository_root }}/tools/monorepo_migration/tests/test_development_infrastructure.py" -q -vv -s
+
 fix:
     @source "{{ validation_library }}"; run_fix
 

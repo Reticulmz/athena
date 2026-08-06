@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import shutil
@@ -10,6 +11,7 @@ import ssl
 import subprocess
 import sys
 import textwrap
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -18,7 +20,11 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 JUSTFILE_PATH = REPOSITORY_ROOT / "justfile"
 SETUP_SCRIPT_PATH = REPOSITORY_ROOT / "scripts" / "setup-worktree.sh"
 LEGACY_DEV_TASKS_PATH = REPOSITORY_ROOT / "scripts" / "dev-tasks.sh"
+GITIGNORE_PATH = REPOSITORY_ROOT / ".gitignore"
 NGINX_TEMPLATE_PATH = REPOSITORY_ROOT / "infra" / "development" / "nginx" / "nginx.conf.template"
+CLOUDFLARED_TEMPLATE_PATH = (
+    REPOSITORY_ROOT / "infra" / "development" / "cloudflared" / "config.yml.example"
+)
 STATE_VALIDATOR_PATH = REPOSITORY_ROOT / "infra" / "development" / "validate_state.py"
 TEST_DATABASE_TASKS_PATH = (
     REPOSITORY_ROOT / "tools" / "monorepo_migration" / "test_database_tasks.sh"
@@ -30,6 +36,83 @@ VALID_TUNNEL_CREDENTIALS: dict[str, object] = {
     "TunnelSecret": VALID_TUNNEL_SECRET,
     "TunnelID": VALID_TUNNEL_ID,
 }
+
+type _GeneratedPathState = tuple[tuple[str, str, str], ...]
+type _GitConfigurationRecord = tuple[str, str, str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class _WorktreeStateSnapshot:
+    """Worktree-local生成物と共有Git configurationの観測結果を保持する.
+
+    Attributes:
+        generated_paths (_GeneratedPathState): Worktree root配下の生成物fingerprint.
+        effective_hooks_path (str | None): 対象worktreeで有効なcore.hooksPath.
+        git_configuration (tuple[_GitConfigurationRecord, ...]): Scope、origin、key、valueを
+            保持するhook関連Git configuration.
+        source_status (str): Untracked fileを含むGit source status.
+    """
+
+    generated_paths: _GeneratedPathState
+    effective_hooks_path: str | None
+    git_configuration: tuple[_GitConfigurationRecord, ...]
+    source_status: str
+
+
+# Public test-only key pair for offline setup-state validation.
+# Production code never imports this module.
+TEST_NGINX_CERTIFICATE_BASE64 = (
+    "MIIEEDCCAnigAwIBAgIRAJWNHddU8LXiqpNpshhO4BQwDQYJKoZIhvcNAQELBQAw"
+    "WzEeMBwGA1UEChMVbWtjZXJ0IGRldmVsb3BtZW50IENBMRgwFgYDVQQLDA9yZXRp"
+    "Y3VsbXpAbml4b3MxHzAdBgNVBAMMFm1rY2VydCByZXRpY3VsbXpAbml4b3MwHhcN"
+    "MjAwMTAxMDAwMDAwWhcNNDkxMjMxMjM1OTU5WjBDMScwJQYDVQQKEx5ta2NlcnQg"
+    "ZGV2ZWxvcG1lbnQgY2VydGlmaWNhdGUxGDAWBgNVBAsMD3JldGljdWxtekBuaXhv"
+    "czCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMkVcFw+vqDVYmOEAp36"
+    "KEIEqCoNaW87CqaR7vrZY3a3kefif0L/poYHj6sjVZRF01GmQV5naqIhmuMnh443"
+    "0WJSOQ/FrGf3jtK6j5nEzqOgISiNDsZm/I6QGkOKJj8l0P/VZSXT3kZXG/4Gokae"
+    "CC3ttXgaOEF3Tp78ivSDSB0DA4CCzjRGzv2MdSnBBYzSRqTcTAqkJQf0ZMuGsozX"
+    "G660jmYRvAIyR6sr5XNp24ka5YW9kyGdTrH98veuKgVwzxYNzS/7iCyF0/M88g04"
+    "PCTdXiBxiEBSBr4gaL+s1Usgm+UzphBF/sVNM9hDejRZPBnu7Ube31yKtCTMtEZg"
+    "X8ECAwEAAaNnMGUwDgYDVR0PAQH/BAQDAgWgMBMGA1UdJQQMMAoGCCsGAQUFBwMB"
+    "MB8GA1UdIwQYMBaAFL451UHLYOKHuorzpWoCwyarA/V2MB0GA1UdEQQWMBSCEiou"
+    "YXRoZW5hLmxvY2FsaG9zdDANBgkqhkiG9w0BAQsFAAOCAYEAOKvyxlWgNSI4ySeB"
+    "Y71fM9BZZnmQq0x55OnTt6uQVhy1K7+jrHjNTboCukNVfwZsXg3ZEvNzQ8EBs813"
+    "n6XnnUzhDjyhPOAwSU0ow8eZQqzpYLRB/Y2kDfkbsgrvi+Wi5YaJkWU16rOsPtTJ"
+    "09dzU0kvKN/3EdbMMql6ydiuDSq9z96oFFw1wVkAMTu6qKW05nL3Ff9Vq5IPhFnL"
+    "nxueG49GDOeGxI8PtBe/AuO7oqBosLxj6uN69EbIrwDfkv84ak+JOVp8VkeMXt2U"
+    "MwiNvKuUOY4TUcxpcQhkWGi3Ra+0k2oM994jXYOlaPDT1lXpLVt7n2zULF0ekmsa"
+    "8c9etGYpMDCgsSW35DARVK5d9Gquo5FeQTCWLJ1pnBqY1RhdW31/BAvj2xajpePA"
+    "A+jT/LRLfpKz8hxn8CWuu+7XM5F5rfmzf6j2kGNP8c+C1rzNCqDx6SJqQU/Y5+UJ"
+    "SWX3rDG1971St5gwZoLWani3AYw4oL4ALN1fDGG94Xrk/sEj"
+)
+TEST_NGINX_PRIVATE_KEY_BASE64 = (
+    "MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDJFXBcPr6g1WJj"
+    "hAKd+ihCBKgqDWlvOwqmke762WN2t5Hn4n9C/6aGB4+rI1WURdNRpkFeZ2qiIZrj"
+    "J4eON9FiUjkPxaxn947Suo+ZxM6joCEojQ7GZvyOkBpDiiY/JdD/1WUl095GVxv+"
+    "BqJGnggt7bV4GjhBd06e/Ir0g0gdAwOAgs40Rs79jHUpwQWM0kak3EwKpCUH9GTL"
+    "hrKM1xuutI5mEbwCMkerK+VzaduJGuWFvZMhnU6x/fL3rioFcM8WDc0v+4gshdPz"
+    "PPINODwk3V4gcYhAUga+IGi/rNVLIJvlM6YQRf7FTTPYQ3o0WTwZ7u1G3t9cirQk"
+    "zLRGYF/BAgMBAAECggEALL65yjkHE8Rv2JulNnCWOTyOjA8AdWkisVabYlPx41at"
+    "X7dhoK/BJyVzFX6vGieggpR3itGB47KNI/tlmWK308ReoLEYsGjgrekoL6wg3D2z"
+    "azHaRhFgJTwRMBLDeH1KgMdEMvLujOHw32mr/gFH6ipxXVieSIkLJGsnY4n8B8JA"
+    "/82i+QYy4y8iZTKI3BOE5l5BJisO/7VGu90G2o5RfiW/Xg/Kxa2U26NpHYy1b6w+"
+    "Jiqh3Vn0BKFPbp8HVQNV5aqxXSk/5dcuio4tZ9wzmspXR/3Xg+Y2JDE/oCAhJB/v"
+    "27G6c7KXtzlOM6kF4mKCzJyauyhiJSSi46RZna0qnQKBgQDVQOcBIzWm1cSeczHg"
+    "P+6prWa0G0KUGd4FOig1Ic1Uu05q9LjCaXuUjY5okjT4cDTbxiQg2gwLxhXj4zeW"
+    "YWZSncD/53KsQCtdkIoTuX3mTEdCoP5wR/C8v8i5rMzQ79SxmyQEprNuQ4Z0PQ03"
+    "BFLPJcQHNNiwsRpc5LzVkKuB5QKBgQDxZAtzbCCcU/bxzFCN9khEGprbVQWRxtgY"
+    "g5a2eimkU0o8SRsQRv8F6nYc/nSNftDzGbka7eGBOrYMvNUXIZUlPxxSDdpJ18T6"
+    "6sAI8a4rtzUoXR/MRp/uX94qtiO5V582B5/9pzkFZWLbRcnS5w/n9+dp4/WdSuXf"
+    "CqzGetm4rQKBgQCbTdjuCyZXifbXLi10kxrMl2vkXrXuBaibRe9iQmu2+XHykqa7"
+    "bvaBCVZc8Z2CELVuGK7W/fUn3eqzPBaPff92y0xzEauBpnnuegUUuFHoFkUPUQ/7"
+    "1WiNDV6xWhcPUpojfkiM2ppyAts4a/3jw1JLacWJOgNVKqV4YVzka6d7wQKBgHZs"
+    "tpFxwq3vI3+M1RhQczO2ObLRC2JxQyMDq7TqSfOsSQc6dmSN8B9e34Np8pRYWvpo"
+    "7D8h5TgZLaciHQi0GQ+k3qgC08zWZnUTJhM9Pk2EHDgpN6hoHZ48uioKIYyUSC+h"
+    "ngQ7PeY/zzf0DQfDBDKxlH6Gr8DzNcMu4YSeUKIhAoGBAKV12DUXOSZ5+sZFy7Y4"
+    "4O4zjEZ5AXB1SfFpkn6Tx0WgRh5wg1qCi7Kf6B2Fs7V7DGRjpobitre9um9rcF2N"
+    "VdloxeIMzI2TRaUvoHQI4vBUOfX3MA1+Mv9SypkhhKXN2+M1T5hAZfnHI5VTY4zc"
+    "ap7Hleoebep1iQz3wzT/W+Ln"
+)
 
 
 def _write_executable(path: Path, source: str) -> None:
@@ -99,6 +182,68 @@ def _initialize_git_repository(repository_root: Path) -> None:
     )
 
 
+def _pem_source(label: str, encoded_der: str) -> str:
+    """Base64 DER fixtureをPEM sourceへ変換する.
+
+    Args:
+        label (str): PEM boundaryに使うcertificateまたはprivate key label.
+        encoded_der (str): 改行を含まないBase64 DER payload.
+
+    Returns:
+        str: 64文字幅のpayloadとPEM boundaryを含むsource.
+    """
+    encoded_lines = textwrap.wrap(encoded_der, width=64)
+    return "\n".join(
+        (
+            f"-----BEGIN {label}-----",
+            *encoded_lines,
+            f"-----END {label}-----",
+            "",
+        )
+    )
+
+
+def _write_test_certificate_pair(
+    certificate_path: Path,
+    certificate_key_path: Path,
+    *,
+    dns_name: str = "*.athena.localhost",
+) -> None:
+    """Host mkcertを使わずdeterministicなtest certificate pairを書き込む.
+
+    Args:
+        certificate_path (Path): PEM certificateを書き込むpath.
+        certificate_key_path (Path): 対応するPEM private keyを書き込むpath.
+        dns_name (str): Certificate SANへ保持するfixture DNS名.
+
+    Returns:
+        None: Validatorが読み込めるtest-only certificate pairを作成して完了する.
+
+    Notes:
+        Wrong-host分岐では同じbyte長のSANへ置換するためcertificate署名を再計算しない. Production
+        TLS verificationではなくoffline metadataとkey-pair validationだけを対象にする
+        test fixtureである.
+    """
+    certificate_der = base64.b64decode(TEST_NGINX_CERTIFICATE_BASE64, validate=True)
+    if dns_name != "*.athena.localhost":
+        assert dns_name == "wrong.example.test"
+        expected_dns_name = b"*.athena.localhost"
+        replacement_dns_name = dns_name.encode("ascii")
+        assert len(replacement_dns_name) == len(expected_dns_name)
+        assert certificate_der.count(expected_dns_name) == 1
+        certificate_der = certificate_der.replace(expected_dns_name, replacement_dns_name)
+    certificate_path.parent.mkdir(parents=True, exist_ok=True)
+    certificate_key_path.parent.mkdir(parents=True, exist_ok=True)
+    _ = certificate_path.write_text(
+        _pem_source("CERTIFICATE", base64.b64encode(certificate_der).decode("ascii")),
+        encoding="ascii",
+    )
+    _ = certificate_key_path.write_text(
+        _pem_source("PRIVATE KEY", TEST_NGINX_PRIVATE_KEY_BASE64),
+        encoding="ascii",
+    )
+
+
 def _fake_setup_environment(repository_root: Path) -> tuple[dict[str, str], Path]:
     """Host trust storeへ触れないsetup用fake tool environmentを作る.
 
@@ -112,8 +257,9 @@ def _fake_setup_environment(repository_root: Path) -> tuple[dict[str, str], Path
     binary_directory.mkdir()
     command_log_path = repository_root / "commands.log"
     pre_commit_config_path = repository_root / "generated-pre-commit.yaml"
-    real_mkcert_path = shutil.which("mkcert")
-    assert real_mkcert_path is not None, "mkcert must be available in the Nix development shell"
+    certificate_fixture_path = repository_root / "fixture-certificate.pem"
+    certificate_key_fixture_path = repository_root / "fixture-certificate-key.pem"
+    _write_test_certificate_pair(certificate_fixture_path, certificate_key_fixture_path)
     _ = pre_commit_config_path.write_text("repos: []\n", encoding="utf-8")
 
     _write_executable(
@@ -172,7 +318,24 @@ def _fake_setup_environment(repository_root: Path) -> tuple[dict[str, str], Path
         if [[ "${1:-}" == '-install' ]]; then
           exit 0
         fi
-        CAROOT="$ATHENA_TEST_MKCERT_CAROOT" exec "$ATHENA_TEST_REAL_MKCERT" "$@"
+        certificate_file=''
+        certificate_key_file=''
+        while (($#)); do
+          case "$1" in
+            -cert-file)
+              shift
+              certificate_file="$1"
+              ;;
+            -key-file)
+              shift
+              certificate_key_file="$1"
+              ;;
+          esac
+          shift
+        done
+        [[ -n "$certificate_file" && -n "$certificate_key_file" ]]
+        cp "$ATHENA_TEST_CERTIFICATE_FIXTURE" "$certificate_file"
+        cp "$ATHENA_TEST_CERTIFICATE_KEY_FIXTURE" "$certificate_key_file"
         """,
     )
     _write_executable(
@@ -210,10 +373,10 @@ def _fake_setup_environment(repository_root: Path) -> tuple[dict[str, str], Path
     environment = os.environ.copy()
     environment.update(
         {
+            "ATHENA_TEST_CERTIFICATE_FIXTURE": str(certificate_fixture_path),
+            "ATHENA_TEST_CERTIFICATE_KEY_FIXTURE": str(certificate_key_fixture_path),
             "ATHENA_TEST_COMMAND_LOG": str(command_log_path),
-            "ATHENA_TEST_MKCERT_CAROOT": str(repository_root / "mkcert-ca"),
             "ATHENA_TEST_PRE_COMMIT_CONFIG": str(pre_commit_config_path),
-            "ATHENA_TEST_REAL_MKCERT": real_mkcert_path,
             "ATHENA_TEST_SYSCTL_STATE": str(repository_root / "sysctl-state"),
             "ATHENA_WORKTREE_ROOT": str(repository_root),
             "PATH": f"{binary_directory}:{environment['PATH']}",
@@ -250,46 +413,276 @@ def _run_just(
     )
 
 
+def _snapshot_generated_worktree_state(
+    repository_root: Path,
+) -> _WorktreeStateSnapshot:
+    """Generated state、hook config、source statusをworktree単位でsnapshotする.
+
+    Args:
+        repository_root (Path): Snapshot対象のprimaryまたはlinked worktree root.
+
+    Returns:
+        _WorktreeStateSnapshot: Generated path、effective hooksPath、scope/origin付きGit
+            configuration、source statusの観測結果.
+    """
+    entries: list[tuple[str, str, str]] = []
+    for relative_root in (Path(".venv"), Path(".state"), Path(".pre-commit-config.yaml")):
+        state_root = repository_root / relative_root
+        if not state_root.exists() and not state_root.is_symlink():
+            entries.append((relative_root.as_posix(), "missing", ""))
+            continue
+        candidates = [state_root]
+        if state_root.is_dir() and not state_root.is_symlink():
+            candidates.extend(state_root.rglob("*"))
+        for candidate in sorted(candidates, key=lambda item: item.as_posix()):
+            relative_path = candidate.relative_to(repository_root).as_posix()
+            if candidate.is_symlink():
+                entries.append((relative_path, "symlink", str(candidate.readlink())))
+            elif candidate.is_dir():
+                entries.append((relative_path, "directory", ""))
+            elif candidate.is_file():
+                entries.append(
+                    (
+                        relative_path,
+                        "file",
+                        hashlib.sha256(candidate.read_bytes()).hexdigest(),
+                    )
+                )
+            else:
+                entries.append((relative_path, "other", ""))
+    hooks_path_result = subprocess.run(
+        ["git", "config", "--get", "core.hooksPath"],
+        cwd=repository_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert hooks_path_result.returncode in {0, 1}, hooks_path_result.stderr
+    configuration_result = subprocess.run(
+        [
+            "git",
+            "config",
+            "--show-origin",
+            "--show-scope",
+            "--get-regexp",
+            "^(core\\.hookspath|extensions\\.worktreeconfig)$",
+        ],
+        cwd=repository_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert configuration_result.returncode in {0, 1}, configuration_result.stderr
+    configuration_records: list[_GitConfigurationRecord] = []
+    for configuration_line in configuration_result.stdout.splitlines():
+        scope, origin, key_and_value = configuration_line.split("\t", maxsplit=2)
+        if origin.startswith("file:"):
+            origin_path = Path(origin.removeprefix("file:"))
+            if not origin_path.is_absolute():
+                origin_path = repository_root / origin_path
+            origin = f"file:{origin_path.resolve()}"
+        key, value = key_and_value.split(maxsplit=1)
+        configuration_records.append((scope, origin, key, value))
+    source_status = subprocess.run(
+        ["git", "status", "--short", "--untracked-files=all"],
+        cwd=repository_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    return _WorktreeStateSnapshot(
+        generated_paths=tuple(entries),
+        effective_hooks_path=hooks_path_result.stdout.strip() or None,
+        git_configuration=tuple(sorted(configuration_records)),
+        source_status=source_status,
+    )
+
+
+def _worktree_configuration_origin(repository_root: Path) -> str:
+    """対象worktree固有Git configuration fileのorigin表現を返す.
+
+    Args:
+        repository_root (Path): Git worktree configurationを解決するworktree root.
+
+    Returns:
+        str: `git config --show-origin`が返す`file:`付きabsolute origin.
+    """
+    config_path_result = subprocess.run(
+        ["git", "rev-parse", "--git-path", "config.worktree"],
+        cwd=repository_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    config_path = Path(config_path_result.stdout.strip())
+    if not config_path.is_absolute():
+        config_path = repository_root / config_path
+    return f"file:{config_path.resolve()}"
+
+
+def _assert_worktree_generated_paths_are_local(repository_root: Path) -> None:
+    """Setupとtunnelが作る生成物を指定worktree内だけに保持すると検証する.
+
+    Args:
+        repository_root (Path): 生成物とexecutable hookを所有するlinked worktree root.
+
+    Returns:
+        None: 必須生成物の存在、配置、hook executable bitを検証して完了する.
+    """
+    expected_paths = (
+        repository_root / ".venv" / "bin" / "python",
+        repository_root / ".state" / "nginx" / "nginx.conf",
+        repository_root / ".state" / "certs" / "_wildcard.athena.localhost.pem",
+        repository_root / ".state" / "certs" / "_wildcard.athena.localhost-key.pem",
+        repository_root / ".state" / "cloudflared" / "config.yml",
+        repository_root / ".state" / "cloudflared" / "credentials.json",
+        repository_root / ".state" / "cloudflared" / "login-home" / ".cloudflared" / "cert.pem",
+        repository_root / ".state" / "hooks" / "pre-commit",
+        repository_root / ".state" / "hooks" / "commit-msg",
+    )
+    assert all(path.exists() for path in expected_paths), expected_paths
+    assert all(path.is_relative_to(repository_root) for path in expected_paths)
+    for hook_name in ("pre-commit", "commit-msg"):
+        hook_path = repository_root / ".state" / "hooks" / hook_name
+        assert hook_path.is_file()
+        assert os.access(hook_path, os.X_OK)
+
+
+def _create_linked_worktree_fixture(
+    primary_root: Path,
+    first_worktree: Path,
+    second_worktree: Path,
+) -> None:
+    """Root gateway fixtureをcommitし2つの実linked worktreeを作成する.
+
+    Args:
+        primary_root (Path): Common Git repositoryを所有するprimary checkout path.
+        first_worktree (Path): 1つ目のlinked worktree path.
+        second_worktree (Path): 2つ目のlinked worktree path.
+
+    Returns:
+        None: `git worktree add`で独立branchのlinked worktreeを2つ作成して完了する.
+    """
+    _copy_root_task_gateway(primary_root)
+    cloudflared_directory = primary_root / "infra" / "development" / "cloudflared"
+    cloudflared_directory.mkdir(parents=True)
+    _ = shutil.copy2(GITIGNORE_PATH, primary_root / ".gitignore")
+    _ = shutil.copy2(
+        CLOUDFLARED_TEMPLATE_PATH,
+        cloudflared_directory / "config.yml.example",
+    )
+    _initialize_git_repository(primary_root)
+    for key, value in (("user.name", "Athena Test"), ("user.email", "athena@example.test")):
+        _ = subprocess.run(
+            ["git", "config", key, value],
+            cwd=primary_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    for command in (
+        ["git", "add", "."],
+        ["git", "commit", "--quiet", "-m", "fixture"],
+        ["git", "worktree", "add", "--quiet", "-b", "fixture/first", str(first_worktree)],
+        [
+            "git",
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "fixture/second",
+            str(second_worktree),
+        ],
+    ):
+        _ = subprocess.run(
+            command,
+            cwd=primary_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+
+def _prepare_linked_worktree_tunnel_state(repository_root: Path, tunnel_id: str) -> None:
+    """Production validatorが受理するworktree-local tunnel inputを作成する.
+
+    Args:
+        repository_root (Path): `.state/cloudflared`を所有するlinked worktree root.
+        tunnel_id (str): Worktree固有のnon-nil UUID string.
+
+    Returns:
+        None: Route configとexecution credentialを書き込んで完了する.
+    """
+    tunnel_state = repository_root / ".state" / "cloudflared"
+    tunnel_state.mkdir(parents=True, exist_ok=True)
+    _ = shutil.copy2(
+        repository_root / "infra" / "development" / "cloudflared" / "config.yml.example",
+        tunnel_state / "config.yml",
+    )
+    credentials = dict(VALID_TUNNEL_CREDENTIALS)
+    credentials["TunnelID"] = tunnel_id
+    _ = (tunnel_state / "credentials.json").write_text(
+        _serialize_tunnel_credentials(credentials),
+        encoding="utf-8",
+    )
+
+
+def _linked_worktree_environment(
+    worktree_root: Path,
+    external_tool_root: Path,
+) -> tuple[dict[str, str], Path]:
+    """Repository外のfake external commandを使うsetup environmentを返す.
+
+    Args:
+        worktree_root (Path): Production setupを実行するlinked worktree root.
+        external_tool_root (Path): Fake toolとcommand logを置くrepository外path.
+
+    Returns:
+        tuple[dict[str, str], Path]: Worktree用environmentとexternal command log pathの組.
+    """
+    external_tool_root.mkdir()
+    environment, command_log_path = _fake_setup_environment(external_tool_root)
+    environment["ATHENA_WORKTREE_ROOT"] = str(worktree_root)
+    binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
+    _write_executable(
+        binary_directory / "cloudflared",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'cloudflared:%s|HOME=%s|WORKTREE=%s\n' \
+          "$*" "$HOME" "$ATHENA_WORKTREE_ROOT" >> "$ATHENA_TEST_COMMAND_LOG"
+        if [[ "$*" == 'tunnel login' ]]; then
+          mkdir -p "$HOME/.cloudflared"
+          printf 'origin certificate for %s\n' "$ATHENA_WORKTREE_ROOT" \
+            > "$HOME/.cloudflared/cert.pem"
+        fi
+        """,
+    )
+    return environment, command_log_path
+
+
 def _generate_nginx_certificate(
     repository_root: Path,
     *,
     dns_name: str = "*.athena.localhost",
-    certificate_authority_root: Path | None = None,
 ) -> tuple[Path, Path]:
-    """指定DNS名のNginx certificate pairをisolated mkcert CAで生成する.
+    """指定DNS名のdeterministic Nginx test certificate pairを作成する.
 
     Args:
         repository_root (Path): `.state/certs`を所有するfixture repository root.
         dns_name (str): Certificate SANへ記録するDNS名.
-        certificate_authority_root (Path | None): mkcert CA directory.
-            Noneの場合はfixture root配下を使う.
 
     Returns:
-        tuple[Path, Path]: 生成したcertificate pathとprivate key pathの組.
+        tuple[Path, Path]: 作成したcertificate pathとprivate key pathの組.
     """
     certificate_directory = repository_root / ".state" / "certs"
     certificate_directory.mkdir(parents=True, exist_ok=True)
     certificate_path = certificate_directory / "_wildcard.athena.localhost.pem"
     certificate_key_path = certificate_directory / "_wildcard.athena.localhost-key.pem"
-    mkcert_path = shutil.which("mkcert")
-    assert mkcert_path is not None, "mkcert must be available in the Nix development shell"
-    certificate_environment = os.environ.copy()
-    certificate_environment["CAROOT"] = str(
-        certificate_authority_root or repository_root / "fixture-mkcert-ca"
-    )
-    _ = subprocess.run(
-        [
-            mkcert_path,
-            "-cert-file",
-            str(certificate_path),
-            "-key-file",
-            str(certificate_key_path),
-            dns_name,
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        env=certificate_environment,
+    _write_test_certificate_pair(
+        certificate_path,
+        certificate_key_path,
+        dns_name=dns_name,
     )
     return certificate_path, certificate_key_path
 
@@ -303,7 +696,7 @@ def _replace_certificate_validity(
     """Test certificateのASN.1 UTCTime validity bytesを指定値へ置換する.
 
     Args:
-        certificate_path (Path): mkcertが生成したPEM certificate path.
+        certificate_path (Path): Deterministic fixtureから作成したPEM certificate path.
         not_before (str): 13文字のASN.1 UTCTime形式で指定する有効開始時刻.
         not_after (str): 13文字のASN.1 UTCTime形式で指定する有効終了時刻.
 
@@ -380,6 +773,44 @@ def _create_complete_core_state(repository_root: Path) -> None:
     _ = (repository_root / "sysctl-state").write_text("80\n", encoding="utf-8")
 
 
+def test_setup_contract_fixture_does_not_require_host_mkcert(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """通常contract testのsetup fixtureがhost mkcertへ依存しないことを検証する.
+
+    Args:
+        tmp_path (Path): Fake tool environmentを配置するtemporary directory.
+        monkeypatch (pytest.MonkeyPatch): Host command discoveryからmkcertだけを除外するfixture.
+
+    Returns:
+        None: Deterministic certificate fixtureだけでfake setup environmentを作成して完了する.
+    """
+    original_which = shutil.which
+
+    def find_command_without_mkcert(command_name: str) -> str | None:
+        """mkcert以外のhost command discoveryを元実装へ委譲する.
+
+        Args:
+            command_name (str): 検索するexecutable名.
+
+        Returns:
+            str | None: mkcertならNone、それ以外はhost上のresolved path.
+        """
+        if command_name == "mkcert":
+            return None
+        return original_which(command_name)
+
+    monkeypatch.setattr(shutil, "which", find_command_without_mkcert)
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+
+    environment, command_log_path = _fake_setup_environment(repository_root)
+
+    assert command_log_path.parent == repository_root
+    assert "ATHENA_TEST_REAL_MKCERT" not in environment
+
+
 def test_setup_reexecution_converges_and_reconfirms_local_trust(tmp_path: Path) -> None:
     """Setup再実行がstateを維持しlocal CA trustを再確認するcontractを検証する.
 
@@ -438,6 +869,115 @@ def test_setup_reexecution_converges_and_reconfirms_local_trust(tmp_path: Path) 
     assert command_log.count("sudo:sysctl -w net.ipv4.ip_unprivileged_port_start=80") == 1
 
 
+def test_real_linked_worktrees_isolate_setup_and_tunnel_state(tmp_path: Path) -> None:
+    """実linked worktree間でsetup、runtime、certificate、tunnel、hook stateを隔離する.
+
+    Repository外のfake external commandだけでproduction setup recipeとstate validatorを実行し、
+    一方の操作がprimary checkoutまたはpeer worktreeのgenerated stateを変更しないことを確認する.
+
+    Args:
+        tmp_path (Path): Primary repository、linked worktree、external fake toolを置くdirectory.
+
+    Returns:
+        None: 2 worktreeのgenerated pathとhook configurationが各root配下に分離することを検証して
+            完了する.
+    """
+    primary_root = tmp_path / "primary"
+    first_worktree = tmp_path / "linked-first"
+    second_worktree = tmp_path / "linked-second"
+    primary_root.mkdir()
+    _create_linked_worktree_fixture(primary_root, first_worktree, second_worktree)
+
+    primary_before_first = _snapshot_generated_worktree_state(primary_root)
+    first_before_first = _snapshot_generated_worktree_state(first_worktree)
+    second_before_first = _snapshot_generated_worktree_state(second_worktree)
+    first_environment, first_command_log = _linked_worktree_environment(
+        first_worktree,
+        tmp_path / "external-tools-first",
+    )
+    first_setup_result = _run_just(first_worktree, first_environment, "setup")
+    _prepare_linked_worktree_tunnel_state(first_worktree, VALID_TUNNEL_ID)
+    first_tunnel_result = _run_just(first_worktree, first_environment, "tunnel-setup")
+
+    assert (first_setup_result.returncode, first_tunnel_result.returncode) == (0, 0), (
+        first_setup_result.stderr,
+        first_tunnel_result.stderr,
+    )
+    primary_after_first = _snapshot_generated_worktree_state(primary_root)
+    first_after_first = _snapshot_generated_worktree_state(first_worktree)
+    second_after_first = _snapshot_generated_worktree_state(second_worktree)
+    expected_shared_configuration = (
+        "local",
+        f"file:{(primary_root / '.git' / 'config').resolve()}",
+        "extensions.worktreeconfig",
+        "true",
+    )
+    for unchanged_before, unchanged_after in (
+        (primary_before_first, primary_after_first),
+        (second_before_first, second_after_first),
+    ):
+        assert unchanged_after.generated_paths == unchanged_before.generated_paths
+        assert unchanged_after.effective_hooks_path == unchanged_before.effective_hooks_path
+        assert unchanged_after.source_status == unchanged_before.source_status
+        assert set(unchanged_after.git_configuration) == {
+            *unchanged_before.git_configuration,
+            expected_shared_configuration,
+        }
+    expected_first_hook_configuration = (
+        "worktree",
+        _worktree_configuration_origin(first_worktree),
+        "core.hookspath",
+        str(first_worktree / ".state" / "hooks"),
+    )
+    assert set(first_after_first.git_configuration) - set(
+        first_before_first.git_configuration
+    ) == {expected_shared_configuration, expected_first_hook_configuration}
+
+    primary_before_second = _snapshot_generated_worktree_state(primary_root)
+    first_before_second = _snapshot_generated_worktree_state(first_worktree)
+    second_environment, second_command_log = _linked_worktree_environment(
+        second_worktree,
+        tmp_path / "external-tools-second",
+    )
+    second_setup_result = _run_just(second_worktree, second_environment, "setup")
+    _prepare_linked_worktree_tunnel_state(
+        second_worktree,
+        "123e4567-e89b-12d3-a456-426614174001",
+    )
+    second_tunnel_result = _run_just(second_worktree, second_environment, "tunnel-setup")
+
+    assert second_setup_result.returncode == 0, second_setup_result.stderr
+    assert second_tunnel_result.returncode == 0, second_tunnel_result.stderr
+    assert _snapshot_generated_worktree_state(primary_root) == primary_before_second
+    assert _snapshot_generated_worktree_state(first_worktree) == first_before_second
+    first_generated_state = _snapshot_generated_worktree_state(first_worktree)
+    second_generated_state = _snapshot_generated_worktree_state(second_worktree)
+    expected_second_hook_configuration = (
+        "worktree",
+        _worktree_configuration_origin(second_worktree),
+        "core.hookspath",
+        str(second_worktree / ".state" / "hooks"),
+    )
+    assert set(second_generated_state.git_configuration) - set(
+        second_before_first.git_configuration
+    ) == {expected_shared_configuration, expected_second_hook_configuration}
+    assert first_generated_state.effective_hooks_path == str(first_worktree / ".state" / "hooks")
+    assert second_generated_state.effective_hooks_path == str(second_worktree / ".state" / "hooks")
+    assert (
+        first_generated_state.effective_hooks_path != second_generated_state.effective_hooks_path
+    )
+    assert first_generated_state.source_status == ""
+    assert second_generated_state.source_status == ""
+    for worktree_root in (first_worktree, second_worktree):
+        _assert_worktree_generated_paths_are_local(worktree_root)
+    first_log = first_command_log.read_text(encoding="utf-8")
+    second_log = second_command_log.read_text(encoding="utf-8")
+    assert str(first_worktree) in first_log
+    assert str(second_worktree) not in first_log
+    assert str(second_worktree) in second_log
+    assert str(first_worktree) not in second_log
+
+
 def test_setup_reexecution_repairs_invalid_nginx_certificate_pair(tmp_path: Path) -> None:
     """Setup再実行が不正なNginx certificate pairを再生成するcontractを検証する.
 
@@ -445,7 +985,8 @@ def test_setup_reexecution_repairs_invalid_nginx_certificate_pair(tmp_path: Path
     再生成し、後続development preflightで読み込める状態へ収束することを確認する.
 
     Args:
-        tmp_path (Path): 隔離Git repositoryとisolated mkcert CA用temporary directory.
+        tmp_path (Path): 隔離Git repositoryとdeterministic certificate fixture用の
+            temporary directory.
 
     Returns:
         None: Invalid certificate stateの検出、再生成、再検証を確認して完了する.
@@ -476,11 +1017,12 @@ def test_setup_reexecution_repairs_invalid_nginx_certificate_pair(tmp_path: Path
 def test_setup_reexecution_repairs_wrong_host_nginx_certificate(tmp_path: Path) -> None:
     """Setup再実行がrequired SANを持たないNginx certificateを再生成するcontractを検証する.
 
-    初回setup後に同じisolated CAで別DNS名のvalid pairへ置換し、2回目の`just setup`が
+    初回setup後に別DNS名のdeterministic valid pairへ置換し、2回目の`just setup`が
     `*.athena.localhost` SANを持つpairへ収束させてvalidatorを通過することを確認する.
 
     Args:
-        tmp_path (Path): 隔離Git repositoryとisolated mkcert CA用temporary directory.
+        tmp_path (Path): 隔離Git repositoryとdeterministic certificate fixture用の
+            temporary directory.
 
     Returns:
         None: Wrong-host certificateの検出、再生成、再検証を確認して完了する.
@@ -494,8 +1036,7 @@ def test_setup_reexecution_repairs_wrong_host_nginx_certificate(tmp_path: Path) 
     first_result = _run_just(repository_root, environment, "setup")
     _ = _generate_nginx_certificate(
         repository_root,
-        dns_name="different.example.test",
-        certificate_authority_root=Path(environment["ATHENA_TEST_MKCERT_CAROOT"]),
+        dns_name="wrong.example.test",
     )
     second_result = _run_just(repository_root, environment, "setup")
     validation_result = subprocess.run(
@@ -781,7 +1322,7 @@ def test_dev_rejects_nginx_certificate_for_different_hostname(
     _initialize_git_repository(repository_root)
     environment, command_log_path = _fake_setup_environment(repository_root)
     _create_complete_core_state(repository_root)
-    _ = _generate_nginx_certificate(repository_root, dns_name="different.example.test")
+    _ = _generate_nginx_certificate(repository_root, dns_name="wrong.example.test")
     binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
     _write_executable(
         binary_directory / "process-compose",
@@ -1531,6 +2072,107 @@ def test_validation_recipes_use_root_owned_library_and_propagate_exit_status(
     ]
 
 
+@pytest.mark.parametrize(
+    "pytest_exit_status",
+    [
+        pytest.param(1, id="test-failure"),
+        pytest.param(5, id="zero-selection"),
+    ],
+)
+def test_process_lifecycle_check_selects_infrastructure_and_propagates_pytest_status(
+    tmp_path: Path,
+    pytest_exit_status: int,
+) -> None:
+    """Process lifecycle checkpointがinfra markerとpytest exit statusを保持する契約を検証する.
+
+    Args:
+        tmp_path (Path): Isolated justfileとfake uv commandを置くtemporary directory.
+        pytest_exit_status (int): Test failureまたはzero-selectionを表すfake pytest status.
+
+    Returns:
+        None: Opt-in environment、infra selection、failure propagationを検証して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+    environment["ATHENA_TEST_PYTEST_EXIT_STATUS"] = str(pytest_exit_status)
+    binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
+    _write_executable(
+        binary_directory / "uname",
+        """
+        #!/usr/bin/env bash
+        printf 'Linux\n'
+        """,
+    )
+    _write_executable(
+        binary_directory / "uv",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'uv:%s|ATHENA_RUN_PROCESS_LIFECYCLE_CHECK=%s\n' \
+          "$*" "${ATHENA_RUN_PROCESS_LIFECYCLE_CHECK:-<unset>}" \
+          >> "$ATHENA_TEST_COMMAND_LOG"
+        exit "$ATHENA_TEST_PYTEST_EXIT_STATUS"
+        """,
+    )
+
+    result = _run_just(repository_root, environment, "process-lifecycle-check")
+
+    expected_test_path = (
+        repository_root
+        / "tools"
+        / "monorepo_migration"
+        / "tests"
+        / "test_development_infrastructure.py"
+    )
+    expected_command = (
+        "uv:run pytest -p no:cacheprovider -m development_infrastructure "
+        f"{expected_test_path} -q -vv -s"
+    )
+    assert result.returncode == pytest_exit_status, result.stderr
+    assert command_log_path.read_text(encoding="utf-8").splitlines() == [
+        f"{expected_command}|ATHENA_RUN_PROCESS_LIFECYCLE_CHECK=1"
+    ]
+
+
+def test_process_lifecycle_check_rejects_non_linux_before_pytest(tmp_path: Path) -> None:
+    """Dedicated development checkpointがnon-Linuxでfalse successを返さないことを検証する.
+
+    Args:
+        tmp_path (Path): Fake `uname`とuv invocation logを置くtemporary directory.
+
+    Returns:
+        None: Actionable non-zero diagnosticとuv未実行を確認して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+    binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
+    _write_executable(
+        binary_directory / "uname",
+        """
+        #!/usr/bin/env bash
+        printf 'Darwin\n'
+        """,
+    )
+    _write_executable(
+        binary_directory / "uv",
+        """
+        #!/usr/bin/env bash
+        printf 'uv:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        exit 0
+        """,
+    )
+
+    result = _run_just(repository_root, environment, "process-lifecycle-check")
+
+    assert result.returncode != 0
+    assert "requires a Linux Nix development shell" in result.stderr
+    assert not command_log_path.exists()
+
+
 def test_database_and_worktree_recipes_preserve_specialized_helper_contracts(
     tmp_path: Path,
 ) -> None:
@@ -1801,13 +2443,13 @@ def test_legacy_database_entrypoint_delegates_to_root_task_interface(tmp_path: P
 
 
 def test_public_recipe_catalog_exposes_root_workflows(tmp_path: Path) -> None:
-    """Root task catalogがTask 3.2のpublic workflowを発見可能にするcontractを検証する.
+    """Root task catalogがpublic workflowとdevelopment checkpointを公開する契約を検証する.
 
     Args:
         tmp_path (Path): Public justfileを置くisolated repository directory.
 
     Returns:
-        None: Setup、development、validation、database、audit、worktree recipeを検証して完了する.
+        None: Development、validation、checkpoint、database、audit recipeを検証して完了する.
     """
     repository_root = tmp_path / "repository"
     repository_root.mkdir()
@@ -1845,6 +2487,7 @@ def test_public_recipe_catalog_exposes_root_workflows(tmp_path: Path) -> None:
         "db-test-migrate",
         "db-test-run",
         "migration-check",
+        "process-lifecycle-check",
         "ci",
         "all",
         "audit-monorepo",

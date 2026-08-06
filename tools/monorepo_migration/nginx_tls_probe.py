@@ -46,9 +46,11 @@ class ProbeCommand:
 
     Attributes:
         ca_certificate (Path): Server certificateを発行したmkcert root CA certificate.
+        port (int): TLS ingressへ接続するloopback port.
     """
 
     ca_certificate: Path
+    port: int
 
 
 @dataclass(slots=True, frozen=True)
@@ -218,11 +220,12 @@ def _wait_for_expected_health(
     raise IngressProbeError(last_failure)
 
 
-def probe_tls_ingress(ca_certificate: Path) -> None:
+def probe_tls_ingress(ca_certificate: Path, *, port: int = 443) -> None:
     """起動済みNginxへhostname検証付きTLS health requestを1回送る.
 
     Args:
         ca_certificate (Path): Server certificateを発行したroot CA PEM path.
+        port (int): TLS ingressへ接続するloopback port.
 
     Returns:
         None: HTTP 200を確認し、呼び出し側へ値を返さずに完了する.
@@ -233,7 +236,7 @@ def probe_tls_ingress(ca_certificate: Path) -> None:
         http.client.HTTPException: HTTP responseをparseできない場合.
         UnicodeError: Response bodyがUTF-8ではない場合.
     """
-    response = _request_health(443, use_tls=True, ca_certificate=ca_certificate)
+    response = _request_health(port, use_tls=True, ca_certificate=ca_certificate)
     if response.status != HTTP_OK:
         raise IngressProbeError(f"Nginx TLS health response returned HTTP {response.status}")
 
@@ -322,6 +325,7 @@ def _parse_arguments() -> Command:
     subparsers = parser.add_subparsers(dest="command", required=True)
     probe_parser = subparsers.add_parser("probe")
     _ = probe_parser.add_argument("ca_certificate", type=Path)
+    _ = probe_parser.add_argument("--port", type=int, default=443)
     integration_parser = subparsers.add_parser("integration")
     _ = integration_parser.add_argument("repository_root", type=Path)
     _ = integration_parser.add_argument("ip_command", type=Path)
@@ -330,7 +334,10 @@ def _parse_arguments() -> Command:
     arguments = parser.parse_args()
     command_name = cast("CommandName", arguments.command)
     if command_name == "probe":
-        return ProbeCommand(ca_certificate=cast("Path", arguments.ca_certificate))
+        return ProbeCommand(
+            ca_certificate=cast("Path", arguments.ca_certificate),
+            port=cast("int", arguments.port),
+        )
     return IntegrationCommand(
         repository_root=cast("Path", arguments.repository_root),
         ip_command=cast("Path", arguments.ip_command),
@@ -348,7 +355,7 @@ def main() -> int:
     command = _parse_arguments()
     try:
         if isinstance(command, ProbeCommand):
-            probe_tls_ingress(command.ca_certificate)
+            probe_tls_ingress(command.ca_certificate, port=command.port)
         else:
             run_isolated_integration(
                 command.repository_root,
