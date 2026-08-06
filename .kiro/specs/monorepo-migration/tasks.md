@@ -200,7 +200,7 @@
   - _Requirements: 3.4, 3.5, 3.6, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6_
   - _Boundary: Nix Composition, Root Task Gateway_
 
-- [ ] 5.3 Core/tunnel ingressとprocess lifecycleを最終検証する (P)
+- [x] 5.3 Core/tunnel ingressとprocess lifecycleを最終検証する (P)
   - Credentialなしでcore profileを起動し、named HTTPS、readiness、health/debug routeを検証する。
   - Missing tunnel stateがcore profileを停止せず、tunnel profileだけactionable failureになり、設定済みtunnelがcoreと同じapplication routingを使用することを検証する。
   - Database/state serviceより後にapp/workerが起動し、逆順にgraceful shutdownすることを検証する。
@@ -246,3 +246,4 @@
 - 2026-08-06: Task 4.6はlegacy public helperの`scripts/ci.sh`と`scripts/dev-tasks.sh`を削除し、root生成物の`alembic/`、`tests/`、`gitlint_rules/`、`.state/`、`.venv/`、`certs/`をsource treeから除去した。`audit-monorepo`はcleanup対象の`.venv`を再生成しないよう標準ライブラリのみのverifierを`python`で直接実行する。
 - 2026-08-06: Task 5.1はserver/crypto clean wheel artifact verifier、isolated PostgreSQL上の`just migration-check`、Stable/Lazer/API/worker focused regression 111件でruntime import、app/worker/CLI entrypoint、worker task名、Alembic head/current、representative client behaviorが維持されることを確認した。
 - 2026-08-06: Task 5.2はfake setupのidempotency、temporary linked worktree間の`.venv`、`.state`、certificate、tunnel config、hook state隔離、dev preflight failure、database/worktree recipe contract、Nix environment entryのside-effect-free性をfocused testsで確認した。
+- 2026-08-06: Task 5.3は`just process-lifecycle-check`でcore profileのnamed HTTPS、readiness、dependency order、graceful shutdownを実process検証し、tunnel preflight、credential validation、Cloudflared routing、Nginx TLS probeをfocused tests 20件で確認した。
