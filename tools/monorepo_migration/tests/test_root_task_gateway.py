@@ -2376,70 +2376,19 @@ def test_database_recipes_prefer_explicit_overrides_and_server_environment_file(
     ]
 
 
-def test_legacy_database_entrypoint_delegates_to_root_task_interface(tmp_path: Path) -> None:
-    """Task 4.6前のdatabase helperがcanonical Just recipeだけを呼ぶ契約を検証する.
-
-    Legacy subcommandを実行し、root justfileと対応recipeへargumentを写像してdelegateのexit statusを
-    そのまま返すことを確認する. 旧helper内でAthena CLIを直接再実装しない.
-
-    Args:
-        tmp_path (Path): Legacy entrypoint、fake Just、command logを置くtemporary directory.
+def test_legacy_database_entrypoint_is_removed_after_root_task_cutover() -> None:
+    """Task 4.6後にdatabase helperがroot task interfaceへ置換済みであることを検証する.
 
     Returns:
-        None: Legacy database入口のmappingとfailure propagationを検証して完了する.
+        None: Legacy helperが残らず、root database recipeが公開されていることを確認する.
     """
-    repository_root = tmp_path / "repository"
-    scripts_directory = repository_root / "scripts"
-    scripts_directory.mkdir(parents=True)
-    _ = shutil.copy2(LEGACY_DEV_TASKS_PATH, scripts_directory / "dev-tasks.sh")
-    fake_binary_directory = repository_root / "fake-bin"
-    fake_binary_directory.mkdir()
-    command_log_path = repository_root / "commands.log"
-    _write_executable(
-        fake_binary_directory / "just",
-        """
-        #!/usr/bin/env bash
-        set -euo pipefail
-        printf 'just:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
-        exit 27
-        """,
-    )
-    _write_executable(
-        fake_binary_directory / "uv",
-        """
-        #!/usr/bin/env bash
-        set -euo pipefail
-        printf 'uv:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
-        exit 26
-        """,
-    )
-    environment = os.environ.copy()
-    environment["ATHENA_TEST_COMMAND_LOG"] = str(command_log_path)
-    environment["PATH"] = f"{fake_binary_directory}{os.pathsep}{environment['PATH']}"
+    justfile = JUSTFILE_PATH.read_text(encoding="utf-8")
 
-    command_to_recipe = {
-        "db:test:create": "db-test-create",
-        "db:test:migrate": "db-test-migrate",
-        "db:test:run": "db-test-run",
-    }
-    results = {
-        command: subprocess.run(
-            [str(scripts_directory / "dev-tasks.sh"), command],
-            cwd=tmp_path,
-            check=False,
-            capture_output=True,
-            text=True,
-            env=environment,
-            timeout=30,
-        )
-        for command in command_to_recipe
-    }
-
-    assert all(result.returncode == 27 for result in results.values())
-    assert command_log_path.read_text(encoding="utf-8").splitlines() == [
-        f"just:--justfile {repository_root}/justfile {recipe}"
-        for recipe in command_to_recipe.values()
-    ]
+    assert not LEGACY_DEV_TASKS_PATH.exists()
+    assert "db-test-create:" in justfile
+    assert "db-test-migrate:" in justfile
+    assert "db-test-run:" in justfile
+    assert "test_database_tasks.sh" in justfile
 
 
 def test_public_recipe_catalog_exposes_root_workflows(tmp_path: Path) -> None:

@@ -209,7 +209,7 @@
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 10.5_
   - _Boundary: Process Graph, Development Infra_
 
-- [ ] 5.4 Repository-wide quality、test、build、CI parityを最終検証する (P)
+- [x] 5.4 Repository-wide quality、test、build、CI parityを最終検証する (P)
   - Root quality/docstring/type/import contractとserver/crypto/tools testを実行する。
   - Server/crypto artifact build、migration status、Nix validation、audit statusをCI-equivalent contractで実行する。
   - Workspace/test omission detectorが既知memberをすべて認識することを検証する。
@@ -233,6 +233,7 @@
 - 2026-08-02: User approval後、Task 1.3へcanonical root gateをgreenに保つcutover-blocking runtime/test/tooling consumer更新を移管した。Task 2.5は残余consumerの全量audit、historical exception、current instructionのreconciliationを所有する。
 - Task 1.2 debug round 1: stale `.venv` extensionはcaptured score vectorを通したが、clean wheelは`InvalidDataSize`で失敗した。source importをartifact evidenceにせず、captured vectorと確認済みstable crypto contractだけで修復を判断する。
 - Task 1.2のpre-cutover fixtureはTask 1.1 commit SHAへ固定し、CI test checkoutはそのhistorical objectを取得できるfull historyを使用する。
+- 2026-08-07: Task 5.4はroot `just quality`、root `just test`、server/crypto artifact verifier、isolated PostgreSQL `just migration-check`、`just audit-monorepo`、CI-equivalent `just build`、`nix flake check`で検証した。
 - 2026-08-03: Task 2.5のpath consumer auditはactive docs、stable fixture/catalog、verification report、tool configurationだけをscanし、historical Kiro snapshot、preflight reconstruction、Task 3.4までのGitlint配置を理由付きexceptionとして扱う。
 - 2026-08-03: Task 2.6 Boundary 1はpost-cutover preflight、隔離PostgreSQLへのAlembic head適用/current一致、server/crypto artifact検証、root quality/import-linter、全workspace test（3465 passed, 57 skipped）で完了した。
 - 2026-08-03: Task 3.1はserver/crypto workspace module、root composed devShell、Nix checksを追加し、`nix develop`のsync/state/hook/certificate副作用を除去した。`nix flake check`、関連validation test 28件、side-effect-free shell実測、`prek run --all-files`が成功した。

@@ -14,7 +14,8 @@ if TYPE_CHECKING:
     import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-CI_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "ci.sh"
+LEGACY_CI_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "ci.sh"
+JUSTFILE_PATH = PROJECT_ROOT / "justfile"
 VALIDATION_LIBRARY_PATH = (
     PROJECT_ROOT / "tools" / "monorepo_migration" / "repository_validation.sh"
 )
@@ -70,21 +71,26 @@ def _environment_without_git_local_context() -> dict[str, str]:
     return environment
 
 
-def _run_ci_command(
-    *arguments: str,
+def _run_validation_command(
+    command_name: str,
     cwd: Path,
 ) -> subprocess.CompletedProcess[str]:
-    """指定したworktreeからLocal CI subcommandを実行する.
+    """指定したworktreeからroot validation commandを実行する.
 
     Args:
-        *arguments (str): `scripts/ci.sh`へ渡すsubcommandと追加引数.
+        command_name (str): 実行するroot validation command名.
         cwd (Path): commandを実行しGit worktreeを判定させるdirectory.
 
     Returns:
         subprocess.CompletedProcess[str]: 標準出力,標準エラー,exit statusを含む実行結果.
     """
+    function_by_command = {
+        "docstrings": "run_docstrings",
+        "python-files": "run_python_files",
+    }
+    function_name = function_by_command[command_name]
     return subprocess.run(
-        [str(CI_SCRIPT_PATH), *arguments],
+        ["bash", "-c", f'source "{VALIDATION_LIBRARY_PATH}"; {function_name}'],
         cwd=cwd,
         check=False,
         capture_output=True,
@@ -530,20 +536,20 @@ def test_docstrings_command_runs_only_active_quality_tools() -> None:
     assert "uv run pydoclint" not in library
 
 
-def test_legacy_ci_entrypoint_delegates_to_root_owned_validation_library() -> None:
-    """Task 4.1前のCI entrypointがcanonical validation実装だけを呼ぶ契約を検証する.
+def test_root_task_interface_owns_validation_commands_after_legacy_ci_removal() -> None:
+    """Root Just interfaceがcanonical validation実装だけを呼ぶ契約を検証する.
 
     Returns:
-        None: Legacy pathがquality/test logicを複製するかroot-owned libraryを欠く場合に失敗する.
+        None: Legacy helperが残るかroot-owned libraryへの委譲を欠く場合に失敗する.
     """
-    script = CI_SCRIPT_PATH.read_text(encoding="utf-8")
-
-    assert (
-        'source "${REPOSITORY_ROOT}/tools/monorepo_migration/repository_validation.sh"' in script
+    justfile = JUSTFILE_PATH.read_text(encoding="utf-8")
+    validation_library_path = '"tools/monorepo_migration/repository_validation.sh"'
+    validation_library_assignment = (
+        f"validation_library := repository_root / {validation_library_path}"
     )
-    assert "run_quality() {" not in script
-    assert "run_test() {" not in script
-    assert "collect_first_party_python_files() {" not in script
+
+    assert not LEGACY_CI_SCRIPT_PATH.exists()
+    assert validation_library_assignment in justfile
     for command_name, function_name in (
         ("quality", "run_quality"),
         ("fix", "run_fix"),
@@ -551,7 +557,8 @@ def test_legacy_ci_entrypoint_delegates_to_root_owned_validation_library() -> No
         ("python-files", "run_python_files"),
         ("docstrings", "run_docstrings"),
     ):
-        assert f"{command_name}) {function_name} ;;" in script
+        assert f"{command_name}:" in justfile
+        assert f'@source "{{{{ validation_library }}}}"; {function_name}' in justfile
 
 
 def test_quality_and_fix_commands_share_the_first_party_python_inventory() -> None:
@@ -679,7 +686,7 @@ printf '%s %s\\n' "${tool}" "${path_count}" >> "${ATHENA_TEST_UV_LOG}"
     monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ['PATH']}")
 
     assert staging_process.returncode == 0, staging_process.stderr
-    completed_process = _run_ci_command("docstrings", cwd=repository_root)
+    completed_process = _run_validation_command("docstrings", cwd=repository_root)
 
     assert completed_process.returncode == 0, completed_process.stderr
     assert invocation_log.read_text(encoding="utf-8").splitlines() == [
@@ -767,7 +774,7 @@ def test_python_files_matches_existing_tracked_python_sources() -> None:
     Returns:
         None: commandのexit statusまたはpathの順序と内容がindexと異なる場合はassertionで失敗する.
     """
-    completed_process = _run_ci_command("python-files", cwd=PROJECT_ROOT)
+    completed_process = _run_validation_command("python-files", cwd=PROJECT_ROOT)
     stdout = completed_process.stdout
 
     assert stdout is not None
@@ -856,7 +863,7 @@ def test_python_files_uses_staged_sources_from_an_isolated_git_index_despite_hoo
     )
 
     assert staging_process.returncode == 0, staging_process.stderr
-    completed_process = _run_ci_command("python-files", cwd=repository_root)
+    completed_process = _run_validation_command("python-files", cwd=repository_root)
     stdout = completed_process.stdout
 
     assert stdout is not None
@@ -873,7 +880,7 @@ def test_python_files_rejects_directories_outside_a_git_worktree(tmp_path: Path)
     Returns:
         None: commandが成功するかworktree errorを報告しない場合はassertionで失敗する.
     """
-    completed_process = _run_ci_command("python-files", cwd=tmp_path)
+    completed_process = _run_validation_command("python-files", cwd=tmp_path)
 
     assert completed_process.returncode != 0
     assert completed_process.stdout == ""
@@ -891,7 +898,7 @@ def test_python_files_rejects_an_empty_git_worktree(tmp_path: Path) -> None:
     """
     repository_root = tmp_path / "empty repository"
     _initialize_temporary_git_repository(repository_root)
-    completed_process = _run_ci_command("python-files", cwd=repository_root)
+    completed_process = _run_validation_command("python-files", cwd=repository_root)
 
     assert completed_process.returncode != 0
     assert completed_process.stdout == ""
