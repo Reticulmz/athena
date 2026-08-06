@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import tomllib
@@ -48,6 +49,38 @@ TYPE_CHECKER_COMMAND = "tools/monorepo_migration/verify_workspace_validation.py 
 DEVELOPMENT_INFRASTRUCTURE_TEST_PATH = (
     "tools/monorepo_migration/tests/test_development_infrastructure.py"
 )
+AUTHORITY_DOCUMENT_PATHS = (
+    Path("README.md"),
+    Path("AGENTS.md"),
+    Path("CLAUDE.md"),
+    Path("docs/monorepo-layout.md"),
+    Path("apps/athena_server/README.md"),
+    Path("apps/athena_server/AGENTS.md"),
+    Path("packages/athena_crypto/README.md"),
+    Path("packages/athena_crypto/AGENTS.md"),
+)
+ROOT_PUBLIC_RECIPES = (
+    "just setup",
+    "just dev",
+    "just dev-tunnel",
+    "just quality",
+    "just docstrings",
+    "just test",
+    "just build",
+    "just db-migrate",
+    "just migration-check",
+    "just audit-monorepo",
+    "just process-lifecycle-check",
+    "just worktree",
+)
+FORBIDDEN_ROOT_GUIDE_COMMANDS = (
+    "./scripts/ci.sh",
+    "scripts/ci.sh",
+    "scripts/dev-tasks.sh",
+    "scripts/agent-worktree.sh",
+    "process-compose up",
+)
+MARKDOWN_LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 EXPECTED_DEVELOPMENT_INFRASTRUCTURE_NODES = {
     (
         f"{DEVELOPMENT_INFRASTRUCTURE_TEST_PATH}::"
@@ -253,6 +286,86 @@ def _run_workspace_validation(
         env=os.environ.copy(),
         timeout=60,
     )
+
+
+def _local_markdown_links(document_path: Path) -> list[Path]:
+    """Markdown documentからrepository-local link targetを取得する.
+
+    Args:
+        document_path (Path): linkを抽出するMarkdown document.
+
+    Returns:
+        list[Path]: document pathから解決したlocal link targetのlist.
+    """
+    document_source = document_path.read_text(encoding="utf-8")
+    links: list[Path] = []
+    for match in MARKDOWN_LINK_PATTERN.finditer(document_source):
+        raw_target = match.group(1).split("#", maxsplit=1)[0]
+        if raw_target == "" or raw_target.startswith(("http://", "https://", "mailto:", "<")):
+            continue
+        links.append((document_path.parent / raw_target).resolve())
+    return links
+
+
+def test_repository_technical_authority_docs_follow_workspace_ownership() -> None:
+    """Repository authority文書がworkspace ownershipとroot task interfaceへ揃うことを検証する.
+
+    Root文書はoverview、共通agent policy、cross-workspace workflowだけを所有し、serverとcryptoの
+    実行、test、build、operation差分はchild README/AGENTSから辿れることを確認する.
+
+    Returns:
+        None: authority文書とlink解決を検証して完了し、呼び出し側へ値を返さない.
+    """
+    missing_documents = [
+        str(document_path)
+        for document_path in AUTHORITY_DOCUMENT_PATHS
+        if not (REPOSITORY_ROOT / document_path).is_file()
+    ]
+    assert missing_documents == []
+
+    root_readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+    root_agents = (REPOSITORY_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    claude_guidance = (REPOSITORY_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    server_readme = (REPOSITORY_ROOT / "apps" / "athena_server" / "README.md").read_text(
+        encoding="utf-8"
+    )
+    server_agents = (REPOSITORY_ROOT / "apps" / "athena_server" / "AGENTS.md").read_text(
+        encoding="utf-8"
+    )
+    crypto_readme = (REPOSITORY_ROOT / "packages" / "athena_crypto" / "README.md").read_text(
+        encoding="utf-8"
+    )
+    crypto_agents = (REPOSITORY_ROOT / "packages" / "athena_crypto" / "AGENTS.md").read_text(
+        encoding="utf-8"
+    )
+
+    for recipe in ROOT_PUBLIC_RECIPES:
+        assert recipe in root_readme
+        assert recipe in root_agents
+    for forbidden_command in FORBIDDEN_ROOT_GUIDE_COMMANDS:
+        assert forbidden_command not in root_readme
+        assert forbidden_command not in root_agents
+        assert forbidden_command not in claude_guidance
+
+    assert "[apps/athena_server/README.md](apps/athena_server/README.md)" in root_readme
+    assert "[packages/athena_crypto/README.md](packages/athena_crypto/README.md)" in root_readme
+    assert "per-worktree `.state/`" in claude_guidance
+    assert "main repository" not in claude_guidance
+    assert "just dev" in server_readme
+    assert "just db-migrate" in server_readme
+    assert "apps/athena_server/src" in server_agents
+    assert "root `AGENTS.md`" in server_agents
+    assert "python scripts/verify_artifact.py" in crypto_readme
+    assert "packages/athena_crypto" in crypto_agents
+    assert "root `AGENTS.md`" in crypto_agents
+
+    broken_links = [
+        f"{document_path}:{target}"
+        for document_path in AUTHORITY_DOCUMENT_PATHS
+        for target in _local_markdown_links(REPOSITORY_ROOT / document_path)
+        if not target.exists()
+    ]
+    assert broken_links == []
 
 
 def test_root_quality_type_checks_initial_workspace_and_repository_tooling() -> None:

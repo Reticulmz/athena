@@ -42,39 +42,37 @@ Guidance for coding agents working in this repository.
 ```bash
 # Environment
 nix develop              # or: direnv allow (automatic via .envrc)
-uv sync
+just setup
 
 # Services
-process-compose up       # start postgres, valkey, app, worker, nginx, cloudflared
-
-# App / worker
-uvicorn osu_server.app:app --reload
-taskiq worker osu_server.worker:broker
-python -m osu_server
-
-# Quality
-ruff check apps/athena_server/src/ apps/athena_server/tests/ tools/monorepo_migration/
-ruff format --check apps/athena_server/src/ apps/athena_server/tests/ tools/monorepo_migration/
-basedpyright apps/athena_server/src/ apps/athena_server/tests/ tools/monorepo_migration/
-pytest apps/athena_server/tests/ tools/monorepo_migration/tests/
-import-linter
+just dev                 # core profile: postgres, valkey, app, worker, nginx
+just tunnel-setup        # optional Cloudflare tunnel state
+just dev-tunnel          # optional tunnel profile
 
 # Project gates
-./scripts/ci.sh docstrings
-./scripts/ci.sh quality
-./scripts/ci.sh test
+just quality
+just docstrings
+just test
+just build
+just db-migrate
+just migration-check
+just audit-monorepo
+just process-lifecycle-check
 
 # Migrations
-nix develop --command uv run --directory apps/athena_server alembic upgrade head
+just db-migrate
 nix develop --command uv run --directory apps/athena_server alembic revision --autogenerate -m "..."
 
 # Test database tasks
-scripts/dev-tasks.sh db:test:create
-scripts/dev-tasks.sh db:test:migrate
-scripts/dev-tasks.sh db:test:run
+just db-test-create
+just db-test-migrate
+just db-test-run
+
+# Pre-commit
+nix develop --command prek run --all-files
 ```
 
-Before reporting implementation work as complete, run the relevant tests and quality checks. For broad changes, prefer the project gates: `./scripts/ci.sh quality` and `./scripts/ci.sh test`.
+Before reporting implementation work as complete, run the relevant tests and quality checks. For broad changes, prefer the project gates: `just quality` and `just test`.
 
 ## Architecture
 
@@ -279,9 +277,9 @@ Do not add compatibility facades for deprecated service, repository, domain, or 
 
 ### Validation Contract
 
-Architecture documentation and mechanical validation must describe the same boundaries. `import-linter` contracts in `pyproject.toml` enforce dependency direction and forbidden imports. Tests cover provider replacement, startup failure, Unit of Work commit/rollback behavior, command/query separation, transport-family isolation, job adapter thinness, and deprecated path detection.
+Architecture documentation and mechanical validation must describe the same boundaries. `import-linter` contracts in `apps/athena_server/pyproject.toml` enforce dependency direction and forbidden imports. Tests cover provider replacement, startup failure, Unit of Work commit/rollback behavior, command/query separation, transport-family isolation, job adapter thinness, and deprecated path detection.
 
-The local quality gate is `./scripts/ci.sh quality` (ruff format, ruff lint, basedpyright, import-linter). The test gate is `./scripts/ci.sh test`. A refactor phase is incomplete if the guide, validation rules, and package layout disagree.
+The local quality gate is `just quality` (ruff format, ruff lint, basedpyright, import-linter). The test gate is `just test`. A refactor phase is incomplete if the guide, validation rules, and package layout disagree.
 
 ### Directory Layout
 
@@ -326,7 +324,7 @@ Sessions, presence, channel state, match state, and packet queues are all stored
 When work may run in parallel, touch overlapping files, generate artifacts, or involve multiple coding agents, isolate the work before making changes. Do not create task worktrees by default for every Kiro task; use them when they protect parallelism or integration boundaries.
 
 - Create or use a task-specific git worktree and dedicated branch before editing files for parallelizable tasks, multi-agent work, or changes with likely file conflicts.
-- Use `scripts/agent-worktree.sh` when creating agent worktrees unless the task needs a custom setup.
+- Use `just worktree <task-slug> --agent codex` when creating agent worktrees unless the task needs a custom setup.
 - Pass an agent namespace such as `--agent codex` for Codex or `--agent claude-code` for Claude Code so branches identify the originating agent.
 - Use the default repo-sibling path `../athena_worktree/<task-slug>` and an agent-prefixed branch such as `codex/<task-slug>` or `claude-code/<task-slug>`.
 - After entering a worktree, run project toolchain commands through `nix develop` so hooks, `uv`, and `.venv` resolve inside that worktree. For non-interactive commands, prefer `nix develop --command <command>`.
@@ -340,7 +338,7 @@ When work may run in parallel, touch overlapping files, generate artifacts, or i
 - Sequential small Kiro tasks may be implemented directly on the spec branch when no other agent is expected to edit the same files and no generated artifacts or long-running checks require isolation.
 - For sequential Kiro task commits, include `Kiro-Task: <spec-name> <task-number>` in the commit body.
 - After all tasks are integrated and spec-level validation passes, open the final PR from `spec/<spec-name>` to `main`.
-- Run relevant tests and quality checks inside the task worktree through `nix develop`. Before committing, run `prek run --all-files` from that worktree; if hooks import app config, provide test settings such as `ENVIRONMENT=test`, `DATABASE_URL`, and `VALKEY_URL`.
+- Run relevant tests and quality checks inside the task worktree through `nix develop`. Before committing, run `nix develop --command prek run --all-files` from that worktree; if hooks import app config, provide test settings such as `ENVIRONMENT=test`, `DATABASE_URL`, and `VALKEY_URL`.
 - Commit completed work in the task branch, or clearly report uncommitted changes and do not integrate them automatically.
 - For non-trivial code, test, spec, or multi-file changes, use a pull request as the integration boundary even for solo development.
 - Open a draft PR from the task branch, watch GitHub CI and review comments, and fix failures with focused follow-up commits on the same branch.
@@ -533,7 +531,7 @@ def test_expired_session_is_rejected(client: TestClient, expired_session: Sessio
 
 #### Quality Gate And Sphinx Handoff
 
-- `./scripts/ci.sh docstrings`はRuff `D`でGoogle Styleの存在と形式を、`interrogate`で
+- `just docstrings`はRuff `D`でGoogle Styleの存在と形式を、`interrogate`で
   対象definitionの完全性を検証する。Args:/Returns:/Yields:/Raises:/Attributes:の型と意味はこの
   規約を正本とし、implementation、call site、relevant testを照合してreviewする。各toolの設定は
   この意味規則を弱めるper-file docstring ignore、docstring `noqa`、tool-level broad exclude、
@@ -624,7 +622,7 @@ Use Conventional Commits:
 - Avoid vague descriptions such as `update`, `fix`, `change`, `modify`, `更新`, `修正`, `変更`, `対応`, or `wip`.
 - No emoji or slang.
 - Do not bypass hooks with `--no-verify`, `--no-gpg-sign`, or `-n`.
-- Before committing, run `prek run --all-files`.
+- Before committing, run `nix develop --command prek run --all-files`.
 - If a coding agent creates a commit, include footer `Agent-Model: <agent product> (<model name>)`. Do not guess the model name; use `unknown` when the exact model is not available.
 - If a commit implements a sequential Kiro task directly on the spec branch, include footer `Kiro-Task: <spec-name> <task-number>`.
 
@@ -632,7 +630,7 @@ When proposing a commit, include file count summary and file list so staging can
 
 ### Commit Workflow
 
-Run `prek run --all-files` before committing so hook output is captured by the agent. `git commit` alone may not surface hook error logs. Always use `--all-files`; `--files` misses unstaged changes and produces misleading results.
+Run `nix develop --command prek run --all-files` before committing so hook output is captured by the agent. `git commit` alone may not surface hook error logs. Always use `--all-files`; `--files` misses unstaged changes and produces misleading results.
 
 If hooks fail:
 

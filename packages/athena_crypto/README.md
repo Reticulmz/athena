@@ -9,3 +9,9 @@ nix develop --command python scripts/verify_artifact.py
 ```
 
 このentrypointはRust unit test、temporary directoryへのclean wheel build、wheel archive内のnative extensionとpublic typing artifact、wheelだけをinstallしたconsumer venvでのnative behavior testとtype-aware consumer checkを順に実行します。
+
+Repository-wide artifact validationはrootで次を実行します。
+
+```bash
+just build
+```

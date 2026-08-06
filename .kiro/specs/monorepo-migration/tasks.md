@@ -149,7 +149,7 @@
   - _Depends: 4.1_
   - _Requirements: 3.4, 3.5, 3.6, 4.2, 5.1, 5.2, 5.4, 5.5, 7.1, 7.2, 7.3, 7.4, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6_
 
-- [ ] 4.3 Repositoryとworkspaceのtechnical authorityを切り替える
+- [x] 4.3 Repositoryとworkspaceのtechnical authorityを切り替える
   - Root overview/common agent policyとserver/crypto runbook/delta guidanceを新ownershipへ分ける。
   - ADR single sequenceを維持し、server architecture/compatibility/operation evidenceをownerから参照可能にする。
   - Canonical command、worktree state、environment、test ownershipのinstructionをroot task/layoutと一致させ、Markdown link auditを通す。

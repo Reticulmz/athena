@@ -138,6 +138,7 @@ Root `pyproject.toml`はnon-package uv workspaceとrepository-wide Python develo
 
 - Python server source、test、Alembic、server stub、CLI、docsは`apps/athena_server/`が所有する。
 - Native crypto source、test、manifest、public typingは`packages/athena_crypto/`が所有する。Root uv workspaceは単一lockを使う。
+- Root README/AGENTSはrepository overview、共通policy、Just task interfaceを所有し、server/crypto README/AGENTSはworkspace固有runbookと差分だけを所有する。
 - Stable compatibility fixture、catalog、verification reportはserver owner配下のpathをcurrent evidenceとして参照する。
 - Gitlint rule、development task gateway、tracked ingress template、root backlogの最終cleanupは後続Task 3/4で実施する。移行完了まで暫定artifactを削除せず、path consumer auditの理由付きallowlistで管理する。
 

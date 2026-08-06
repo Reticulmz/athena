@@ -76,16 +76,17 @@ See [apps/athena_server/docs/architecture.md](apps/athena_server/docs/architectu
 
 ## Local Development
 
-Enter the development shell and sync dependencies:
+Enter the development shell and run explicit worktree setup:
 
 ```bash
 nix develop
-uv sync
+just setup
 ```
 
-The flake shell resolves the current git worktree root and keeps `.venv`,
-`.state`, and generated certificates inside that worktree. uv package caches
-are shared through `UV_CACHE_DIR`, defaulting to `$HOME/.uv/cache/athena`.
+The flake shell resolves the current git worktree root. `just setup` performs the
+locked uv sync, installs worktree-local hooks, prepares `.state/`, and generates
+development ingress files for that worktree. uv package caches are shared through
+`UV_CACHE_DIR`, defaulting to `$HOME/.uv/cache/athena`.
 
 Create an environment file:
 
@@ -100,33 +101,36 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/athena
 VALKEY_URL=redis://localhost:6379
 ```
 
-Start local services and processes from the Nix shell:
+Start the credential-free core development profile:
 
 ```bash
-process-compose up
+just dev
 ```
 
-Useful direct commands:
+Use the optional tunnel profile only after Cloudflare tunnel state has been set up:
 
 ```bash
-uv run python -m osu_server
-uv run taskiq worker osu_server.worker:broker
-uv run athena db setup --env development
-uv run athena config check --env development
+just tunnel-setup
+just dev-tunnel
 ```
+
+Server-specific runbook details live in
+[apps/athena_server/README.md](apps/athena_server/README.md). Crypto package
+build and artifact details live in
+[packages/athena_crypto/README.md](packages/athena_crypto/README.md).
 
 ## Quality Gates
 
 Run the local quality gate:
 
 ```bash
-./scripts/ci.sh quality
+just quality
 ```
 
 Run only the docstring quality gate:
 
 ```bash
-./scripts/ci.sh docstrings
+just docstrings
 ```
 
 The canonical docstring standard is [AGENTS.md](AGENTS.md). Ruff `D` checks Google
@@ -134,12 +138,12 @@ Style presence and format, while interrogate checks definition coverage. Section
 types and meanings are reviewed against the canonical standard, implementation,
 call sites, and relevant tests.
 
-`./scripts/ci.sh quality` runs the same Ruff and interrogate checks over every
-tracked first-party `.py` file, while basedpyright and import-linter use the
-workspace-owned source, test, stub, and repository-tooling inventory. The generated pre-commit configuration is owned by
-`flake.nix`: it runs the uv lockfile's Ruff formatter and linter for changed `.py`
-files, then invokes the full docstring gate once. Changes limited to `.pyi` stubs
-do not trigger the docstring gate.
+`just quality` runs Ruff, interrogate, basedpyright, and import-linter over the
+workspace-owned source, test, stub, and repository-tooling inventory. The
+generated pre-commit configuration is owned by `flake.nix`: it runs the uv
+lockfile's Ruff formatter and linter for changed `.py` files, then invokes the
+full docstring gate once. Changes limited to `.pyi` stubs do not trigger the
+docstring gate.
 
 Sphinx configuration, themes, generated output, and publishing belong to an
 external documentation repository. Because Sphinx autodoc imports modules, that
@@ -150,25 +154,24 @@ their API reference.
 Run the test gate:
 
 ```bash
-./scripts/ci.sh test
+just test
 ```
 
-Run both:
+Build artifacts, check migrations, audit monorepo ownership, and run the explicit
+development infrastructure checkpoint:
 
 ```bash
-./scripts/ci.sh all
-```
-
-Audit moved-path consumers and their documented historical exceptions:
-
-```bash
-uv run python tools/monorepo_migration/verify_path_consumers.py
+just build
+just db-migrate
+just migration-check
+just audit-monorepo
+just process-lifecycle-check
 ```
 
 Before committing, run:
 
 ```bash
-prek run --all-files
+nix develop --command prek run --all-files
 ```
 
 ## Database
@@ -176,7 +179,7 @@ prek run --all-files
 Apply migrations:
 
 ```bash
-uv run --directory apps/athena_server alembic upgrade head
+just db-migrate
 ```
 
 Create a new migration after changing SQLAlchemy models:
@@ -188,9 +191,9 @@ uv run --directory apps/athena_server alembic revision --autogenerate -m "descri
 The development environment also exposes database helper tasks:
 
 ```bash
-scripts/dev-tasks.sh db:test:create
-scripts/dev-tasks.sh db:test:migrate
-scripts/dev-tasks.sh db:test:run
+just db-test-create
+just db-test-migrate
+just db-test-run
 ```
 
 ## Stable Client Compatibility
@@ -230,7 +233,7 @@ This repository is optimized for parallel coding-agent work. File-editing tasks
 should use isolated git worktrees and agent-prefixed branches:
 
 ```bash
-./scripts/agent-worktree.sh <task-slug> --agent codex
+just worktree <task-slug> --agent codex
 ```
 
 By default, worktrees are created under the repo-sibling
@@ -249,6 +252,9 @@ performed by the user on GitHub Web UI.
 
 ## Documentation
 
+- [apps/athena_server/README.md](apps/athena_server/README.md): server, worker, CLI, migration, and local operation runbook.
+- [packages/athena_crypto/README.md](packages/athena_crypto/README.md): native crypto package build and artifact verification runbook.
+- [docs/monorepo-layout.md](docs/monorepo-layout.md): repository workspace map and ownership boundaries.
 - [apps/athena_server/docs/architecture.md](apps/athena_server/docs/architecture.md): architecture and placement rules.
 - [apps/athena_server/docs/stable-compatibility-matrix.md](apps/athena_server/docs/stable-compatibility-matrix.md): stable
   packet and endpoint compatibility inventory.
