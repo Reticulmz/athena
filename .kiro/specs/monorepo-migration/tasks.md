@@ -182,7 +182,7 @@
   - _Requirements: 4.3, 4.4, 4.5, 5.4, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6_
 
 - [ ] 5. Cross-boundary validationでmigrationを完了する
-- [ ] 5.1 Runtime artifactとmigration compatibilityを最終検証する (P)
+- [x] 5.1 Runtime artifactとmigration compatibilityを最終検証する (P)
   - Installed server/crypto artifacts、import namespaces、app/worker/CLI entrypoints、CLI behaviorをpreflight baselineと比較する。
   - Existing Stable/Lazer/API focused regressionを実行し、worker task名とobservable outcomeの両方をpreflight baselineと比較する。
   - Alembic revision chain、current/head、test database upgradeを比較する。
@@ -244,3 +244,4 @@
 - 2026-08-06: Task 4.4は`.kiro/specs/README.md`でspec authority/lifecycle/current-vs-historical policyを明文化し、root `TODO.md`の7項目をroadmap/spec ownerへ移管して`TODO.md`を削除した。Focused authority testsとpost-cutover auditが成功した。
 - 2026-08-06: Task 4.5は`verify_path_consumers.py`をexpected cleanup artifact、forbidden artifact、stale current consumerを区別する完成版cutover auditへ拡張した。Cleanup前の`just audit-monorepo`はexpected cleanup artifactだけをnon-zeroで報告し、unexpected findingは0件である。
 - 2026-08-06: Task 4.6はlegacy public helperの`scripts/ci.sh`と`scripts/dev-tasks.sh`を削除し、root生成物の`alembic/`、`tests/`、`gitlint_rules/`、`.state/`、`.venv/`、`certs/`をsource treeから除去した。`audit-monorepo`はcleanup対象の`.venv`を再生成しないよう標準ライブラリのみのverifierを`python`で直接実行する。
+- 2026-08-06: Task 5.1はserver/crypto clean wheel artifact verifier、isolated PostgreSQL上の`just migration-check`、Stable/Lazer/API/worker focused regression 111件でruntime import、app/worker/CLI entrypoint、worker task名、Alembic head/current、representative client behaviorが維持されることを確認した。
