@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Python workspace cutoverの基盤を確立する
+- [x] 1. Python workspace cutoverの基盤を確立する
 - [x] 1.1 移行前の互換contractとcleanup inventoryを固定する
   - Runtime import namespace、app/worker entrypoint、worker task名、CLI command/confirmation/exit behaviorのbaselineを取得する。
   - Alembic revision identifierとcurrent/head、server/crypto build、現在のquality/test対象を記録する。
@@ -40,7 +40,7 @@
   - _Requirements: 1.2, 1.3, 1.4, 2.1, 2.2, 2.3, 2.4, 2.5, 2.7, 3.1, 3.2, 3.3, 6.1, 6.2, 6.3, 6.4_
   - _Boundary: Workspace Manifests, Server Workspace, Crypto Workspace, Validation Policy_
 
-- [ ] 2. Server-owned artifactsとcompatibility evidenceをcutoverする
+- [x] 2. Server-owned artifactsとcompatibility evidenceをcutoverする
 - [x] 2.1 Server、worker、CLI test assetsをowner workspaceへ移管する
   - Unit、integration、e2e、fixtures、factories、supportをserver productのtest ownershipへ集約する。
   - Test import、fixture discovery、relative evidence pathを新しいowner基準へ更新する。
@@ -85,7 +85,7 @@
   - _Depends: 2.1, 2.2, 2.3, 2.4, 2.5_
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 6.1, 6.2, 6.6, 10.1, 10.7_
 
-- [ ] 3. Development toolingとinfrastructureを構築する
+- [x] 3. Development toolingとinfrastructureを構築する
 - [x] 3.1 Side-effect-free Nix compositionを構築する (P)
   - Root environment compositionからserver/crypto固有toolchain、build、checkをworkspace moduleへ分離する。
   - Shell entryはtoolとworktree-relative path variableだけを提供し、sync、state、hook、certificate、trust changeを実行しない。
@@ -131,7 +131,7 @@
   - _Depends: 3.1, 3.2, 3.3, 3.4_
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 6.1, 6.2, 7.1, 7.2, 8.1, 8.6_
 
-- [ ] 4. CI、governance、cleanupを統合する
+- [x] 4. CI、governance、cleanupを統合する
 - [x] 4.1 CIをcanonical task contractへ切り替える
   - Native dependency/tool setupとservice containerを維持し、quality/test/build/migration/auditをroot recipeから実行する。
   - Quality、test、build、migration、Nix、auditをdistinct statusとして報告する。
@@ -181,7 +181,7 @@
   - _Depends: 4.2, 4.5_
   - _Requirements: 4.3, 4.4, 4.5, 5.4, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6_
 
-- [ ] 5. Cross-boundary validationでmigrationを完了する
+- [x] 5. Cross-boundary validationでmigrationを完了する
 - [x] 5.1 Runtime artifactとmigration compatibilityを最終検証する (P)
   - Installed server/crypto artifacts、import namespaces、app/worker/CLI entrypoints、CLI behaviorをpreflight baselineと比較する。
   - Existing Stable/Lazer/API focused regressionを実行し、worker task名とobservable outcomeの両方をpreflight baselineと比較する。
@@ -218,7 +218,7 @@
   - _Requirements: 4.1, 4.2, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6_
   - _Boundary: Validation Policy, CI Workflow_
 
-- [ ] 5.5 Final ownership、scope、cleanup auditを通す
+- [x] 5.5 Final ownership、scope、cleanup auditを通す
   - Root/workspace technical authority、Kiro lifecycle、TODO reconciliation、historical exceptionをreviewする。
   - Old canonical path、legacy command、duplicate lock/template、unexpected frontend/system-test/PP artifactがないことを確認する。
   - Requirements traceabilityと全checkpoint evidenceを最終diffへ照合する。
@@ -233,6 +233,7 @@
 - 2026-08-02: User approval後、Task 1.3へcanonical root gateをgreenに保つcutover-blocking runtime/test/tooling consumer更新を移管した。Task 2.5は残余consumerの全量audit、historical exception、current instructionのreconciliationを所有する。
 - Task 1.2 debug round 1: stale `.venv` extensionはcaptured score vectorを通したが、clean wheelは`InvalidDataSize`で失敗した。source importをartifact evidenceにせず、captured vectorと確認済みstable crypto contractだけで修復を判断する。
 - Task 1.2のpre-cutover fixtureはTask 1.1 commit SHAへ固定し、CI test checkoutはそのhistorical objectを取得できるfull historyを使用する。
+- 2026-08-07: Task 5.5 final auditは`just audit-monorepo`とownership/cleanup focused testsで確認した。`just build`生成の`.state`はsource tree cleanup contractに従い`/tmp/athena-monorepo-migration-task-5-5-state`へ退避した。
 - 2026-08-07: Task 5.4はroot `just quality`、root `just test`、server/crypto artifact verifier、isolated PostgreSQL `just migration-check`、`just audit-monorepo`、CI-equivalent `just build`、`nix flake check`で検証した。
 - 2026-08-03: Task 2.5のpath consumer auditはactive docs、stable fixture/catalog、verification report、tool configurationだけをscanし、historical Kiro snapshot、preflight reconstruction、Task 3.4までのGitlint配置を理由付きexceptionとして扱う。
 - 2026-08-03: Task 2.6 Boundary 1はpost-cutover preflight、隔離PostgreSQLへのAlembic head適用/current一致、server/crypto artifact検証、root quality/import-linter、全workspace test（3465 passed, 57 skipped）で完了した。
