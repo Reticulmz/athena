@@ -15,8 +15,9 @@ always-needed rules stay here, area-specific rules live in the nearest
      jobs, or runtime wiring.
    - Crypto: `packages/athena_crypto/AGENTS.md` for
      `packages/athena_crypto/**`.
-   - Python: `docs/agent-python.md` for first-party Python, Python tests,
-     local `.pyi` stubs, or Python lint/type/docstring policy.
+   - Python: `.agents/skills/athena-python-style/SKILL.md` for first-party
+     Python, Python tests, local `.pyi` stubs, or Python lint/type/docstring
+     policy.
 4. If scoped guidance conflicts with this file, the closer guidance wins for
    files inside its scope.
 
