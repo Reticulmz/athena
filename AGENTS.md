@@ -133,6 +133,9 @@ cause if failure remains.
 - For multi-task Kiro specs, create `spec/<spec-name>` as the integration
   branch first. Branch parallel task worktrees from that spec branch, then
   integrate task branches back into it before opening the final PR to `main`.
+- Kiro tasks are parallel only when the task number is marked with `(P)`. For
+  unmarked tasks, stay on the spec branch and commit tasks sequentially instead
+  of creating per-task worktrees.
 - Keep `.kiro/steering/` aligned with implementation decisions.
 - Use the Kiro skills in `.agents/skills/kiro-*/SKILL.md` when a Kiro workflow
   applies.
