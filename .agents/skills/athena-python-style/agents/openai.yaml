@@ -1,4 +1,4 @@
 interface:
   display_name: "Athena Python Style"
   short_description: "Athena Python 3.14+ coding policy"
-  default_prompt: "Use $athena-python-style before editing Athena Python code."
+  default_prompt: "Use $athena-python-style before writing, editing, reviewing, or debugging Athena Python."

@@ -1,8 +1,8 @@
 # AGENTS.md
 
 Repository-level instructions for coding agents. Keep this file a router:
-always-needed rules stay here, area-specific rules live in the nearest
-`AGENTS.md` beside the files they govern.
+always-needed rules stay here, area-specific rules live in the nearest scoped
+`AGENTS.md` or project skill.
 
 ## First Steps
 
@@ -130,6 +130,9 @@ cause if failure remains.
 ## Spec Work
 
 - Check `.kiro/specs/` before feature work.
+- For multi-task Kiro specs, create `spec/<spec-name>` as the integration
+  branch first. Branch parallel task worktrees from that spec branch, then
+  integrate task branches back into it before opening the final PR to `main`.
 - Keep `.kiro/steering/` aligned with implementation decisions.
 - Use the Kiro skills in `.agents/skills/kiro-*/SKILL.md` when a Kiro workflow
   applies.
@@ -141,7 +144,7 @@ cause if failure remains.
 ## Agent Document Maintenance
 
 - Keep root `AGENTS.md` under 200 lines.
-- Move path-specific rules to the nearest scoped `AGENTS.md`.
+- Move path-specific rules to the nearest scoped `AGENTS.md` or project skill.
 - Keep each rule in one source of truth. Point to details instead of duplicating
   them.
 - Store facts agents cannot cheaply infer: project contracts, gotchas, required
