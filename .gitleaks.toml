@@ -3,8 +3,8 @@
 [allowlist]
 description = "Known test/mock credentials"
 paths = [
-    '''src/osu_server/infrastructure/auth/score_authorization\.py''',
-    '''tests/unit/infrastructure/auth/test_score_authorization\.py''',
+    '''apps/athena_server/src/osu_server/infrastructure/auth/score_authorization\.py''',
+    '''apps/athena_server/tests/unit/infrastructure/auth/test_score_authorization\.py''',
 ]
 regexes = [
     '''aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa''',  # MD5 of "password" - Wave 1 mock credential

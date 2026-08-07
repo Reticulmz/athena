@@ -6,6 +6,26 @@ resolution-markers = [
     "python_full_version < '3.15'",
 ]
 
+[manifest]
+members = [
+    "athena",
+    "athena-crypto",
+]
+
+[manifest.dependency-groups]
+dev = [
+    { name = "basedpyright" },
+    { name = "gitlint-core" },
+    { name = "httpx2", specifier = ">=2.4.0" },
+    { name = "import-linter" },
+    { name = "interrogate", specifier = "==1.7.0" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-fixture-classes", specifier = ">=1.0.4" },
+    { name = "pytest-timeout" },
+    { name = "ruff" },
+]
+
 [[package]]
 name = "aiohappyeyeballs"
 version = "2.6.2"
@@ -205,7 +225,7 @@ wheels = [
 [[package]]
 name = "athena"
 version = "0.1.0"
-source = { editable = "." }
+source = { editable = "apps/athena_server" }
 dependencies = [
     { name = "alembic" },
     { name = "argon2-cffi" },
@@ -229,26 +249,12 @@ dependencies = [
     { name = "valkey-glide" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "basedpyright" },
-    { name = "gitlint-core" },
-    { name = "httpx2" },
-    { name = "import-linter" },
-    { name = "interrogate" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-fixture-classes" },
-    { name = "pytest-timeout" },
-    { name = "ruff" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "alembic" },
     { name = "argon2-cffi" },
     { name = "asyncpg" },
-    { name = "athena-crypto", editable = "athena-crypto" },
+    { name = "athena-crypto", editable = "packages/athena_crypto" },
     { name = "caterpillar-py", specifier = ">=2.8.1" },
     { name = "dishka" },
     { name = "httpx", specifier = ">=0.28.1" },
@@ -267,23 +273,9 @@ requires-dist = [
     { name = "valkey-glide", specifier = ">=2.1" },
 ]
 
-[package.metadata.requires-dev]
-dev = [
-    { name = "basedpyright" },
-    { name = "gitlint-core" },
-    { name = "httpx2", specifier = ">=2.4.0" },
-    { name = "import-linter" },
-    { name = "interrogate", specifier = "==1.7.0" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-fixture-classes", specifier = ">=1.0.4" },
-    { name = "pytest-timeout" },
-    { name = "ruff" },
-]
-
 [[package]]
 name = "athena-crypto"
-source = { editable = "athena-crypto" }
+source = { editable = "packages/athena_crypto" }
 
 [[package]]
 name = "attrs"

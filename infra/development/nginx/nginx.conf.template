@@ -1,0 +1,42 @@
+# Athena local development reverse proxy.
+# `just setup` copies this tracked source to `.state/nginx/nginx.conf`.
+
+worker_processes 1;
+pid .state/nginx/nginx.pid;
+error_log .state/nginx/error.log;
+
+events {
+    worker_connections 64;
+}
+
+http {
+    client_body_temp_path .state/nginx/client-body;
+    proxy_temp_path       .state/nginx/proxy;
+    fastcgi_temp_path     .state/nginx/fastcgi;
+    uwsgi_temp_path       .state/nginx/uwsgi;
+    scgi_temp_path        .state/nginx/scgi;
+
+    access_log .state/nginx/access.log;
+    error_log  .state/nginx/error.log;
+
+    server {
+        listen 80;
+        listen 443 ssl;
+        server_name *.athena.localhost;
+
+        ssl_certificate     ../certs/_wildcard.athena.localhost.pem;
+        ssl_certificate_key ../certs/_wildcard.athena.localhost-key.pem;
+
+        location / {
+            # The loopback port is the internal app upstream, not a client URL.
+            proxy_pass http://127.0.0.1:8000;
+            proxy_set_header Host              $host;
+            proxy_set_header X-Real-IP         $remote_addr;
+            proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade           $http_upgrade;
+            proxy_set_header Connection        "upgrade";
+        }
+    }
+}

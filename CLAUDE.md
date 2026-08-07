@@ -9,16 +9,18 @@ Claude Code 向けのプロジェクト固有設定。汎用エージェント�
 ### 開発環境
 
 - 環境構築: `nix develop` (direnv による自動ロードも可)
-- サービス起動: `process-compose up`
-- Python venv は `uv sync` が `.venv/` に自動作成 (per-worktree)
-- 共有状態 (postgres, valkey, nginx) はメインリポジトリの `.state/` に配置
-- pre-commit フック: `prek run --all-files`
+- 明示setup: `just setup`
+- サービス起動: `just dev`
+- tunnel付き起動: `just tunnel-setup` の後に `just dev-tunnel`
+- Python venv は `just setup` がworktree-local `.venv/` に作成
+- postgres、valkey、nginx、certificate、hook stateはper-worktree `.state/` に配置
+- pre-commit フック: `nix develop --command prek run --all-files`
 
 ### Worktree 運用
 
 - `nix develop` + `nix-direnv` により worktree 間で Nix 評価結果がキャッシュされ、切り替えが高速
-- `.state/` はメインリポジトリルートに配置し全 worktree で共有
-- `.venv/` は各 worktree のローカルに作成される
+- `.state/` と `.venv/` は各 worktree のローカルに作成される
+- hook pathはworktree-local Git configで `.state/hooks` を指す
 
 ### MCP ツール
 

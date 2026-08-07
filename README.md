@@ -49,16 +49,16 @@ composition -> runtime adapters -> command/query use-cases -> repositories -> in
 
 Core package responsibilities:
 
-- `src/osu_server/domain`: transport-independent business language and policies.
-- `src/osu_server/services/commands`: state-changing workflows and transaction timing.
-- `src/osu_server/services/queries`: read-only display, search, and compatibility views.
-- `src/osu_server/repositories`: persistence ports and concrete memory, SQLAlchemy,
+- `apps/athena_server/src/osu_server/domain`: transport-independent business language and policies.
+- `apps/athena_server/src/osu_server/services/commands`: state-changing workflows and transaction timing.
+- `apps/athena_server/src/osu_server/services/queries`: read-only display, search, and compatibility views.
+- `apps/athena_server/src/osu_server/repositories`: persistence ports and concrete memory, SQLAlchemy,
   and Valkey implementations.
-- `src/osu_server/transports`: stable, lazer, and first-party protocol adapters.
-- `src/osu_server/jobs`: taskiq task adapters.
-- `src/osu_server/composition`: Dishka provider graph and runtime integration.
+- `apps/athena_server/src/osu_server/transports`: stable, lazer, and first-party protocol adapters.
+- `apps/athena_server/src/osu_server/jobs`: taskiq task adapters.
+- `apps/athena_server/src/osu_server/composition`: Dishka provider graph and runtime integration.
 
-See [docs/architecture.md](docs/architecture.md) for the full boundary contract.
+See [apps/athena_server/docs/architecture.md](apps/athena_server/docs/architecture.md) for the full boundary contract.
 
 ## Tech Stack
 
@@ -76,21 +76,22 @@ See [docs/architecture.md](docs/architecture.md) for the full boundary contract.
 
 ## Local Development
 
-Enter the development shell and sync dependencies:
+Enter the development shell and run explicit worktree setup:
 
 ```bash
 nix develop
-uv sync
+just setup
 ```
 
-The flake shell resolves the current git worktree root and keeps `.venv`,
-`.state`, and generated certificates inside that worktree. uv package caches
-are shared through `UV_CACHE_DIR`, defaulting to `$HOME/.uv/cache/athena`.
+The flake shell resolves the current git worktree root. `just setup` performs the
+locked uv sync, installs worktree-local hooks, prepares `.state/`, and generates
+development ingress files for that worktree. uv package caches are shared through
+`UV_CACHE_DIR`, defaulting to `$HOME/.uv/cache/athena`.
 
 Create an environment file:
 
 ```bash
-cp .env.example .env.development
+cp apps/athena_server/.env.example apps/athena_server/.env.development
 ```
 
 The required runtime values are:
@@ -100,33 +101,36 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/athena
 VALKEY_URL=redis://localhost:6379
 ```
 
-Start local services and processes from the Nix shell:
+Start the credential-free core development profile:
 
 ```bash
-process-compose up
+just dev
 ```
 
-Useful direct commands:
+Use the optional tunnel profile only after Cloudflare tunnel state has been set up:
 
 ```bash
-uv run python -m osu_server
-uv run taskiq worker osu_server.worker:broker
-uv run athena db setup --env development
-uv run athena config check --env development
+just tunnel-setup
+just dev-tunnel
 ```
+
+Server-specific runbook details live in
+[apps/athena_server/README.md](apps/athena_server/README.md). Crypto package
+build and artifact details live in
+[packages/athena_crypto/README.md](packages/athena_crypto/README.md).
 
 ## Quality Gates
 
 Run the local quality gate:
 
 ```bash
-./scripts/ci.sh quality
+just quality
 ```
 
 Run only the docstring quality gate:
 
 ```bash
-./scripts/ci.sh docstrings
+just docstrings
 ```
 
 The canonical docstring standard is [AGENTS.md](AGENTS.md). Ruff `D` checks Google
@@ -134,12 +138,12 @@ Style presence and format, while interrogate checks definition coverage. Section
 types and meanings are reviewed against the canonical standard, implementation,
 call sites, and relevant tests.
 
-`./scripts/ci.sh quality` runs the same Ruff and interrogate checks over every
-tracked first-party `.py` file, while basedpyright and import-linter retain their
-`src/ tests/` scope. The generated pre-commit configuration is owned by
-`flake.nix`: it runs the uv lockfile's Ruff formatter and linter for changed `.py`
-files, then invokes the full docstring gate once. Changes limited to `.pyi` stubs
-do not trigger the docstring gate.
+`just quality` runs Ruff, interrogate, basedpyright, and import-linter over the
+workspace-owned source, test, stub, and repository-tooling inventory. The
+generated pre-commit configuration is owned by `flake.nix`: it runs the uv
+lockfile's Ruff formatter and linter for changed `.py` files, then invokes the
+full docstring gate once. Changes limited to `.pyi` stubs do not trigger the
+docstring gate.
 
 Sphinx configuration, themes, generated output, and publishing belong to an
 external documentation repository. Because Sphinx autodoc imports modules, that
@@ -150,19 +154,24 @@ their API reference.
 Run the test gate:
 
 ```bash
-./scripts/ci.sh test
+just test
 ```
 
-Run both:
+Build artifacts, check migrations, audit monorepo ownership, and run the explicit
+development infrastructure checkpoint:
 
 ```bash
-./scripts/ci.sh all
+just build
+just db-migrate
+just migration-check
+just audit-monorepo
+just process-lifecycle-check
 ```
 
 Before committing, run:
 
 ```bash
-prek run --all-files
+nix develop --command prek run --all-files
 ```
 
 ## Database
@@ -170,21 +179,21 @@ prek run --all-files
 Apply migrations:
 
 ```bash
-uv run alembic upgrade head
+just db-migrate
 ```
 
 Create a new migration after changing SQLAlchemy models:
 
 ```bash
-uv run alembic revision --autogenerate -m "describe change"
+uv run --directory apps/athena_server alembic revision --autogenerate -m "describe change"
 ```
 
 The development environment also exposes database helper tasks:
 
 ```bash
-scripts/dev-tasks.sh db:test:create
-scripts/dev-tasks.sh db:test:migrate
-scripts/dev-tasks.sh db:test:run
+just db-test-create
+just db-test-migrate
+just db-test-run
 ```
 
 ## Stable Client Compatibility
@@ -202,11 +211,11 @@ under `domain/compatibility/stable`.
 ## Compatibility Roadmap
 
 The detailed packet, endpoint, request, response, and persistence inventory lives
-in [docs/stable-compatibility-matrix.md](docs/stable-compatibility-matrix.md).
+in [apps/athena_server/docs/stable-compatibility-matrix.md](apps/athena_server/docs/stable-compatibility-matrix.md).
 That matrix is the source of truth for stable compatibility progress; this README
 only summarizes the current direction so the two documents do not drift.
 The processing and data-shape guide lives in
-[docs/stable-compatibility-guide.md](docs/stable-compatibility-guide.md).
+[apps/athena_server/docs/stable-compatibility-guide.md](apps/athena_server/docs/stable-compatibility-guide.md).
 
 Current focus areas:
 
@@ -224,7 +233,7 @@ This repository is optimized for parallel coding-agent work. File-editing tasks
 should use isolated git worktrees and agent-prefixed branches:
 
 ```bash
-./scripts/agent-worktree.sh <task-slug> --agent codex
+just worktree <task-slug> --agent codex
 ```
 
 By default, worktrees are created under the repo-sibling
@@ -234,7 +243,7 @@ Local files listed in `.worktreeinclude` are copied from the current checkout
 into the target worktree after creation or reuse. Entries are repository-root
 pathspecs without Git pathspec magic. The script only copies files that are
 ignored by the target worktree, keeping development files such as
-`.env.development` and `.env.test` available without exposing them to `git add`.
+`apps/athena_server/.env.development` and `apps/athena_server/.env.test` available without exposing them to `git add`.
 
 For non-trivial changes, use a pull request as the integration boundary. Run local
 checks in the task worktree, push the branch, let GitHub CI validate it, and report
@@ -243,10 +252,13 @@ performed by the user on GitHub Web UI.
 
 ## Documentation
 
-- [docs/architecture.md](docs/architecture.md): architecture and placement rules.
-- [docs/stable-compatibility-matrix.md](docs/stable-compatibility-matrix.md): stable
+- [apps/athena_server/README.md](apps/athena_server/README.md): server, worker, CLI, migration, and local operation runbook.
+- [packages/athena_crypto/README.md](packages/athena_crypto/README.md): native crypto package build and artifact verification runbook.
+- [docs/monorepo-layout.md](docs/monorepo-layout.md): repository workspace map and ownership boundaries.
+- [apps/athena_server/docs/architecture.md](apps/athena_server/docs/architecture.md): architecture and placement rules.
+- [apps/athena_server/docs/stable-compatibility-matrix.md](apps/athena_server/docs/stable-compatibility-matrix.md): stable
   packet and endpoint compatibility inventory.
-- [docs/stable-compatibility-guide.md](docs/stable-compatibility-guide.md): stable
+- [apps/athena_server/docs/stable-compatibility-guide.md](apps/athena_server/docs/stable-compatibility-guide.md): stable
   request, response, processing, and persistence guide.
 - [AGENTS.md](AGENTS.md): coding-agent instructions, workflow rules, and the
   canonical Python docstring standard.

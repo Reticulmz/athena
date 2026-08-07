@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "scan_paths": [
+    "AGENTS.md",
+    "README.md",
+    "docs/agent-python.md",
+    ".kiro/steering/tech.md",
+    "docs/monorepo-layout.md",
+    ".github/workflows/ci.yml",
+    ".gitlint",
+    ".gitleaks.toml",
+    "pyproject.toml",
+    "flake.nix",
+    "process-compose.yml",
+    ".worktreeinclude",
+    "apps/athena_server/docs",
+    "apps/athena_server/tests/README.md",
+    "apps/athena_server/src/athena_cli/stable_verification",
+    "apps/athena_server/tests/unit/athena_cli/stable_verification",
+    "apps/athena_server/tests/unit/athena_cli/test_packaging.py"
+  ],
+  "expected_cleanup_artifacts": [
+    {
+      "path": "scripts/ci.sh",
+      "reason": "Legacy validation helper delegates to Just until Task 4.6 removes it."
+    },
+    {
+      "path": "scripts/dev-tasks.sh",
+      "reason": "Legacy database helper delegates to root task interface until Task 4.6 removes it."
+    },
+    {
+      "path": "alembic",
+      "reason": "Retired server migration directory may contain generated pycache before cleanup."
+    },
+    {
+      "path": "tests",
+      "reason": "Retired root test directory may contain generated pycache before cleanup."
+    },
+    {
+      "path": "gitlint_rules",
+      "reason": "Retired Gitlint directory may contain generated pycache before cleanup."
+    },
+    {
+      "path": ".state",
+      "reason": "Generated worktree state is removed from source tree during cleanup."
+    },
+    {
+      "path": "certs",
+      "reason": "Generated certificate state is removed from source tree during cleanup."
+    },
+    {
+      "path": "cloudflared/config.yml",
+      "reason": "Generated tunnel config is removed from source tree during cleanup."
+    },
+    {
+      "path": "nginx.dev.conf",
+      "reason": "Generated Nginx config is removed from source tree during cleanup."
+    }
+  ],
+  "forbidden_artifacts": [
+    {
+      "path": "apps/athena_web",
+      "reason": "Frontend workspace is out of monorepo-migration scope."
+    },
+    {
+      "path": "tests/system",
+      "reason": "System-test workspace is out of monorepo-migration scope."
+    },
+    {
+      "path": "apps/athena_server/uv.lock",
+      "reason": "Member lockfiles violate the single root lock contract."
+    },
+    {
+      "path": "packages/athena_crypto/uv.lock",
+      "reason": "Member lockfiles violate the single root lock contract."
+    },
+    {
+      "path": "tools/monorepo_migration/uv.lock",
+      "reason": "Nested tool lockfiles violate the single root lock contract."
+    },
+    {
+      "path": "packages/athena_pp",
+      "reason": "PP binding package decisions are out of monorepo-migration scope."
+    },
+    {
+      "path": "packages/athena_performance",
+      "reason": "PP binding package decisions are out of monorepo-migration scope."
+    },
+    {
+      "path": "package.json",
+      "reason": "Root JavaScript workspace files are out of monorepo-migration scope."
+    },
+    {
+      "path": "package-lock.json",
+      "reason": "Root JavaScript workspace files are out of monorepo-migration scope."
+    },
+    {
+      "path": "npm-shrinkwrap.json",
+      "reason": "Root JavaScript workspace files are out of monorepo-migration scope."
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "reason": "Root JavaScript workspace files are out of monorepo-migration scope."
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "reason": "Root JavaScript workspace files are out of monorepo-migration scope."
+    },
+    {
+      "path": "yarn.lock",
+      "reason": "Root JavaScript workspace files are out of monorepo-migration scope."
+    },
+    {
+      "path": "bun.lockb",
+      "reason": "Root JavaScript workspace files are out of monorepo-migration scope."
+    },
+    {
+      "path": "deno.json",
+      "reason": "Root JavaScript workspace files are out of monorepo-migration scope."
+    },
+    {
+      "path": "deno.jsonc",
+      "reason": "Root JavaScript workspace files are out of monorepo-migration scope."
+    },
+    {
+      "path": ".yarnrc.yml",
+      "reason": "Root JavaScript workspace files are out of monorepo-migration scope."
+    }
+  ],
+  "excluded_paths": [
+    {
+      "glob": ".kiro/specs/**",
+      "reason": "Historical Kiro snapshots are evidence, not current consumers."
+    },
+    {
+      "glob": ".kiro/specs/monorepo-migration/**",
+      "reason": "The approved current migration plan preserves before/after path evidence."
+    },
+    {
+      "glob": "tools/monorepo_migration/verify_preflight_baseline.py",
+      "reason": "The preflight verifier preserves transitional layout evidence."
+    },
+    {
+      "glob": "tools/monorepo_migration/tests/test_preflight_baseline.py",
+      "reason": "Preflight tests reconstruct historical repositories intentionally."
+    },
+    {
+      "glob": ".agents/**",
+      "reason": "Shared skill examples are not repository path consumers."
+    },
+    {
+      "glob": ".claude/**",
+      "reason": "Shared skill examples are not repository path consumers."
+    },
+    {
+      "glob": ".codex/**",
+      "reason": "Shared skill examples are not repository path consumers."
+    },
+    {
+      "glob": "docs/adr/**",
+      "reason": "ADRs retain historical design vocabulary and migration evidence."
+    }
+  ],
+  "rules": [
+    {
+      "id": "root_src",
+      "regex": "(?<![A-Za-z0-9_./-])src/",
+      "replacement": "apps/athena_server/src/"
+    },
+    {
+      "id": "root_tests",
+      "regex": "(?<![A-Za-z0-9_./-])tests/",
+      "replacement": "apps/athena_server/tests/"
+    },
+    {
+      "id": "root_typings",
+      "regex": "(?<![A-Za-z0-9_./-])typings/",
+      "replacement": "apps/athena_server/typings/ or packages/athena_crypto/typings/"
+    },
+    {
+      "id": "root_alembic",
+      "regex": "(?<![A-Za-z0-9_./-])alembic/",
+      "replacement": "apps/athena_server/alembic/"
+    },
+    {
+      "id": "legacy_crypto_path",
+      "regex": "(?<![A-Za-z0-9_./-])athena-crypto/",
+      "replacement": "packages/athena_crypto/"
+    },
+    {
+      "id": "gitlint_root",
+      "regex": "(?<![A-Za-z0-9_./-])gitlint_rules/",
+      "replacement": "tools/gitlint/"
+    },
+    {
+      "id": "legacy_ci_helper",
+      "regex": "(?<![A-Za-z0-9_./-])(?:\\./)?scripts/ci\\.sh",
+      "replacement": "root Just recipes such as just quality, just test, and just docstrings"
+    },
+    {
+      "id": "legacy_dev_tasks_helper",
+      "regex": "(?<![A-Za-z0-9_./-])(?:\\./)?scripts/dev-tasks\\.sh",
+      "replacement": "root Just database recipes or Athena CLI commands"
+    },
+    {
+      "id": "web_process",
+      "regex": "^\\s{2}web:",
+      "replacement": "do not add a Web process during monorepo-migration"
+    }
+  ],
+  "allow": [
+    {
+      "glob": "docs/monorepo-layout.md",
+      "rule": "*",
+      "reason": "Target tree uses workspace-relative src/tests/typings vocabulary."
+    },
+    {
+      "glob": "apps/athena_server/tests/unit/athena_cli/stable_verification/test_catalog.py",
+      "rule": "root_tests",
+      "reason": "The catalog asserts that retired fixture paths are not current evidence."
+    },
+    {
+      "glob": "apps/athena_server/tests/unit/athena_cli/test_packaging.py",
+      "rule": "root_src",
+      "reason": "Packaging contract asserts server-relative wheel package paths."
+    }
+  ]
+}

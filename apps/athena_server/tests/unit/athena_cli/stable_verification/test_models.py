@@ -1,0 +1,349 @@
+"""Stable verificationのreportable model contractを検証する."""
+
+from __future__ import annotations
+
+from dataclasses import fields
+
+from athena_cli.stable_verification import models
+from athena_cli.stable_verification.models import (
+    DiagnosticSummary,
+    EvidenceScope,
+    EvidenceType,
+    SecretProbeInput,
+    StableSurface,
+    StableTarget,
+    SurfaceResult,
+    VerificationRunResult,
+    VerificationStatus,
+)
+
+
+def test_verification_status_values_match_stable_reporting_vocabulary() -> None:
+    """Verification statusとsurface valueがstable report vocabularyを保つことを検証する.
+
+    Returns:
+        None: Status集合とreplay download surface valueを検証する.
+    """
+    assert {status.value for status in VerificationStatus} == {
+        "pass",
+        "fail",
+        "skip",
+        "known_gap",
+        "unavailable",
+    }
+    assert StableSurface.REPLAY_DOWNLOAD.value == "replay_download"
+
+
+def test_common_result_model_covers_surface_evidence_scope_and_target() -> None:
+    """Common result modelがtargetとmandatory evidenceを保持することを検証する.
+
+    Returns:
+        None: PASS resultを含むrunがfailedにならず入力objectを保持することを検証する.
+    """
+    target = StableTarget(
+        base_url="http://127.0.0.1:8000",
+        host_identity="athena.localhost",
+        timeout_seconds=2.5,
+    )
+    diagnostic = DiagnosticSummary(
+        message="GET /web/osu-osz2-bmsubmit-getid.php status=200 bytes=12",
+        method="GET",
+        path="/web/osu-osz2-bmsubmit-getid.php",
+        status_code=200,
+        response_byte_size=12,
+    )
+    result = SurfaceResult(
+        surface=StableSurface.GETSCORES,
+        status=VerificationStatus.PASS,
+        evidence_type=EvidenceType.GOLDEN_FIXTURE,
+        scope=EvidenceScope.MANDATORY,
+        diagnostic_summary=diagnostic,
+        reference="apps/athena_server/tests/fixtures/web_legacy/getscores/ranked_response.txt",
+    )
+
+    run_result = VerificationRunResult(target=target, results=(result,))
+
+    assert run_result.failed is False
+    assert run_result.target == target
+    assert run_result.results == (result,)
+
+
+def test_mandatory_failure_fails_run() -> None:
+    """Mandatory surface failureがverification runを失敗にすることを検証する.
+
+    Returns:
+        None: Surface resultとrun resultのfails_run判定を検証する.
+    """
+    result = SurfaceResult(
+        surface=StableSurface.SCORE_SUBMIT,
+        status=VerificationStatus.FAIL,
+        evidence_type=EvidenceType.AUTOMATED_TEST,
+        scope=EvidenceScope.MANDATORY,
+        diagnostic_summary=DiagnosticSummary(message="chart response missing pp"),
+        reference="apps/athena_server/tests/unit/transports/web_legacy/test_score_submit_mapper.py",
+    )
+
+    run_result = VerificationRunResult(target=None, results=(result,))
+
+    assert result.fails_run is True
+    assert run_result.failed is True
+
+
+def test_optional_unavailable_and_skip_do_not_fail_run() -> None:
+    """Optional unavailable/skip resultがverification runを失敗にしないことを検証する.
+
+    Returns:
+        None: Optional resultごとのfails_runとaggregate failed判定を検証する.
+    """
+    results = (
+        SurfaceResult(
+            surface=StableSurface.GETSCORES,
+            status=VerificationStatus.UNAVAILABLE,
+            evidence_type=EvidenceType.HEADLESS_PROBE,
+            scope=EvidenceScope.OPTIONAL,
+            diagnostic_summary=DiagnosticSummary(message="osu package unavailable"),
+            reference="osu.py",
+        ),
+        SurfaceResult(
+            surface=StableSurface.GETSCORES,
+            status=VerificationStatus.SKIP,
+            evidence_type=EvidenceType.HEADLESS_PROBE,
+            scope=EvidenceScope.OPTIONAL,
+            diagnostic_summary=DiagnosticSummary(message="probe credentials not configured"),
+            reference="osu.py",
+        ),
+    )
+
+    run_result = VerificationRunResult(target=None, results=results)
+
+    assert [result.fails_run for result in results] == [False, False]
+    assert run_result.failed is False
+
+
+def test_secret_probe_input_is_kept_out_of_reportable_diagnostic_summary() -> None:
+    """Secret probe inputがreportable diagnostic representationへ漏れないことを検証する.
+
+    Returns:
+        None: Password, hash, token, raw replay valueがdiagnostic reprに含まれないことを検証する.
+    """
+    secret_input = SecretProbeInput(
+        "password-value",
+        "hash-value",
+        "token-value",
+        b"raw-replay-value",
+        {"username": "player", "password": "password-value"},
+    )
+    diagnostic = DiagnosticSummary(
+        message="POST /web/osu-submit-modular-selector.php status=200 bytes=42",
+        method="POST",
+        path="/web/osu-submit-modular-selector.php",
+        status_code=200,
+        response_byte_size=42,
+    )
+
+    assert secret_input.password in {"password-value"}
+    assert "password-value" not in repr(diagnostic)
+    assert "hash-value" not in repr(diagnostic)
+    assert "token-value" not in repr(diagnostic)
+    assert "raw-replay-value" not in repr(diagnostic)
+
+
+def test_replay_download_evidence_models_share_verification_vocabulary() -> None:
+    """Replay download evidence modelが共通verification vocabularyを共有することを検証する.
+
+    Returns:
+        None: Route, response, body decision, blob diagnosticのsurfaceとevidence metadataを
+            検証する.
+    """
+    route_contract = models.ReplayDownloadTargetRouteContract(
+        primary_route="/web/osu-getreplay.php",
+        primary_route_observed_in_target_client_traffic=True,
+        primary_route_classification="primary_target_client_route",
+        alias_route="/web/replays/<id>",
+        alias_route_observed_in_target_client_traffic=False,
+        alias_policy="candidate_only_reference_backed",
+        route_evidence_source="target_client_traffic",
+        route_evidence_fixture_names=(
+            "local_athena_stable_replay_download_404",
+            "official_bancho_stable_replay_download_200",
+        ),
+    )
+    reference_response = models.ReplayDownloadReferenceResponseEvidence(
+        name="lets_replay_alias_success",
+        source="lets",
+        source_role="alias_comparison",
+        repository="osuripple/lets",
+        commit="98e9e07faa48398fbccf17251650011e36bdf6e4",
+        source_paths=("lets.py", "handlers/getFullReplayHandler.py"),
+        branch=models.ReplayDownloadResponseBranch.ALIAS.value,
+        route="/web/replays/<id>",
+        method="GET",
+        request_keys=("id_path",),
+        auth_fields=(
+            models.ReplayDownloadAuthField(
+                name="none",
+                category="no_auth_observed",
+            ),
+        ),
+        response_status=200,
+        response_header_keys_observed=("content-type", "content-length"),
+        complete_response_header_key_set_observed=False,
+        body_kind="complete_osr_file",
+        contract_status="alias_candidate_reference",
+        unresolved_reason=None,
+    )
+    response_contract_branch = models.ReplayDownloadResponseContractBranch(
+        branch=models.ReplayDownloadResponseBranch.AUTH_FAILURE.value,
+        status_label="confirmed",
+        readiness="implementation_ready",
+        selected_response_status=401,
+        selected_header_keys=(),
+        selected_body_kind="empty_body",
+        selected_body_byte_size=0,
+        selected_safe_body_sha256=None,
+        evidence_sources=("reference_responses:bancho_py_auth_failure",),
+        blocker=None,
+        notes=("bancho.py supplies reference-backed auth failure evidence.",),
+    )
+    fixture = models.ReplayDownloadSanitizedFixture(
+        target_client_family="osu_stable",
+        target_build_observed=False,
+        target_build=None,
+        target_build_note="not observed in replay download request",
+        osuver_observed=False,
+        osuver=None,
+        osuver_note="not observed in replay download request",
+        user_agent="osu!",
+        captured_at="2026-07-03T06:26:38Z",
+        workflow_entrance="replay_download",
+        route_classification="primary_target_client_route",
+        target_route_observed=True,
+        alias_routes_observed=(),
+        method="GET",
+        path="/web/osu-getreplay.php",
+        query_keys=("c", "h", "m", "u"),
+        auth_fields=(
+            models.ReplayDownloadAuthField(
+                name="h",
+                category="redacted_auth_proof",
+            ),
+            models.ReplayDownloadAuthField(
+                name="u",
+                category="redacted_user_identity",
+            ),
+        ),
+        response_status=200,
+        response_header_keys_observed=("content-type", "content-length"),
+        complete_response_header_key_set_observed=False,
+        body_kind="lzma_compressed_replay_payload",
+        body_byte_size=90584,
+        safe_body_sha256=None,
+        raw_values_committed=False,
+    )
+    branch = models.ReplayDownloadResponseBranchEvidence(
+        branch=models.ReplayDownloadResponseBranch.SUCCESS,
+        status=VerificationStatus.PASS,
+        evidence_type=EvidenceType.GOLDEN_FIXTURE,
+        scope=EvidenceScope.MANDATORY,
+        diagnostic_summary=DiagnosticSummary(
+            message="replay download success response metadata valid"
+        ),
+        response_status=200,
+        response_header_keys_observed=("content-type", "content-length"),
+        complete_response_header_key_set_observed=False,
+        body_kind="lzma_compressed_replay_payload",
+        body_byte_size=90584,
+        safe_body_sha256=None,
+        reference="apps/athena_server/tests/fixtures/stable_compatibility/replay_download/target_client_response_metadata.json",
+    )
+    body_decision = models.ReplayDownloadBodyDecision(
+        blob_integrity=models.ReplayDownloadBlobIntegrity.UNAVAILABLE,
+        target_body_compatible=models.ReplayDownloadBodyCompatibility.LOCAL_ONLY_UNVERIFIED,
+        download_body_strategy=models.ReplayDownloadBodyStrategy.BLOCKED,
+        status=VerificationStatus.KNOWN_GAP,
+        evidence_type=EvidenceType.GOLDEN_FIXTURE,
+        scope=EvidenceScope.MANDATORY,
+        diagnostic_summary=DiagnosticSummary(
+            message="body decision blocked pending local target-body validation"
+        ),
+        evidence_references=(
+            "apps/athena_server/tests/fixtures/stable_compatibility/replay_download/body_assembly_decision.json",
+        ),
+    )
+    blob_diagnostic = models.ReplayBlobDiagnosticResult(
+        score_found=True,
+        replay_attachment_found=True,
+        blob_found=True,
+        storage_object_found=True,
+        metadata_sha256="metadata-sha256",
+        observed_sha256="observed-sha256",
+        metadata_byte_size=90584,
+        observed_byte_size=90584,
+        classification=models.ReplayBlobDiagnosticClassification.INTEGRITY_PASS,
+        status=VerificationStatus.PASS,
+        diagnostic_summary=DiagnosticSummary(message="replay blob integrity pass"),
+    )
+
+    assert fixture.surface is StableSurface.REPLAY_DOWNLOAD
+    assert fixture.evidence_type is EvidenceType.GOLDEN_FIXTURE
+    assert fixture.scope is EvidenceScope.MANDATORY
+    assert fixture.raw_values_committed is False
+    assert route_contract.primary_route == fixture.path
+    assert route_contract.alias_route_observed_in_target_client_traffic is False
+    assert reference_response.branch == models.ReplayDownloadResponseBranch.ALIAS.value
+    assert reference_response.body_kind == "complete_osr_file"
+    assert response_contract_branch.readiness == "implementation_ready"
+    assert response_contract_branch.blocker is None
+    assert branch.surface is StableSurface.REPLAY_DOWNLOAD
+    assert branch.branch is models.ReplayDownloadResponseBranch.SUCCESS
+    assert body_decision.surface is StableSurface.REPLAY_DOWNLOAD
+    assert body_decision.download_body_strategy is models.ReplayDownloadBodyStrategy.BLOCKED
+    assert blob_diagnostic.surface is StableSurface.REPLAY_DOWNLOAD
+    assert (
+        blob_diagnostic.classification is models.ReplayBlobDiagnosticClassification.INTEGRITY_PASS
+    )
+
+
+def test_replay_download_reportable_models_exclude_secret_like_fields() -> None:
+    """Replay downloadのreportable modelがsecret-like fieldを公開しないことを検証する.
+
+    Returns:
+        None: Field集合とmetadata representationからsecret-like valueが除外されることを検証する.
+    """
+    forbidden_field_names = {
+        "password",
+        "password_hash",
+        "session_token",
+        "raw_credential",
+        "raw_query_value",
+        "raw_replay",
+        "complete_osr_bytes",
+    }
+    reportable_model_types = (
+        models.ReplayBlobAttachmentRecord,
+        models.ReplayBlobDiagnosticInput,
+        models.ReplayBlobMetadataRecord,
+        models.ReplayDownloadAuthField,
+        models.ReplayDownloadTargetRouteContract,
+        models.ReplayDownloadReferenceResponseEvidence,
+        models.ReplayDownloadResponseContractBranch,
+        models.ReplayDownloadSanitizedFixture,
+        models.ReplayDownloadResponseBranchEvidence,
+        models.ReplayDownloadBodyDecision,
+        models.ReplayBlobDiagnosticResult,
+    )
+
+    for model_type in reportable_model_types:
+        field_names = {field.name for field in fields(model_type)}
+
+        assert field_names.isdisjoint(forbidden_field_names)
+
+    metadata = models.ReplayBlobMetadataRecord(
+        blob_id=7,
+        sha256="a" * 64,
+        byte_size=42,
+        storage_key="sha256/password=secret-value",
+    )
+
+    assert "a" * 64 not in repr(metadata)
+    assert "secret-value" not in repr(metadata)

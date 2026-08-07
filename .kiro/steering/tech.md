@@ -23,15 +23,16 @@
 ## Docstring品質
 
 Python docstringの意味規約は[AGENTS.md](../../AGENTS.md)だけを正本とする。
-`./scripts/ci.sh docstrings`はRuff `D`でGoogle Styleの存在と形式を、interrogateでdefinitionの
+`just docstrings`はRuff `D`でGoogle Styleの存在と形式を、interrogateでdefinitionの
 coverageを検査する。Args:/Returns:/Yields:/Raises:/Attributes:の型と意味はAGENTS.md、実装、
 call site、relevant testを照合するreviewで確認する。pydoclintはTyperの`Annotated` metadataを
 基底型として比較する公式対応が確認できるまでactive gateへ含めない。
 
-`./scripts/ci.sh quality`はGit indexにあるtracked first-party `.py`全体へRuffとinterrogateを
-適用し、BasedPyrightとimport-linterは従来どおり`src/ tests/`だけを対象にする。`flake.nix`が
+`just quality`はGit indexにあるtracked first-party `.py`全体へRuffとinterrogateを
+適用し、BasedPyrightはworkspace validationが列挙するserver、crypto、repository toolingの
+source/test/stubを対象にし、import-linterはserver-owned configurationを使用する。`flake.nix`が
 generated pre-commit configの唯一のownerであり、uv lock版Ruff format/lintを変更された`.py`だけへ
-実行した後、filenameを渡さずfull `./scripts/ci.sh docstrings` gateを1回実行する。`.pyi`だけの
+実行した後、filenameを渡さずfull `just docstrings` gateを1回実行する。`.pyi`だけの
 変更はdocstring gateを起動しない。
 
 Sphinxのdependency、config、theme、generated artifact、公開workflowはAthenaでは所有せず、
@@ -45,7 +46,7 @@ private、`__init__`、dunderを生成する場合のinclude optionもexternal r
 |------|------|------|
 | パスワードハッシュ | argon2-cffi (argon2id) | stable は MD5 送信 → サーバーで argon2id(md5) 保存。passlib はメンテ停滞 |
 | Valkey クライアント | valkey-glide | Valkey 公式クライアント、async ネイティブ、Redis プロトコル互換 |
-| 統合 Web App | Next.js App Router + HeroUI | Public / User / Admin / Ops workflows を統合する first-party Web App として成熟度と運用実績を優先する。Athena backend の source of truth は Python の Starlette + FastAPI に置き、Next.js は Web App / BFF 補助層として扱う |
+| 統合 Web App | Next.js App Router | Public / User / Admin / Ops workflows を統合する first-party Web App として成熟度と運用実績を優先する。Athena backend の source of truth は Python の Starlette + FastAPI に置き、Next.js は Web App / BFF 補助層として扱う。UI component systemはWeb実装開始時に別途決定する |
 | Web App API 接続 | OpenAPI generated client / WebUI 専用 API contract | Python backend の API contract を明示し、Web App は domain service や repository を直接 import しない |
 | Next.js backend features | Thin frontend / BFF 補助層に限定 | Route Handler / Server Actions は cookie、session、CSRF、軽い response shaping など Web App 固有の補助処理に限定する。Domain mutation の正規経路や public API contract は FastAPI + OpenAPI に置く |
 | API surface policy | Public API / Web App API / Admin-Ops API を分離 | Web App API は first-party 専用だが browser から露出する前提で設計する。隠されていることを security boundary にせず、認証・認可・CSRF・audit によって保護する。Public API とは互換性保証とドキュメント公開範囲を分ける |

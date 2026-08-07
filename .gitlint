@@ -1,6 +1,6 @@
 [general]
 contrib = contrib-title-conventional-commits
-extra-path = gitlint_rules/
+extra-path = tools/gitlint/rules/
 ignore = B6
 
 [contrib-title-conventional-commits]

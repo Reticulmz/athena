@@ -1,0 +1,471 @@
+{
+  "schema_version": 1,
+  "verification": {
+    "pre_cutover_source_revision": "fde4dfb191a36928cd7e0473a8fb977ac36b3d7b",
+    "command": [
+      "nix",
+      "develop",
+      "--command",
+      "uv",
+      "run",
+      "python",
+      "tools/monorepo_migration/verify_preflight_baseline.py",
+      "--baseline",
+      ".kiro/specs/monorepo-migration/preflight-baseline.json"
+    ],
+    "alembic_current_command": [
+      "nix",
+      "develop",
+      "--command",
+      "uv",
+      "run",
+      "python",
+      "tools/monorepo_migration/verify_preflight_baseline.py",
+      "--baseline",
+      ".kiro/specs/monorepo-migration/preflight-baseline.json",
+      "--alembic-current"
+    ],
+    "post_cutover_command": [
+      "nix",
+      "develop",
+      "--command",
+      "uv",
+      "run",
+      "python",
+      "tools/monorepo_migration/verify_preflight_baseline.py",
+      "--baseline",
+      ".kiro/specs/monorepo-migration/preflight-baseline.json",
+      "--mode",
+      "post-cutover"
+    ],
+    "crypto_cutover_command": [
+      "nix",
+      "develop",
+      "--command",
+      "uv",
+      "run",
+      "python",
+      "tools/monorepo_migration/verify_preflight_baseline.py",
+      "--baseline",
+      ".kiro/specs/monorepo-migration/preflight-baseline.json",
+      "--mode",
+      "crypto-cutover"
+    ]
+  },
+  "post_cutover_compatibility": {
+    "server_workspace": "apps/athena_server",
+    "relocations": {
+      "src": "apps/athena_server/src",
+      "alembic": "apps/athena_server/alembic",
+      "alembic.ini": "apps/athena_server/alembic.ini",
+      "pyproject.toml": "apps/athena_server/pyproject.toml",
+      "tests": "apps/athena_server/tests",
+      "athena-crypto": "packages/athena_crypto"
+    },
+    "retired_paths": ["src", "alembic", "alembic.ini", "tests", "athena-crypto"],
+    "retired_path_exceptions": [],
+    "validation": {
+      "pytest_testpaths": [
+        "apps/athena_server/tests",
+        "tools/monorepo_migration/tests",
+        "tools/gitlint/tests"
+      ],
+      "task_interface": {
+        "source": "justfile",
+        "required_recipes": [
+          "setup",
+          "tunnel-setup",
+          "dev",
+          "dev-tunnel",
+          "quality",
+          "docstrings",
+          "test",
+          "fix",
+          "python-files",
+          "build",
+          "db-migrate",
+          "db-test-create",
+          "db-test-migrate",
+          "db-test-run",
+          "migration-check",
+          "ci",
+          "all",
+          "audit-monorepo",
+          "worktree"
+        ],
+        "required_sources": [
+          "tools/monorepo_migration/repository_validation.sh",
+          "tools/monorepo_migration/test_database_tasks.sh"
+        ],
+        "forbidden_fragments": ["scripts/ci.sh", "scripts/dev-tasks.sh"],
+        "consumers": {
+          "flake.nix": {
+            "required_fragments": ["entry = \"just docstrings\";"],
+            "forbidden_fragments": ["scripts/ci.sh", "scripts/dev-tasks.sh"]
+          },
+          ".github/workflows/ci.yml": {
+            "required_fragments": [
+              "  quality:",
+              "  test:",
+              "  build:",
+              "  migration:",
+              "  nix:",
+              "  audit:",
+              "run: just quality",
+              "run: just db-migrate",
+              "run: just test",
+              "run: just build",
+              "run: just migration-check",
+              "run: nix flake check",
+              "run: just audit-monorepo"
+            ],
+            "forbidden_fragments": [
+              "scripts/ci.sh",
+              "scripts/dev-tasks.sh",
+              "uv run pytest",
+              "alembic upgrade head",
+              "just setup",
+              "just tunnel-setup"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "crypto_cutover_compatibility": {
+    "legacy_root_paths": [
+      "src",
+      "alembic",
+      "alembic.ini",
+      "pyproject.toml"
+    ],
+    "relocations": {
+      "athena-crypto": "packages/athena_crypto"
+    },
+    "retired_paths": ["athena-crypto"],
+    "forbidden_paths": ["apps/athena_server"]
+  },
+  "required_files": [
+    "pyproject.toml",
+    "alembic.ini",
+    "alembic/versions",
+    "src/osu_server/__init__.py",
+    "src/osu_server/__main__.py",
+    "src/osu_server/worker.py",
+    "src/athena_cli/__init__.py",
+    "src/athena_cli/main.py",
+    "athena-crypto/Cargo.toml",
+    "athena-crypto/pyproject.toml",
+    "scripts/ci.sh",
+    "scripts/dev-tasks.sh",
+    "scripts/agent-worktree.sh",
+    "process-compose.yml",
+    ".github/workflows/ci.yml",
+    "TODO.md",
+    ".kiro/specs/monorepo-migration/tasks.md"
+  ],
+  "runtime": {
+    "python_namespaces": {
+      "osu_server": "src/osu_server/__init__.py",
+      "athena_cli": "src/athena_cli/__init__.py",
+      "athena_crypto": "athena-crypto/src/lib.rs"
+    },
+    "app": {
+      "invocation": "python -m osu_server",
+      "source": "src/osu_server/__main__.py",
+      "asgi_target": "osu_server.app:app"
+    },
+    "worker": {
+      "entrypoint": "osu_server.worker:broker",
+      "source": "src/osu_server/worker.py",
+      "jobs_directory": "src/osu_server/jobs",
+      "task_names": [
+        "account_replay_download",
+        "calculate_score_performance",
+        "fetch_beatmap_file",
+        "fetch_beatmap_metadata",
+        "persist_channel_message",
+        "persist_private_message",
+        "process_performance_recalculation_batch",
+        "rebuild_beatmap_leaderboards_for_beatmapset",
+        "rebuild_beatmap_leaderboards_for_user"
+      ]
+    },
+    "cli": {
+      "manifest": "pyproject.toml",
+      "source": "src/athena_cli/main.py",
+      "console_command": "athena",
+      "console_entrypoint": "athena_cli.main:main",
+      "import_namespace": "athena_cli",
+      "command_groups": ["config", "db", "dev", "env", "pp"],
+      "root_commands": ["test"],
+      "confirmation_contract": {
+        "env_init_production_overwrite": {
+          "source": "src/athena_cli/commands/env.py",
+          "fragments": [
+            "if environment != \"production\":",
+            "if not force or prompt_adapter is None:",
+            "Overwrite .env.production?"
+          ]
+        },
+        "db_create_and_setup_production": {
+          "source": "src/athena_cli/commands/db.py",
+          "fragments": [
+            "if environment != \"production\":",
+            "create_prompt_adapter().confirm(",
+            "Create production database if missing?"
+          ]
+        },
+        "db_migrate_production_banner": {
+          "source": "src/athena_cli/commands/db.py",
+          "fragments": [
+            "if context.environment == \"production\":",
+            "typer.echo(format_production_banner())"
+          ]
+        }
+      },
+      "exit_contract": {
+        "env_expected_error_exit": {
+          "source": "src/athena_cli/commands/env.py",
+          "fragments": ["raise typer.Exit(error.exit_code) from exc"]
+        },
+        "db_expected_error_and_alembic_failure": {
+          "source": "src/athena_cli/commands/db.py",
+          "fragments": [
+            "raise typer.Exit(error.exit_code) from exc",
+            "raise SubprocessFailureError(command=result.argv, exit_code=result.exit_code)"
+          ]
+        },
+        "test_expected_error_and_pytest_failure": {
+          "source": "src/athena_cli/commands/test.py",
+          "fragments": [
+            "raise typer.Exit(error.exit_code) from exc",
+            "raise SubprocessFailureError(command=result.argv, exit_code=result.exit_code)"
+          ]
+        }
+      }
+    }
+  },
+  "migrations": {
+    "config": "alembic.ini",
+    "versions_directory": "alembic/versions",
+    "revision_chain": [
+      "20260713_0700",
+      "20260713_0600",
+      "20260712_0500",
+      "20260710_0400",
+      "20260710_0300",
+      "20260710_0200",
+      "20260710_0100",
+      "20260630_0300",
+      "20260630_0200",
+      "20260630_0100",
+      "20260628_0200",
+      "20260628_0100",
+      "20260618_0100",
+      "20260617_0102",
+      "20260617_0101",
+      "20260616_0100",
+      "20260613_0023",
+      "20260612_0022",
+      "20260612_0021",
+      "20260612_0016",
+      "20260604_2001",
+      "20260604_1846",
+      "20260525_2100",
+      "20260522_0811"
+    ],
+    "head": "20260713_0700",
+    "current_at_head": "20260713_0700"
+  },
+  "builds": {
+    "server": {
+      "command": ["nix", "develop", "--command", "uv", "build"],
+      "manifest": "pyproject.toml",
+      "distribution": "athena",
+      "build_backend": "hatchling.build",
+      "artifact_contract": {
+        "python_namespaces": ["osu_server", "athena_cli"],
+        "console_command": "athena"
+      }
+    },
+    "crypto": {
+      "command": [
+        "nix",
+        "develop",
+        "--command",
+        "uv",
+        "build",
+        "--project",
+        "athena-crypto"
+      ],
+      "manifest": "athena-crypto/pyproject.toml",
+      "distribution": "athena-crypto",
+      "module": "athena_crypto",
+      "artifact_contract": {
+        "native_extension_module": "athena_crypto"
+      }
+    }
+  },
+  "validation": {
+    "commands": {
+      "quality": {
+        "argv": ["nix", "develop", "--command", "./scripts/ci.sh", "quality"],
+        "source": "scripts/ci.sh",
+        "fragments": ["quality)"]
+      },
+      "test": {
+        "argv": ["nix", "develop", "--command", "./scripts/ci.sh", "test"],
+        "source": "scripts/ci.sh",
+        "fragments": ["test)"]
+      },
+      "targeted_python_test": {
+        "argv": ["nix", "develop", "--command", "uv", "run", "pytest", "<path>"],
+        "source": "pyproject.toml",
+        "fragments": ["testpaths = [\"tests\"]"]
+      },
+      "cli_smoke": {
+        "argv": ["nix", "develop", "--command", "uv", "run", "athena", "--help"],
+        "source": "pyproject.toml",
+        "fragments": ["athena = \"athena_cli.main:main\""]
+      }
+    },
+    "manifest": "pyproject.toml",
+    "pytest_testpaths": ["tests"],
+    "required_command_evidence": {
+      "scripts/ci.sh": [
+        "uv run ruff format --check",
+        "uv run ruff check",
+        "uv run interrogate --config pyproject.toml",
+        "uv run basedpyright src/ tests/",
+        "uv run lint-imports",
+        "uv run pytest tests/ -v"
+      ],
+      ".github/workflows/ci.yml": [
+        "uv sync --locked",
+        "uv run alembic upgrade head",
+        "./scripts/ci.sh quality",
+        "./scripts/ci.sh test"
+      ]
+    }
+  },
+  "cleanup_inventory": {
+    "legacy_task_capabilities": {
+      "scripts/ci.sh": {
+        "commands": ["quality", "fix", "test", "python-files", "docstrings", "all"]
+      },
+      "scripts/dev-tasks.sh": {
+        "commands": ["db:test:create", "db:test:migrate", "db:test:run"]
+      },
+      "scripts/agent-worktree.sh": {
+        "retained": true,
+        "source_evidence": ["git worktree add", "finish_worktree"]
+      }
+    },
+    "pre_cutover_cleanup_paths": [
+      "src",
+      "tests",
+      "typings",
+      "alembic",
+      "alembic.ini",
+      "athena-crypto",
+      "athena-crypto/uv.lock",
+      "gitlint_rules",
+      "scripts/ci.sh",
+      "scripts/dev-tasks.sh",
+      "nginx.dev.conf.example",
+      "hosts.example",
+      "TODO.md"
+    ],
+    "tracked_templates": [
+      ".env.example",
+      "cloudflared/config.yml.example",
+      "nginx.dev.conf.example",
+      "hosts.example"
+    ],
+    "generated_state": [
+      ".state",
+      ".venv",
+      ".env",
+      ".env.development",
+      ".env.test",
+      "certs",
+      "cloudflared/config.yml",
+      "nginx.dev.conf"
+    ],
+    "normative_current_paths": [
+      "README.md",
+      "AGENTS.md",
+      "CLAUDE.md",
+      "docs/monorepo-layout.md",
+      ".kiro/steering/roadmap.md",
+      ".kiro/steering/tech.md",
+      ".kiro/specs/monorepo-migration/requirements.md",
+      ".kiro/specs/monorepo-migration/design.md",
+      ".kiro/specs/monorepo-migration/tasks.md",
+      ".github/workflows/ci.yml",
+      "pyproject.toml",
+      "flake.nix",
+      "process-compose.yml",
+      ".worktreeinclude",
+      ".gitleaks.toml"
+    ],
+    "historical_kiro_evidence": {
+      "current_spec": ".kiro/specs/monorepo-migration",
+      "historical_spec_glob": ".kiro/specs/*",
+      "current_spec_is_normative": true,
+      "historical_specs_are_non_normative": true
+    },
+    "kiro_todo_status": {
+      "task_source": ".kiro/specs/monorepo-migration/tasks.md",
+      "task_identity": "1.1 移行前の互換contractとcleanup inventoryを固定する",
+      "todo_path": "TODO.md",
+      "todo_minimum_nonempty_lines": 6
+    },
+    "scope_exclusions": {
+      "forbidden_paths": ["apps/athena_web", "tests/system"],
+      "forbidden_root_workspace_files": [
+        "package.json",
+        "package-lock.json",
+        "npm-shrinkwrap.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "yarn.lock",
+        ".yarnrc.yml",
+        "bun.lockb",
+        "deno.json",
+        "deno.jsonc"
+      ],
+      "forbidden_process_names": ["web"],
+      "root_python_dependencies": [
+        "starlette",
+        "uvicorn",
+        "pydantic-settings",
+        "sqlalchemy[asyncio]",
+        "asyncpg",
+        "alembic",
+        "valkey-glide>=2.1",
+        "argon2-cffi",
+        "caterpillar-py>=2.8.1",
+        "httpx>=0.28.1",
+        "python-multipart>=0.0.29",
+        "structlog>=25.5.0",
+        "taskiq>=0.11",
+        "taskiq-redis>=1.0",
+        "typer>=0.26.7",
+        "inquirerpy>=0.3.4",
+        "athena-crypto",
+        "dishka",
+        "starlette-dishka",
+        "rosu-pp-py==4.0.2"
+      ],
+      "crypto_cargo_manifest": "athena-crypto/Cargo.toml",
+      "crypto_cargo_dependencies": ["pyo3", "simple-rijndael"],
+      "crypto_library": {
+        "name": "athena_crypto",
+        "crate_type": ["cdylib"],
+        "binary_targets": []
+      }
+    }
+  }
+}
