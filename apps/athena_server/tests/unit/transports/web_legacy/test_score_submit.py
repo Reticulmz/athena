@@ -3,11 +3,10 @@
 import base64
 import hashlib
 from decimal import Decimal
-from typing import Protocol, final
+from typing import TYPE_CHECKING, Protocol, final
 
 import pytest
 import structlog.testing
-from starlette.requests import Request
 from starlette.responses import Response
 
 from osu_server.domain.events.scores import CurrentUserStatsUpdated
@@ -28,6 +27,9 @@ from osu_server.transports.stable.web_legacy.mappers import (
 from osu_server.transports.stable.web_legacy.score_submit import ScoreSubmitHandler
 from tests.support.fakes import make_stable_score_submit_decoder
 from tests.support.starlette_requests import make_starlette_request
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
 
 
 class ProcessScoreSubmissionUseCaseProtocol(Protocol):

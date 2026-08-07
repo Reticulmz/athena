@@ -6,15 +6,18 @@ AppConfigからDATABASE_URLを取得し, 非同期engine用の
 
 import asyncio
 from logging.config import fileConfig
+from typing import TYPE_CHECKING
 
 from alembic import context
 from sqlalchemy import pool
-from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from osu_server.config import load_config
 from osu_server.infrastructure.database.base import Base
 from osu_server.repositories.sqlalchemy.models import *  # noqa: F403 — register models with Base.metadata
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection
 
 # Alembic Config object
 config = context.config

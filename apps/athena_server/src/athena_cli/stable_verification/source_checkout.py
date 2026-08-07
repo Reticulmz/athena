@@ -82,7 +82,7 @@ def _load_manifest_mapping(manifest_path: Path) -> Mapping[str, object] | None:
     """
     try:
         document = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
+    except OSError, tomllib.TOMLDecodeError:
         return None
     return _mapping_value(document)
 

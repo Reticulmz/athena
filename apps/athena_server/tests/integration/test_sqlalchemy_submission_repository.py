@@ -87,7 +87,7 @@ async def session_factory(
                 text("DELETE FROM score_submissions WHERE fingerprint LIKE 'test_fp_%'")
             )
             await session.commit()
-    except (OSError, SQLAlchemyError):
+    except OSError, SQLAlchemyError:
         return
 
 

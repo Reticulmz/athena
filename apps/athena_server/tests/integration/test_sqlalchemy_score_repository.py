@@ -89,7 +89,7 @@ async def session_factory(
                 text("DELETE FROM scores WHERE online_checksum LIKE 'test_checksum_%'")
             )
             await session.commit()
-    except (OSError, SQLAlchemyError):
+    except OSError, SQLAlchemyError:
         return
 
 

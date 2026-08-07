@@ -199,7 +199,7 @@ def _decode_status(raw: object) -> StableUserStatus | None:
 
     try:
         decoded = cast("object", loads(raw_text))
-    except (JSONDecodeError, TypeError):
+    except JSONDecodeError, TypeError:
         return None
     if not isinstance(decoded, dict):
         return None

@@ -2,8 +2,11 @@
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 

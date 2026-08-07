@@ -4,7 +4,7 @@ import hashlib
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import cast, final, override
+from typing import TYPE_CHECKING, cast, final, override
 
 import pytest
 import structlog.testing
@@ -24,7 +24,6 @@ from osu_server.domain.beatmaps import (
 from osu_server.domain.scores.score import Playstyle, Ruleset
 from osu_server.domain.scores.submission import ScoreSubmission, ScoreSubmissionState
 from osu_server.domain.scores.user_stats import UserCurrentStats
-from osu_server.domain.storage.blobs import BlobStored
 from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 from osu_server.services.commands.beatmaps.file_warmup import (
     BeatmapFileWarmupEntrance,
@@ -63,6 +62,9 @@ from tests.support.fakes import (
     make_test_parsed_score,
     make_test_submission_input,
 )
+
+if TYPE_CHECKING:
+    from osu_server.domain.storage.blobs import BlobStored
 
 
 def _score_payload(*parts: str) -> str:

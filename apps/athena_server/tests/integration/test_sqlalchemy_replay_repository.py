@@ -98,7 +98,7 @@ async def session_factory(
                 text("DELETE FROM blobs WHERE storage_key LIKE 'test/replay/%'")
             )
             await session.commit()
-    except (OSError, SQLAlchemyError):
+    except OSError, SQLAlchemyError:
         return
 
 

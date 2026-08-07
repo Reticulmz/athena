@@ -244,7 +244,7 @@ def _closed_profile[ProfileT: StrEnum](
     """
     try:
         return profile_type(raw_profile)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         raise ValueError(error_code) from None
 
 
@@ -316,7 +316,7 @@ def read_getscores_expected_body(
     try:
         body_root = _CANONICAL_COMPLETION_BODY_ROOT.resolve(strict=True)
         body_file = shape.body_file.resolve(strict=True)
-    except (OSError, RuntimeError, ValueError):
+    except OSError, RuntimeError, ValueError:
         raise ValueError("getscores_contract:body_file:unsafe_body_root") from None
     if not body_file.is_relative_to(body_root) or body_file.parent != body_root:
         raise ValueError("getscores_contract:body_file:unsafe_body_root")

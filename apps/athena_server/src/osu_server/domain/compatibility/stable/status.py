@@ -63,7 +63,7 @@ class StableUserStatus:
     play_mode: int
     beatmap_id: int
 
-    def with_play_mode(self, play_mode: int) -> "StableUserStatus":
+    def with_play_mode(self, play_mode: int) -> StableUserStatus:
         """Play mode だけを差し替えた current status を返す.
 
         Args:

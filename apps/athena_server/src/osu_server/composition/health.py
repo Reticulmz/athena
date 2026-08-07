@@ -43,7 +43,7 @@ def get_version_info() -> tuple[str, str]:
             check=True,
         )
         commit = result.stdout.strip()
-    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+    except subprocess.CalledProcessError, FileNotFoundError, OSError:
         commit = "unknown"
 
     return version, commit

@@ -5,8 +5,7 @@ Notes:
 """
 
 from http import HTTPStatus
-from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from dishka import AsyncContainer
 from starlette.testclient import TestClient
@@ -15,6 +14,9 @@ from osu_server.app import create_app as create_runtime_app
 from osu_server.config import AppConfig, load_routing_config
 from tests.support.app import create_in_memory_app
 from tests.support.service_availability import require_tcp_service_url
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _BANCHO_URL = f"http://c.{load_routing_config().domain}/"
 

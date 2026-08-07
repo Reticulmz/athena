@@ -1,6 +1,6 @@
 """AppConfigの環境読込とvalidationおよびdefault設定契約を検証する."""
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from pydantic import ValidationError
@@ -12,6 +12,9 @@ from osu_server.config import (
     load_config,
     load_routing_config,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _TEST_DATABASE_URL = "postgresql+asyncpg://user:pass@localhost/osu"
 _TEST_VALKEY_URL = "redis://localhost:6379/0"

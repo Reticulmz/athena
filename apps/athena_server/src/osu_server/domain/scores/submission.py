@@ -1,8 +1,11 @@
 """score submission の冪等性記録を表す domain model を定義する."""
 
 from dataclasses import dataclass
-from datetime import datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 class ScoreSubmissionState(StrEnum):

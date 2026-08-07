@@ -506,7 +506,7 @@ async def session_factory(
             await _cleanup_score_submission_rows(session)
             await session.commit()
         await _seed_score_submission_beatmap(factory)
-    except (OSError, SQLAlchemyError):
+    except OSError, SQLAlchemyError:
         pass
 
     yield factory
@@ -516,7 +516,7 @@ async def session_factory(
         async with factory() as session:
             await _cleanup_score_submission_rows(session)
             await session.commit()
-    except (OSError, SQLAlchemyError):
+    except OSError, SQLAlchemyError:
         return
 
 

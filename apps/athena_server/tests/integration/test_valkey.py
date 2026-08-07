@@ -4,13 +4,14 @@ Notes:
     VALKEY_URL environment variableで指定する実Valkey instanceへの接続を必要とする.
 """
 
-from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, cast
 
 import pytest
 from glide import ExpirySet, ExpiryType, GlideClient
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
     from glide_shared.constants import TEncodable
 
 from osu_server.infrastructure.cache.valkey_client import create_valkey_client

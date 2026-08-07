@@ -105,7 +105,7 @@ def _archive_latest_file(latest_path: Path, log_dir: Path) -> None:
                 n_str = stem.split("-")[-1]
                 n = int(n_str)
                 max_n = max(max_n, n)
-            except (ValueError, IndexError):
+            except ValueError, IndexError:
                 pass
 
     archive_name = f"{today_str}-{max_n + 1}.jsonl.gz"

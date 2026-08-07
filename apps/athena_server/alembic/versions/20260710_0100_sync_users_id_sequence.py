@@ -5,9 +5,12 @@ Revises: 20260630_0300
 Create Date: 2026-07-10 00:00:00+09:00
 """
 
-from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from alembic import op
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 revision: str = "20260710_0100"
 down_revision: str | None = "20260630_0300"
