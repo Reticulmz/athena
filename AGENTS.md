@@ -43,6 +43,26 @@ first edit.
 - Before committing, run `nix develop --command prek run --all-files`.
 - Report what changed, what was verified, and any checks not run.
 
+## Core Commands
+
+`just --list` is the command source of truth. These root public recipes are
+stable entry points:
+
+```bash
+just setup
+just dev
+just dev-tunnel
+just quality
+just docstrings
+just test
+just build
+just db-migrate
+just migration-check
+just audit-monorepo
+just process-lifecycle-check
+just worktree
+```
+
 ## Worktrees And PRs
 
 - Use a task worktree when work may run in parallel, touch overlapping files,

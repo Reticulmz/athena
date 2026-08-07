@@ -12,6 +12,7 @@ Claude Code reads this file, then imports the shared agent guidance.
   `CLAUDE.md` and imported `AGENTS.md` files are present.
 - Avoid large `@` imports here. Imported files load at session start and spend
   context even when the task does not need them.
+- Remember that per-worktree `.state/` and `.venv/` are generated state.
 - Use Serena for code structure reads, GitNexus for impact checks when
   available, and Context7 before relying on external library or cloud API
   details.
