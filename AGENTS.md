@@ -71,6 +71,8 @@ Use a task worktree when work may run in parallel, touch overlapping files, gene
 - Do not merge PRs from the agent environment. User merges happen in GitHub Web UI.
 - Consider a PR ready only after CI passes, actionable comments are resolved, the final diff is reviewed, and relevant local checks have run.
 - Do not remove a worktree with uncommitted, unpushed, or unmerged work unless the user explicitly approves discarding it.
+- In the primary checkout, `git config --show-origin --get core.worktree` must return no value. If it points at a linked worktree, Git commands from the primary checkout will operate on the wrong files; unset it before pulling, stashing, or branching.
+- If `git rev-parse --show-toplevel` differs from `pwd -P`, diagnose `core.worktree` before changing files.
 
 ## Configuration Policy
 
