@@ -119,6 +119,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
           cache-suffix: "artifact-wheels-v1"
+          prune-cache: false
           save-cache: false
 
       - name: Install Python
