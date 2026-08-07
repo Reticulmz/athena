@@ -3,6 +3,7 @@
   "scan_paths": [
     "AGENTS.md",
     "README.md",
+    "docs/agent-python.md",
     ".kiro/steering/tech.md",
     "docs/monorepo-layout.md",
     ".github/workflows/ci.yml",

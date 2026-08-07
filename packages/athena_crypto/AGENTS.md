@@ -1,7 +1,8 @@
 # Athena Crypto Agent Guidance
 
 Follow root `AGENTS.md` ([../../AGENTS.md](../../AGENTS.md)) for repository-wide
-rules. This file only records `packages/athena_crypto` workspace differences.
+rules. For Python tests, packaging helpers, and public stubs, read
+[../../docs/agent-python.md](../../docs/agent-python.md).
 
 ## Scope
 

@@ -199,6 +199,7 @@ def test_repository_policy_declares_historical_kiro_and_transitional_exceptions(
     assert "historical" in exclusions[".kiro/specs/**"].lower()
     assert ".kiro/specs/monorepo-migration/**" in exclusions
     assert "approved" in exclusions[".kiro/specs/monorepo-migration/**"].lower()
+    assert "docs/agent-python.md" in scan_paths
     assert "apps/athena_server/docs" in scan_paths
     assert "apps/athena_server/src/athena_cli/stable_verification" in scan_paths
     assert "apps/athena_server/tests/unit/athena_cli/stable_verification" in scan_paths
