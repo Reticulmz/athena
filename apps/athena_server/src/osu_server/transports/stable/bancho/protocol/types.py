@@ -1,7 +1,6 @@
 """Bancho binary protocolで使うCaterpillar wire typeを定義する."""
 
-from io import BytesIO
-from typing import Annotated, Final, cast, override
+from typing import TYPE_CHECKING, Annotated, Final, cast, override
 
 from caterpillar import context as caterpillar_context
 from caterpillar.byteorder import LittleEndian
@@ -11,6 +10,9 @@ from caterpillar.fields import FieldStruct, int16, int32, uint8, uint16
 from caterpillar.model import struct
 
 from osu_server.transports.stable.bancho.protocol.errors import PacketReadError
+
+if TYPE_CHECKING:
+    from io import BytesIO
 
 _PRESENCE_EMPTY: int = 0x00
 _PRESENCE_STRING: int = 0x0B

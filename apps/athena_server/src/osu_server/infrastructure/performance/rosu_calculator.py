@@ -177,7 +177,7 @@ def _convert_beatmap(
 
     try:
         beatmap.convert(target_mode, _mods(input_data))
-    except (rosu.ArgsError, rosu.ConvertError):
+    except rosu.ArgsError, rosu.ConvertError:
         return PerformanceCalculatorUnavailable(
             PerformanceCalculatorUnavailableReason.BEATMAP_CONVERT_FAILED
         )

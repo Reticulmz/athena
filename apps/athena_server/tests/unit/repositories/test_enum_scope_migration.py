@@ -1,8 +1,7 @@
 """Enum scope migrationの構造とcurrent metadata contractを検証する."""
 
 import ast
-from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from sqlalchemy import CheckConstraint, Column, Table, UniqueConstraint
@@ -24,6 +23,9 @@ from osu_server.repositories.sqlalchemy.models import (
     ScoreSubmissionModel,
 )
 from tests.support.paths import ALEMBIC_VERSIONS_ROOT
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 MIGRATION_PATH = ALEMBIC_VERSIONS_ROOT / (
     "20260710_0400_use_enum_types_and_score_based_leaderboards.py"

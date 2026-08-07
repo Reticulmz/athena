@@ -7,9 +7,12 @@ import base64
 import binascii
 from dataclasses import dataclass
 from email import message_from_bytes
-from email.message import Message
+from typing import TYPE_CHECKING
 
 from osu_server.domain.identity.passwords import normalize_legacy_md5_hex
+
+if TYPE_CHECKING:
+    from email.message import Message
 
 _REPLAY_FIELD_INDEX = 1
 _RIJNDAEL_IV_SIZE = 32
@@ -285,7 +288,7 @@ def _parse_fail_time_ms(ft_values: list[bytes] | None) -> int | None:
         if not ft_str:
             return None
         fail_time_ms = int(ft_str)
-    except (ValueError, UnicodeDecodeError):
+    except ValueError, UnicodeDecodeError:
         return None
     return fail_time_ms if fail_time_ms >= 0 else None
 

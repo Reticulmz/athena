@@ -6,11 +6,14 @@ Create Date: 2026-06-12 00:16:04.097138
 
 """
 
-from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 revision: str = "20260612_0016"
 down_revision: str | None = "20260604_2001"

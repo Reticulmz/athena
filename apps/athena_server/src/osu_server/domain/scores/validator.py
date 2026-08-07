@@ -1,9 +1,12 @@
 """parsed score の hit count,accuracy,grade を検証する domain policy を定義する."""
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from osu_server.domain.scores.payload_parser import ParsedScore
 from osu_server.domain.scores.score import Grade, Ruleset
+
+if TYPE_CHECKING:
+    from osu_server.domain.scores.payload_parser import ParsedScore
 
 # Grade thresholds (osu! specification)
 _GRADE_SS_ACCURACY = 1.0

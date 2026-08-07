@@ -4,7 +4,7 @@ Notes:
     Connection URLはDATABASE_URL environment variableから取得する.
 """
 
-from collections.abc import AsyncGenerator
+from typing import TYPE_CHECKING
 
 import pytest
 from sqlalchemy import text
@@ -13,6 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from osu_server.infrastructure.database.engine import create_engine
 from osu_server.infrastructure.database.session import create_session_factory
 from tests.support.service_availability import require_tcp_service_url
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
 
 
 def _get_database_url() -> str:

@@ -91,7 +91,7 @@ async def session_factory(
     yield factory
     try:
         await _delete_test_fetch_state(factory)
-    except (OSError, SQLAlchemyError):
+    except OSError, SQLAlchemyError:
         return
 
 

@@ -7,6 +7,7 @@ submission workflowが機微情報を記録しないことを確認する.
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 import structlog.testing
@@ -32,7 +33,6 @@ from osu_server.services.commands.scores import (
     SubmissionOutcome,
     generate_submission_fingerprint,
 )
-from osu_server.services.commands.scores.authorization import ScoreAuthorizationService
 from tests.support.fakes import (
     StubBlobStorageService,
     UowScoreSubmissionRepositoryView,
@@ -41,6 +41,9 @@ from tests.support.fakes import (
     make_submit_score_use_case,
     make_test_submission_input,
 )
+
+if TYPE_CHECKING:
+    from osu_server.services.commands.scores.authorization import ScoreAuthorizationService
 
 _BEATMAP_CHECKSUM = "0123456789abcdef0123456789abcdef"
 

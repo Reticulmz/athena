@@ -24,7 +24,7 @@ members = [
 # --- Repository-wide Code Quality Policy ---
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py314"
 src = [
     "apps/athena_server/src",
     "apps/athena_server/tests",

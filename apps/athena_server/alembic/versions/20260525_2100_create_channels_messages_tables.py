@@ -5,10 +5,13 @@ Revises: 20260522_0811
 Create Date: 2026-05-25 21:00:00+09:00
 """
 
-from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from alembic import op
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 revision: str = "20260525_2100"
 down_revision: str | None = "20260522_0811"

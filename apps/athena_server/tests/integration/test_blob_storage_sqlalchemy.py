@@ -92,7 +92,7 @@ async def session_factory(
                 },
             )
             await session.commit()
-    except (OSError, SQLAlchemyError):
+    except OSError, SQLAlchemyError:
         return
 
 

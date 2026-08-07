@@ -708,7 +708,7 @@ def load_getscores_completion_evidence(
     try:
         root = manifest_root.resolve(strict=True)
         resolved_body_root = body_root.resolve(strict=True)
-    except (OSError, RuntimeError, ValueError):
+    except OSError, RuntimeError, ValueError:
         raise GetscoresEvidenceValidationError(
             ("getscores_completion:root:root:unsafe_root_path",)
         ) from None
@@ -1292,7 +1292,7 @@ def _decode_canonical_base64_text(encoded: bytes) -> tuple[bytes | None, str]:
     payload = encoded[:-1]
     try:
         decoded = base64.b64decode(payload, validate=True)
-    except (binascii.Error, ValueError):
+    except binascii.Error, ValueError:
         return None, "invalid_base64_payload"
     if base64.b64encode(decoded) != payload:
         return None, "non_canonical_base64"
@@ -2309,13 +2309,13 @@ def _safe_body_path(value: object, body_root: Path) -> tuple[Path | None, str]:
         return None, "invalid_body_path"
     try:
         relative = Path(value)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         relative = None
     if relative is None or relative.is_absolute() or ".." in relative.parts:
         return None, "unsafe_body_path"
     try:
         candidate = (body_root / relative).resolve(strict=False)
-    except (OSError, RuntimeError, ValueError):
+    except OSError, RuntimeError, ValueError:
         candidate = None
     if candidate is None or not candidate.is_relative_to(body_root):
         return None, "unsafe_body_path"

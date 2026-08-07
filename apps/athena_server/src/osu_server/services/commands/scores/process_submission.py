@@ -2,11 +2,9 @@
 
 import hashlib
 import time
-from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum
-from typing import Never, Protocol
+from typing import TYPE_CHECKING, Never, Protocol
 
 import structlog
 
@@ -17,23 +15,16 @@ from osu_server.domain.beatmaps import (
     BeatmapResolveResult,
 )
 from osu_server.domain.scores.mods import Mod, ModCombination
-from osu_server.domain.scores.payload_parser import ParsedScore
-from osu_server.domain.scores.personal_best import PersonalBestDelta
 from osu_server.domain.scores.score import Playstyle, PlayTimeSource, Ruleset, Score
-from osu_server.domain.scores.user_stats import UserCurrentStats
 from osu_server.domain.scores.validator import (
     ValidationError,
     ValidationResult,
     validate_hit_counts,
 )
-from osu_server.domain.storage.blobs import BlobStoreResult
 from osu_server.services.commands.beatmaps import (
     BeatmapFileWarmupEntrance,
     BeatmapFileWarmupRequest,
     BeatmapFileWarmupResult,
-)
-from osu_server.services.commands.scores.authorization import (
-    AuthorizationContext,
 )
 from osu_server.services.commands.scores.performance import (
     RequestPerformanceCalculationCommand,
@@ -55,6 +46,16 @@ from osu_server.services.queries.scores import (
     PerformanceSubmitResponseQuery,
     PerformanceSubmitResponseState,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from datetime import datetime
+
+    from osu_server.domain.scores.payload_parser import ParsedScore
+    from osu_server.domain.scores.personal_best import PersonalBestDelta
+    from osu_server.domain.scores.user_stats import UserCurrentStats
+    from osu_server.domain.storage.blobs import BlobStoreResult
+    from osu_server.services.commands.scores.authorization import AuthorizationContext
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
