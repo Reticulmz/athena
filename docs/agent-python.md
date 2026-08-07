@@ -4,6 +4,25 @@ Read this before editing first-party Python, Python tests, local `.pyi` stubs, o
 
 ## Code Quality
 
+- Target Python 3.14+ for all first-party Python. Prefer modern syntax that the
+  runtime and configured tools support.
+- Do not write new code as if Python 3.11 or 3.12 were the style ceiling.
+  Python 3.13 typing features are available; use Python 3.14 annotation behavior
+  only where current tooling, imports, and runtime readers accept it.
+- Use built-in generic collections and union syntax: `list[str]`, `dict[str, int]`,
+  and `Path | None`; avoid legacy `typing.List`, `typing.Dict`, `typing.Tuple`,
+  `typing.Optional`, and `typing.Union` in new code.
+- Use modern type tools when they express the contract directly: `type` statements
+  for aliases, `typing.Self` for fluent/self-returning APIs, and
+  `typing.override` for overrides. Use `typing.TypeIs` for precise predicate
+  narrowing and `typing.ReadOnly` for read-only `TypedDict` items.
+- Prefer `match`/`case` for closed, shape-driven branching such as protocol
+  variants, enum-like command kinds, and parsed tuple/dict/dataclass shapes.
+  Keep `if`/`elif` for simple boolean predicates and range checks.
+- Prefer unquoted annotations in new code. Avoid quoted forward references and
+  routine `from __future__ import annotations` only when current tooling, imports,
+  and runtime annotation readers all accept eager annotations.
+- Do not add compatibility shims for Python versions below 3.14.
 - Prefer established project patterns and architecture.
 - Prefer idiomatic Python and async-first designs.
 - Make intent explicit; avoid magic numbers and opaque conditionals.

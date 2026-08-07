@@ -1,132 +1,153 @@
 # AGENTS.md
 
-Root guidance for coding agents working in this repository. Keep this file as a
-router: always-loaded rules stay here, workspace-specific rules live beside the
-files they govern.
+Repository-level instructions for coding agents. Keep this file a router:
+always-needed rules stay here, area-specific rules live in the nearest scoped
+`AGENTS.md` or project skill.
 
-## Highest Priority
+## First Steps
 
-- Read existing files before writing. Do not guess APIs, versions, flags, commit SHAs, or package names.
-- Before substantive work, check whether a listed skill directly matches the action. Load only the minimum relevant skills.
-- If a path or task below points to another agent document, read that document before editing that area.
-- Keep user-facing output concise and lead with the conclusion.
-- Skip files larger than 100 KB unless they are necessary.
-- Ask before irreversible or broad actions such as DB drops, mass deletion, force pushes, or large config rewrites.
-- Do not use emoji or em dashes.
+1. Read the files you will change before editing them.
+2. Check whether a listed skill directly matches the task. Load only the
+   minimum relevant skills.
+3. Load scoped guidance before touching these paths:
+   - Server: `apps/athena_server/AGENTS.md` for
+     `apps/athena_server/**`, server architecture, migrations, transports,
+     jobs, or runtime wiring.
+   - Crypto: `packages/athena_crypto/AGENTS.md` for
+     `packages/athena_crypto/**`.
+   - Python: `.agents/skills/athena-python-style/SKILL.md` for first-party
+     Python, Python tests, local `.pyi` stubs, or Python lint/type/docstring
+     policy.
+4. If scoped guidance conflicts with this file, the closer guidance wins for
+   files inside its scope.
 
-## Pointers
+Completion: every touched path has its scoped instructions loaded before the
+first edit.
 
-- Server: read `apps/athena_server/AGENTS.md` before editing `apps/athena_server/**`, server architecture, migrations, transports, jobs, or runtime wiring.
-- Crypto package: read `packages/athena_crypto/AGENTS.md` before editing `packages/athena_crypto/**`.
-- Python: read `docs/agent-python.md` before editing first-party Python, Python tests, local `.pyi` stubs, or Python lint/type/docstring policy.
-- Stable/lazer contracts: follow the compatibility evidence rules in `apps/athena_server/AGENTS.md` before changing client-visible request, response, packet, endpoint, or realtime shapes.
+## Repository Map
 
-## Project Overview
+- `apps/athena_server`: Python ASGI server, worker, database migrations,
+  stable/lazer/API transports, and server tests.
+- `packages/athena_crypto`: Rust/Python native extension distributed as
+  `athena-crypto` and imported as `athena_crypto`.
+- `tools/monorepo_migration`: repository validation and migration audit tools.
+- `.kiro/steering` and `.kiro/specs`: steering and spec-driven work.
 
-`athena` is an osu! bancho-compatible private server in a monorepo.
+## Work Loop
 
-- `apps/athena_server`: Python ASGI server, worker, database migrations, stable/lazer/API transports, and server tests.
-- `packages/athena_crypto`: Rust/Python native extension published as `athena-crypto` and imported as `athena_crypto`.
-- `tools/monorepo_migration`: repository validation and migration audit tooling.
+- Use `rg` or semantic tools first for search.
+- Treat `justfile`, config files, and `--help` output as command sources of
+  truth. Run `just --list` when a command is unclear.
+- Run project toolchain commands through `nix develop`.
+- Run focused checks for narrow edits. For broad edits, prefer
+  `just quality`, `just test`, and `just docstrings`.
+- Before committing, run `nix develop --command prek run --all-files`.
+- Report what changed, what was verified, and any checks not run.
 
 ## Core Commands
 
-Run project toolchain commands through `nix develop`.
+`just --list` is the command source of truth. These root public recipes are
+stable entry points:
 
 ```bash
-nix develop
 just setup
 just dev
-just tunnel-setup
 just dev-tunnel
 just quality
 just docstrings
 just test
-just fix
 just build
 just db-migrate
-just db-test-create
-just db-test-migrate
-just db-test-run
 just migration-check
 just audit-monorepo
 just process-lifecycle-check
-nix develop --command prek run --all-files
+just worktree
 ```
-
-Before reporting implementation work as complete, run the relevant focused checks. For broad changes, prefer `just quality` and `just test`.
 
 ## Worktrees And PRs
 
-Use a task worktree when work may run in parallel, touch overlapping files, generate artifacts, or involve multiple coding agents.
-
-- Create agent worktrees with `just worktree <task-slug> --agent codex` unless the task needs custom setup.
-- Use repo-sibling paths under `../athena_worktree/` and agent-prefixed branches such as `codex/<task-slug>`.
-- For multi-task Kiro specs, create a spec integration branch `spec/<spec-name>` first, then task branches from that spec branch.
+- Use a task worktree when work may run in parallel, touch overlapping files,
+  generate artifacts, or involve multiple coding agents.
+- Create agent worktrees with `just worktree <task-slug> --agent codex` unless
+  custom setup is needed.
+- Use repo-sibling paths under `../athena_worktree/` and agent-prefixed
+  branches such as `codex/<task-slug>`.
 - Keep each agent's changes inside its own worktree. Prefer one owner per file.
-- Run project toolchain and hooks through `nix develop`; simple Git/GitHub/utility commands may run directly.
-- Before committing, run `nix develop --command prek run --all-files`.
-- Commit completed work in the task branch, or clearly report uncommitted changes.
-- For non-trivial code, test, spec, or multi-file changes, use a pull request as the integration boundary.
-- Do not merge PRs from the agent environment. User merges happen in GitHub Web UI.
-- Consider a PR ready only after CI passes, actionable comments are resolved, the final diff is reviewed, and relevant local checks have run.
-- Do not remove a worktree with uncommitted, unpushed, or unmerged work unless the user explicitly approves discarding it.
+- For non-trivial code, test, spec, or multi-file documentation changes, use a
+  pull request as the integration boundary.
+- Do not merge PRs from the agent environment. The user merges in GitHub Web UI.
+- Consider a PR ready only after CI passes, actionable comments are resolved,
+  the final diff is reviewed, and relevant local checks have run.
+- Do not remove a worktree with uncommitted, unpushed, or unmerged work unless
+  the user explicitly approves discarding it.
 
-## Configuration Policy
+Primary checkout invariant: `git config --show-origin --get core.worktree`
+must return no value. If it points at a linked worktree, unset it before
+pulling, stashing, branching, or editing from the primary checkout. If
+`git rev-parse --show-toplevel` differs from `pwd -P`, diagnose
+`core.worktree` first.
 
-Do not edit project-wide config without explicit user approval:
+## Change Guardrails
 
-- `pyproject.toml`
-- `uv.lock`
-- `.python-version`
-- `apps/athena_server/alembic.ini`
-- `flake.nix`
-- `process-compose.yml`
-- CI, hook, linter, type-checker, or import-linter configuration
-
-Dependency additions require approval. After approved environment/config changes, run the appropriate sync/update command.
+- Ask before irreversible or broad actions such as DB drops, mass deletion,
+  force pushes, or large config rewrites.
+- Ask before editing project-wide config:
+  `pyproject.toml`, `uv.lock`, `.python-version`,
+  `apps/athena_server/alembic.ini`, `flake.nix`, `process-compose.yml`, CI,
+  hook, linter, type-checker, or import-linter configuration.
+- Dependency additions require approval. After approved dependency or
+  environment changes, run the matching sync/update command.
+- Preserve externally observable stable client and worker behavior unless the
+  user explicitly requests a contract change.
+- For stable/lazer request, response, packet, endpoint, or realtime shape
+  changes, follow the evidence rule in `apps/athena_server/AGENTS.md`.
 
 ## Git And Commits
 
 Use Conventional Commits:
 
 ```text
-<type>[optional scope]: <description>
+<type>[optional scope]: <Japanese description>
 
 [optional body]
 ```
 
-- Type must be English: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `build`, `ci`, `revert`.
+- Type must be English: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`,
+  `test`, `chore`, `build`, `ci`, or `revert`.
 - Description is Japanese, max 70 chars, no trailing period.
 - Breaking changes append `!` after type, for example `feat!:`.
-- Avoid vague descriptions such as `update`, `fix`, `change`, `modify`, `更新`, `修正`, `変更`, `対応`, or `wip`.
+- Avoid vague descriptions such as `update`, `fix`, `change`, `modify`, `更新`,
+  `修正`, `変更`, `対応`, or `wip`.
 - Do not bypass hooks with `--no-verify`, `--no-gpg-sign`, or `-n`.
-- If a coding agent creates a commit, include footer `Agent-Model: <agent product> (<model name>)`. Use `unknown` when the exact model is unavailable.
-- If a commit implements a sequential Kiro task directly on the spec branch, include footer `Kiro-Task: <spec-name> <task-number>`.
+- Agent commits include footer `Agent-Model: <agent product> (<model name>)`;
+  use `unknown` when the exact model is unavailable.
+- Sequential Kiro task commits include footer
+  `Kiro-Task: <spec-name> <task-number>`.
 
-When hooks fail, re-stage formatter changes, retry, then fix the root cause if failure remains.
+When hooks fail, re-stage formatter changes, retry once, then fix the root
+cause if failure remains.
 
-## Spec-Driven Development
+## Spec Work
 
-- Steering lives in `.kiro/steering/`.
-- Specs live in `.kiro/specs/`.
-- Check active specs before feature work.
-- Keep steering aligned with implementation decisions.
-- Use the Kiro skills in `.agents/skills/kiro-*/SKILL.md` when a Kiro workflow applies.
-- Use the 3-phase approval workflow: Requirements -> Design -> Tasks -> Implementation. Human review is required for each phase unless the user intentionally requests a fast-track option.
-- Markdown written to spec files must use the language configured in that spec's `spec.json.language`.
+- Check `.kiro/specs/` before feature work.
+- For multi-task Kiro specs, create `spec/<spec-name>` as the integration
+  branch first. Branch parallel task worktrees from that spec branch, then
+  integrate task branches back into it before opening the final PR to `main`.
+- Keep `.kiro/steering/` aligned with implementation decisions.
+- Use the Kiro skills in `.agents/skills/kiro-*/SKILL.md` when a Kiro workflow
+  applies.
+- Follow Requirements -> Design -> Tasks -> Implementation unless the user
+  explicitly requests a fast-track path.
+- Markdown written to spec files must use the language configured in that
+  spec's `spec.json.language`.
 
-## Tooling Pointers
+## Agent Document Maintenance
 
-- External library or cloud API work: fetch current docs with the available documentation tool before relying on memory.
-- Symbol edits: when GitNexus tools are available, run impact analysis before changing functions, classes, or methods, and check detected changes before committing.
-- Code reading: prefer semantic tools when available; otherwise use `rg` first.
-
-## Operational Conduct
-
-- Report executed actions and verification results.
-- If work remains unverified, say so explicitly.
-- On errors, explain cause and fix together.
-- If a plan is flawed, revise it rather than repeating the same approach.
-- Follow the user's requested scope first; suggest improvements separately.
-- If information is uncertain, mark it as `未確認`.
+- Keep root `AGENTS.md` under 200 lines.
+- Move path-specific rules to the nearest scoped `AGENTS.md` or project skill.
+- Keep each rule in one source of truth. Point to details instead of duplicating
+  them.
+- Store facts agents cannot cheaply infer: project contracts, gotchas, required
+  checks, and workflow invariants.
+- Leave command catalogs, dependency lists, and generated state details in their
+  owning files unless the lookup is expensive or failure-prone.
