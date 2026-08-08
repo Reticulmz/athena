@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 from pydantic import ValidationError
 
@@ -34,8 +36,69 @@ def test_generate_env_content_includes_required_values_defaults_and_environment(
     assert "VALKEY_URL=redis://localhost:6379/0" in result.content
     assert "ENVIRONMENT=test" in result.content
     assert "SERVER_PORT=8000" in result.content
+    assert "BANNED_PASSWORDS=[]" in result.content
     assert "QUERY_DIAGNOSTICS_ENABLED=" not in result.content
     assert result.content.endswith("\n")
+
+
+def test_json_list_values_are_normalized_before_app_config_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """JSON array入力がAppConfig validation前にlistとして正規化されることを検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): schema metadataとAppConfig validation先を
+            置き換えるfixture.
+
+    Returns:
+        None: JSON arrayの空要素と前後空白が除去された値を検証して完了する.
+    """
+
+    class RecordingAppConfig:
+        """AppConfigへ渡されたfield valuesを記録するstub.
+
+        Attributes:
+            parsed_values (ClassVar[dict[str, object] | None]): validationへ渡された最新値.
+        """
+
+        parsed_values: ClassVar[dict[str, object] | None] = None
+
+        @classmethod
+        def model_validate(cls, values: object) -> object:
+            """Validation inputを記録して成功結果を返す.
+
+            Args:
+                values (object): `_validate_app_config`が構築したfield values.
+
+            Returns:
+                object: AppConfig validation成功を表すdummy object.
+            """
+            assert isinstance(values, dict)
+            cls.parsed_values = values
+            return object()
+
+    metadata = (
+        EnvFieldMetadata(
+            field_name="banned_passwords",
+            env_var="BANNED_PASSWORDS",
+            required=False,
+            default="[]",
+            secret=False,
+            list_like=True,
+            empty_value_is_unset=False,
+        ),
+    )
+    monkeypatch.setattr(generation_module, "get_config_env_metadata", lambda: metadata)
+    monkeypatch.setattr(generation_module, "AppConfig", RecordingAppConfig)
+
+    _ = generate_env_content(
+        EnvGenerationInput(
+            environment="test",
+            values={"BANNED_PASSWORDS": '[" alpha ","","beta"]'},
+        )
+    )
+
+    assert RecordingAppConfig.parsed_values == {"banned_passwords": ["alpha", "beta"]}
 
 
 def test_optional_bool_with_default_is_written(

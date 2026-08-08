@@ -97,7 +97,7 @@ cp apps/athena_server/.env.example apps/athena_server/.env.development
 The required runtime values are:
 
 ```dotenv
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/athena
+DATABASE_URL=postgresql://localhost:5432/athena
 VALKEY_URL=redis://localhost:6379
 ```
 

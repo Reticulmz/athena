@@ -19,7 +19,7 @@ processes:
       exec postgres -D "$PGDATA"
     readiness_probe:
       exec:
-        command: pg_isready -h "$PGHOST" -p "$PGPORT"
+        command: pg_isready -h "$PGHOST" -p "$PGPORT" -d postgres
       initial_delay_seconds: 2
       period_seconds: 5
     shutdown:
@@ -48,6 +48,16 @@ processes:
     availability:
       restart: "no"
 
+  postgres-migrate:
+    command: exec uv run --directory apps/athena_server alembic upgrade head
+    depends_on:
+      postgres:
+        condition: process_healthy
+      postgres-init:
+        condition: process_completed_successfully
+    availability:
+      restart: "no"
+
   valkey:
     command: |
       valkey_port="${VALKEY_PORT:-6379}"
@@ -71,6 +81,8 @@ processes:
         condition: process_healthy
       postgres-init:
         condition: process_completed_successfully
+      postgres-migrate:
+        condition: process_completed_successfully
       valkey:
         condition: process_healthy
     readiness_probe:
@@ -93,6 +105,8 @@ processes:
       postgres:
         condition: process_healthy
       postgres-init:
+        condition: process_completed_successfully
+      postgres-migrate:
         condition: process_completed_successfully
       valkey:
         condition: process_healthy

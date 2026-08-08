@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from types import NoneType
 from typing import TYPE_CHECKING, Annotated, cast, get_args, get_origin
@@ -27,7 +28,7 @@ class EnvFieldMetadata:
         required (bool): AppConfig validation上で必須の場合はTrue.
         default (str | None): 必須でないfieldの文字列化済みdefault. 必須fieldはNone.
         secret (bool): 表示時にmaskするsecret系fieldの場合はTrue.
-        list_like (bool): comma separated valueとして扱うlist fieldの場合はTrue.
+        list_like (bool): JSON arrayまたはcomma separated valueとして扱うlist fieldの場合はTrue.
         empty_value_is_unset (bool): 空文字を未指定として扱うfieldの場合はTrue.
     """
 
@@ -92,7 +93,7 @@ def _stringify_default(field: FieldInfo) -> str:
         field (FieldInfo): default値を保持するPydantic field metadata.
 
     Returns:
-        str: Noneは空文字へ変換しlistはcomma区切りにしたdefault文字列.
+        str: Noneは空文字へ変換しlistはJSON arrayにしたdefault文字列.
     """
     default_value = cast("object", field.get_default(call_default_factory=True))
     if default_value is None:
@@ -101,7 +102,7 @@ def _stringify_default(field: FieldInfo) -> str:
         return str(default_value).lower()
     if isinstance(default_value, list):
         items = cast("Sequence[object]", default_value)
-        return ",".join(str(item) for item in items)
+        return json.dumps([str(item) for item in items], separators=(",", ":"))
     return str(default_value)
 
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from pydantic import TypeAdapter
+
 from athena_cli.env.schema import get_config_env_metadata
 from athena_cli.errors import CliUserError
 from athena_cli.presentation import mask_secret
@@ -14,6 +16,9 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from osu_server.config import EnvironmentName
+
+
+_STRING_LIST_ADAPTER = TypeAdapter(list[str])
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,15 +146,22 @@ def _validate_app_config(values: Mapping[str, str]) -> None:
 
 
 def _parse_list_value(value: str) -> list[str]:
-    """comma区切り環境変数値を空要素なしのlistへ変換する.
+    """JSON arrayまたはcomma区切り環境変数値を正規化済みlistへ変換する.
 
     Args:
-        value (str): comma区切りの環境変数値.
+        value (str): JSON arrayまたはcomma区切りの環境変数値.
 
     Returns:
         list[str]: 前後空白と空要素を除去した要素のlist.
+
+    Raises:
+        ValidationError: JSON arrayとして解釈する値が不正な場合.
     """
-    return [item.strip() for item in value.split(",") if item.strip()]
+    if value.strip().startswith("["):
+        items = _STRING_LIST_ADAPTER.validate_json(value)
+    else:
+        items = value.split(",")
+    return [item.strip() for item in items if item.strip()]
 
 
 def _format_summary_line(env_var: str, value: str) -> str:
