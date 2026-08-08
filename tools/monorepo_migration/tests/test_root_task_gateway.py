@@ -1319,6 +1319,7 @@ def test_dev_rejects_missing_server_environment_without_starting_processes(
     assert result.returncode != 0
     assert "Invalid configuration" in result.stderr
     assert "database_url" in result.stderr
+    assert "fix it or remove apps/athena_server/.env.development" in result.stderr
     assert "just setup" in result.stderr
     expected_config_check = (
         f"uv:run --directory {repository_root}/apps/athena_server "
@@ -2195,6 +2196,76 @@ def test_tunnel_setup_initializes_account_state_and_creates_execution_credential
     ]
     assert not (repository_root / ".venv").exists()
     assert not (repository_root / ".state" / "postgres").exists()
+
+
+def test_tunnel_setup_keeps_server_env_when_domain_rewrite_fails(
+    tmp_path: Path,
+) -> None:
+    """DOMAIN同期失敗時に既存server env fileを置換しないcontractを検証する.
+
+    Args:
+        tmp_path (Path): Tunnel stateとfake command群を置くtemporary directory.
+
+    Returns:
+        None: 一時fileを削除し、既存`.env.development`を保持することを検証する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    _initialize_git_repository(repository_root)
+    environment, _command_log_path = _fake_setup_environment(repository_root)
+    tunnel_state_path = repository_root / ".state" / "cloudflared"
+    _ = tunnel_state_path.mkdir(parents=True)
+    tunnel_config_path = tunnel_state_path / "config.yml"
+    _ = tunnel_config_path.write_text(
+        'ingress:\n  - hostname: "*.dev.example.test"\n    service: http://localhost:8080\n',
+        encoding="utf-8",
+    )
+    origin_certificate_path = tunnel_state_path / "login-home" / ".cloudflared" / "cert.pem"
+    _ = origin_certificate_path.parent.mkdir(parents=True)
+    _ = origin_certificate_path.write_text("fixture account credential\n", encoding="utf-8")
+    server_env_path = _write_valid_server_development_env(repository_root)
+    original_server_env_source = (
+        f"{server_env_path.read_text(encoding='utf-8')}DOMAIN=old.example.test\n"
+    )
+    _ = server_env_path.write_text(original_server_env_source, encoding="utf-8")
+    environment["ATHENA_TEST_ORIGIN_CERTIFICATE"] = str(origin_certificate_path)
+    binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
+    _write_executable(
+        binary_directory / "cloudflared",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'cloudflared:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        expected_ingress="tunnel --config $PWD/.state/cloudflared/config.yml ingress validate"
+        [[ "$*" == "$expected_ingress" ]]
+        """,
+    )
+    _write_executable(
+        binary_directory / "awk",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        if [[ "${1:-}" == '-F"' ]]; then
+          printf '*.dev.example.test\n'
+          exit 0
+        fi
+        if [[ "${1:-}" == '-v' && "${2:-}" == routing_domain=* ]]; then
+          printf 'partial env output\n'
+          echo 'simulated awk failure' >&2
+          exit 2
+        fi
+        echo "unexpected awk invocation: $*" >&2
+        exit 2
+        """,
+    )
+
+    result = _run_just(repository_root, environment, "tunnel-setup", input_text="")
+
+    assert result.returncode != 0
+    assert "simulated awk failure" in result.stderr
+    assert server_env_path.read_text(encoding="utf-8") == original_server_env_source
+    assert not server_env_path.with_suffix(".development.tmp").exists()
 
 
 def test_tunnel_setup_replaces_stale_execution_credential(

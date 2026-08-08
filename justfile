@@ -41,7 +41,8 @@ tunnel-setup:
     if [[ -n "$tunnel_hostname" && -f "{{ server_development_env }}" ]]; then \
       routing_domain="${tunnel_hostname#\*.}"; \
       tmp_env="{{ server_development_env }}.tmp"; \
-      awk -v routing_domain="$routing_domain" 'BEGIN { updated = 0 } /^DOMAIN=/ { print "DOMAIN=" routing_domain; updated = 1; next } { print } END { if (!updated) print "DOMAIN=" routing_domain }' "{{ server_development_env }}" > "$tmp_env"; \
+      rm -f "$tmp_env"; \
+      if ! awk -v routing_domain="$routing_domain" 'BEGIN { updated = 0 } /^DOMAIN=/ { print "DOMAIN=" routing_domain; updated = 1; next } { print } END { if (!updated) print "DOMAIN=" routing_domain }' "{{ server_development_env }}" > "$tmp_env"; then rm -f "$tmp_env"; exit 1; fi; \
       mv "$tmp_env" "{{ server_development_env }}"; \
       echo "updated {{ server_development_env }} DOMAIN=$routing_domain"; \
     fi
@@ -92,7 +93,7 @@ _low-port-state:
     @if [[ "$(uname -s)" == "Linux" ]]; then unprivileged_port_start="$(sysctl -n net.ipv4.ip_unprivileged_port_start)" || { echo "cannot read net.ipv4.ip_unprivileged_port_start; run 'just setup' in this worktree" >&2; exit 1; }; if ((unprivileged_port_start > 80)); then echo "development ingress requires net.ipv4.ip_unprivileged_port_start <= 80; run 'just setup' in this worktree" >&2; exit 1; fi; fi
 
 _server-config-state:
-    @UV_PROJECT_ENVIRONMENT="{{ repository_root }}/.venv" uv run --directory "{{ server_root }}" --frozen athena config check --env development || { echo "server configuration is invalid or missing; run 'just setup' in this worktree to generate apps/athena_server/.env.development" >&2; exit 1; }
+    @UV_PROJECT_ENVIRONMENT="{{ repository_root }}/.venv" uv run --directory "{{ server_root }}" --frozen athena config check --env development || { echo "server configuration is invalid or missing; fix it or remove apps/athena_server/.env.development before running 'just setup' in this worktree" >&2; exit 1; }
 
 _tunnel-state:
     @if [[ ! -f "{{ tunnel_config }}" ]]; then echo "tunnel setup is incomplete: .state/cloudflared/config.yml is missing in this worktree; run 'just tunnel-setup' to generate it interactively" >&2; exit 1; fi
