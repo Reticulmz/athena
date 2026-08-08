@@ -502,17 +502,7 @@ class _ChecksumMissBeatmapsetHitResolver(_RecordingBeatmapResolver):
                 opts.wait_timeout_seconds,
             )
         )
-        self.repository.beatmaps_by_checksum[self.beatmap.checksum_md5] = self.beatmap
-        self.repository.beatmapsets_by_id[self.beatmapset.id] = self.beatmapset
-        return BeatmapSetResolveResult(
-            beatmapset=self.beatmapset,
-            metadata_status=BeatmapFetchState.FRESH,
-            source=self.beatmapset.official_status_source,
-            verified=True,
-            last_fetched_at=self.beatmapset.last_fetched_at,
-            next_refresh_at=self.beatmapset.next_refresh_at,
-            reason="test",
-        )
+        return self._fresh_beatmapset_result()
 
 
 @final
