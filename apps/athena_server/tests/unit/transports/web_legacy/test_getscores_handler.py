@@ -310,6 +310,14 @@ class _RecordingBeatmapResolver:
                 opts.wait_timeout_seconds,
             )
         )
+        return self._fresh_beatmapset_result()
+
+    def _fresh_beatmapset_result(self) -> BeatmapSetResolveResult:
+        """設定済みfresh beatmapset resultをrepositoryへ反映して返す.
+
+        Returns:
+            BeatmapSetResolveResult: 設定済みbeatmapsetを持つfresh metadata result.
+        """
         self.repository.beatmaps_by_checksum[self.beatmap.checksum_md5] = self.beatmap
         self.repository.beatmapsets_by_id[self.beatmapset.id] = self.beatmapset
         return BeatmapSetResolveResult(
@@ -600,17 +608,7 @@ class _DelayedBeatmapResolver(_RecordingBeatmapResolver):
                 reason="pending",
             )
 
-        self.repository.beatmaps_by_checksum[self.beatmap.checksum_md5] = self.beatmap
-        self.repository.beatmapsets_by_id[self.beatmapset.id] = self.beatmapset
-        return BeatmapSetResolveResult(
-            beatmapset=self.beatmapset,
-            metadata_status=BeatmapFetchState.FRESH,
-            source=BeatmapMetadataSource.OFFICIAL,
-            verified=True,
-            last_fetched_at=self.beatmapset.last_fetched_at,
-            next_refresh_at=self.beatmapset.next_refresh_at,
-            reason=None,
-        )
+        return self._fresh_beatmapset_result()
 
 
 @final
@@ -766,7 +764,7 @@ async def test_getscores_unavailable_uses_parsed_checksum_for_warmup() -> None:
     assert response.body == b"-1|false"
     assert resolver.calls == [
         ("beatmapset_id", "955866", False, _default_metadata_wait_seconds()),
-        ("checksum", _CHECKSUM, False, 0.0),
+        ("checksum", _CHECKSUM, False, _default_metadata_wait_seconds()),
     ]
     assert warmup.requests == [
         BeatmapFileWarmupRequest(

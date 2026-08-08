@@ -243,11 +243,7 @@ class StableGetscoresExchange:
                 result = await self._beatmap_resolver.resolve_by_checksum(
                     request.checksum_md5,
                     BeatmapResolveOptions(
-                        wait_timeout_seconds=(
-                            0.0
-                            if request.beatmapset_id_hint is not None
-                            else self._beatmap_metadata_wait_seconds
-                        ),
+                        wait_timeout_seconds=self._beatmap_metadata_wait_seconds,
                     ),
                 )
                 logger.info(

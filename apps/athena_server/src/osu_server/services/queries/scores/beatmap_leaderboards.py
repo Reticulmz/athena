@@ -388,18 +388,20 @@ class BeatmapLeaderboardQuery:
         Returns:
             BeatmapLeaderboardResult: 一致した beatmap の結果, または未発見の利用不可結果.
         """
-        beatmap = await self._find_by_filename_in_beatmapset(
+        match = await self._find_by_filename_in_beatmapset(
             beatmapset_id,
             filename,
         )
 
-        if beatmap is None:
+        if match is None:
             return _unavailable(BeatmapLeaderboardResolveReason.NOT_FOUND)
 
+        beatmap, beatmapset = match
         return await self._evaluate_beatmap(
             beatmap,
             reason=BeatmapLeaderboardResolveReason.KNOWN_FILENAME_IN_SET,
             request=request,
+            beatmapset=beatmapset,
         )
 
     async def _evaluate_beatmap(
@@ -408,6 +410,7 @@ class BeatmapLeaderboardQuery:
         *,
         reason: BeatmapLeaderboardResolveReason,
         request: BeatmapLeaderboardRequest,
+        beatmapset: BeatmapSet | None = None,
     ) -> BeatmapLeaderboardResult:
         """解決済み beatmap の表示可否, header, leaderboard を評価する.
 
@@ -415,12 +418,15 @@ class BeatmapLeaderboardQuery:
             beatmap (Beatmap): 評価する解決済み beatmap.
             reason (BeatmapLeaderboardResolveReason): beatmap を解決した経路.
             request (BeatmapLeaderboardRequest): listing scope を決める要求.
+            beatmapset (BeatmapSet | None): すでに読み取った beatmapset. 未指定時は
+                repository から取得する.
 
         Returns:
             BeatmapLeaderboardResult: header と必要に応じた rows を含む結果. beatmapset がないか
                 score listing 非表示なら利用不可結果.
         """
-        beatmapset = await self._repository.get_beatmapset(beatmap.beatmapset_id)
+        if beatmapset is None:
+            beatmapset = await self._repository.get_beatmapset(beatmap.beatmapset_id)
 
         if beatmapset is None:
             return _unavailable(BeatmapLeaderboardResolveReason.NOT_FOUND)
@@ -467,21 +473,24 @@ class BeatmapLeaderboardQuery:
             BeatmapLeaderboardResult: checksum が異なる表示可能 beatmap なら update available.
                 checksum 一致時は通常の listing 結果, それ以外は利用不可結果.
         """
-        beatmap = await self._find_by_filename_in_beatmapset(
+        match = await self._find_by_filename_in_beatmapset(
             beatmapset_id,
             filename,
         )
-        if beatmap is None:
+        if match is None:
             return _unavailable(BeatmapLeaderboardResolveReason.NOT_FOUND)
 
+        beatmap, beatmapset = match
         if beatmap.checksum_md5 == checksum_md5:
             return await self._evaluate_beatmap(
                 beatmap,
                 reason=BeatmapLeaderboardResolveReason.KNOWN_FILENAME_IN_SET,
                 request=request,
+                beatmapset=beatmapset,
             )
 
-        beatmapset = await self._repository.get_beatmapset(beatmap.beatmapset_id)
+        if beatmapset is None:
+            beatmapset = await self._repository.get_beatmapset(beatmap.beatmapset_id)
         if beatmapset is None:
             return _unavailable(BeatmapLeaderboardResolveReason.NOT_FOUND)
 
@@ -503,27 +512,31 @@ class BeatmapLeaderboardQuery:
         self,
         beatmapset_id: int,
         filename: str,
-    ) -> Beatmap | None:
-        """Attachmentまたはmetadata由来のstable filenameでbeatmapを検索する.
+    ) -> tuple[Beatmap, BeatmapSet | None] | None:
+        """Attachmentまたはmetadata由来のstable filenameでbeatmapとbeatmapsetを検索する.
 
         Args:
             beatmapset_id (int): 検索するbeatmapset ID.
             filename (str): stable clientが送ったbeatmap filename.
 
         Returns:
-            Beatmap | None: filenameに一致するbeatmap. 見つからない場合はNone.
+            tuple[Beatmap, BeatmapSet | None] | None: filenameに一致するbeatmapと,
+                fallbackで読み取ったbeatmapset. 見つからない場合はNone.
         """
         beatmap = await self._repository.find_by_filename_in_beatmapset(
             beatmapset_id,
             filename,
         )
         if beatmap is not None:
-            return beatmap
+            return beatmap, None
 
         beatmapset = await self._repository.get_beatmapset(beatmapset_id)
         if beatmapset is None:
             return None
-        return _beatmap_by_stable_filename(beatmapset, filename)
+        beatmap = _beatmap_by_stable_filename(beatmapset, filename)
+        if beatmap is None:
+            return None
+        return beatmap, beatmapset
 
     async def _resolve_leaderboard_listing(
         self,
