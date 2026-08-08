@@ -50,9 +50,10 @@ def create_app(provider_overrides: Iterable[Provider] = ()) -> Starlette:
         DNSなしのlocal development向けpath fallbackを同時に登録する.
         `Host("c.$domain")`,`Host("c<digits>.$domain")`,`Host("ce.$domain")`には
         Bancho routeを,`Host("osu.$domain")`にはweb legacy routeを登録する. path fallbackとして
-        `GET /`,`GET /health`,`GET /web/bancho_connect.php`も登録する.
+        `GET /`,`GET /health`と, 非productionでは`GET /web/bancho_connect.php`も登録する.
     """
-    domain = load_routing_config().domain
+    routing_config = load_routing_config()
+    domain = routing_config.domain
 
     # bancho routes (c.$DOMAIN)
     bancho_routes = Router(
@@ -92,6 +93,16 @@ def create_app(provider_overrides: Iterable[Provider] = ()) -> Starlette:
         ],
     )
 
+    web_fallback_routes = [Route("/users", endpoint=registration_endpoint, methods=["POST"])]
+    if routing_config.environment != "production":
+        web_fallback_routes.append(
+            Route(
+                "/bancho_connect.php",
+                endpoint=bancho_connect_endpoint,
+                methods=["GET"],
+            )
+        )
+
     routes: list[Route | Mount | Host] = [
         # Subdomain-based routing
         Host(f"c.{domain}", app=bancho_routes),
@@ -101,17 +112,7 @@ def create_app(provider_overrides: Iterable[Provider] = ()) -> Starlette:
         # Path-based fallbacks for local dev
         Route("/", endpoint=health_endpoint, methods=["GET"]),
         Route("/health", endpoint=health_check_endpoint, methods=["GET"]),
-        Mount(
-            "/web",
-            routes=[
-                Route("/users", endpoint=registration_endpoint, methods=["POST"]),
-                Route(
-                    "/bancho_connect.php",
-                    endpoint=bancho_connect_endpoint,
-                    methods=["GET"],
-                ),
-            ],
-        ),
+        Mount("/web", routes=web_fallback_routes),
         # Future sub-app mount points
         Mount("/api/v2", routes=[]),
         Mount("/signalr", routes=[]),

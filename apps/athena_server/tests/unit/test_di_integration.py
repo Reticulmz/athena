@@ -344,6 +344,34 @@ def test_create_app_serves_web_legacy_probe_without_host_match(
     assert response.content == b""
 
 
+def test_create_app_omits_web_legacy_probe_fallback_in_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Productionではbancho_connectのpath fallbackを登録しない契約を検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): production routing environmentを設定するfixture.
+
+    Returns:
+        None: `/web/bancho_connect.php` がfallback routeに存在しないことを検証する.
+    """
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("DOMAIN", "example.test")
+    created = create_app()
+    web_mount = next(
+        route for route in created.routes if isinstance(route, Mount) and route.path == "/web"
+    )
+
+    assert isinstance(web_mount.app, Router)
+    fallback_paths = {
+        route.path
+        for route in web_mount.app.routes
+        if isinstance(route, Route) and "GET" in (route.methods or set())
+    }
+
+    assert "/bancho_connect.php" not in fallback_paths
+
+
 def test_create_app_reads_route_domain_from_environment_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
