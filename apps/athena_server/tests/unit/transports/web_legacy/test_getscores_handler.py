@@ -42,6 +42,7 @@ from tests.factories.config import make_app_config
 from tests.support.starlette_requests import make_starlette_request
 
 if TYPE_CHECKING:
+    import pytest
     from starlette.requests import Request
 
     from osu_server.domain.beatmaps import BeatmapFetchRecord, BeatmapFetchTarget
@@ -121,14 +122,14 @@ class _ScoreListingRepository:
         beatmapset_id: int,
         original_filename: str,
     ) -> Beatmap | None:
-        """Filename fallbackを常にnot foundとして返す.
+        """Filename attachment fallbackを常にnot foundとして返す.
 
         Args:
             beatmapset_id (int): lookupを制限するbeatmapset ID.
             original_filename (str): lookupするoriginal osu file名.
 
         Returns:
-            Beatmap | None: 常にNone. 本fakeはfilename indexを保持しない.
+            Beatmap | None: 常にNone. metadataだけを取得済みでattachmentがない状態を再現する.
         """
         _ = (beatmapset_id, original_filename)
         return None
@@ -291,7 +292,7 @@ class _RecordingBeatmapResolver:
         beatmapset_id: int,
         options: BeatmapResolveOptions | None = None,
     ) -> BeatmapSetResolveResult:
-        """Beatmapset ID resolveを記録してpending metadata resultを返す.
+        """Beatmapset ID resolveを記録してfresh metadata resultを返す.
 
         Args:
             beatmapset_id (int): resolveするbeatmapset ID.
@@ -299,7 +300,7 @@ class _RecordingBeatmapResolver:
                 optional resolve options.
 
         Returns:
-            BeatmapSetResolveResult: beatmapsetなしのpending metadata result.
+            BeatmapSetResolveResult: 設定済みbeatmapsetを持つfresh metadata result.
         """
         opts = options or BeatmapResolveOptions()
         self.calls.append(
@@ -310,14 +311,24 @@ class _RecordingBeatmapResolver:
                 opts.wait_timeout_seconds,
             )
         )
+        return self._fresh_beatmapset_result()
+
+    def _fresh_beatmapset_result(self) -> BeatmapSetResolveResult:
+        """設定済みfresh beatmapset resultをrepositoryへ反映して返す.
+
+        Returns:
+            BeatmapSetResolveResult: 設定済みbeatmapsetを持つfresh metadata result.
+        """
+        self.repository.beatmaps_by_checksum[self.beatmap.checksum_md5] = self.beatmap
+        self.repository.beatmapsets_by_id[self.beatmapset.id] = self.beatmapset
         return BeatmapSetResolveResult(
-            beatmapset=None,
-            metadata_status=BeatmapFetchState.PENDING_FETCH,
-            source=None,
-            verified=False,
-            last_fetched_at=None,
-            next_refresh_at=None,
-            reason="pending",
+            beatmapset=self.beatmapset,
+            metadata_status=BeatmapFetchState.FRESH,
+            source=BeatmapMetadataSource.OFFICIAL,
+            verified=True,
+            last_fetched_at=self.beatmapset.last_fetched_at,
+            next_refresh_at=self.beatmapset.next_refresh_at,
+            reason=None,
         )
 
 
@@ -422,6 +433,80 @@ class _UnavailableBeatmapResolver:
 
 
 @final
+class _ChecksumMissBeatmapsetHitResolver(_RecordingBeatmapResolver):
+    """Checksum miss後にbeatmapset IDでfresh metadataを返すresolver fakeを提供する."""
+
+    def __init__(
+        self,
+        repository: _ScoreListingRepository,
+        beatmap: Beatmap,
+        beatmapset: BeatmapSet,
+    ) -> None:
+        """Checksum missとbeatmapset hitを再現するfixture stateを設定する.
+
+        Args:
+            repository (_ScoreListingRepository): resultを保存するrepository fake.
+            beatmap (Beatmap): beatmapset ID resolveで保存する現行beatmap.
+            beatmapset (BeatmapSet): beatmapset ID resolveで保存する現行beatmapset.
+        """
+        super().__init__(repository, beatmap, beatmapset)
+
+    @override
+    async def resolve_by_checksum(
+        self,
+        checksum_md5: str,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapResolveResult:
+        """Checksum resolveをpending missとして記録する.
+
+        Args:
+            checksum_md5 (str): resolveする古いbeatmap checksum.
+            options (BeatmapResolveOptions | None): file requirementとwaitを指定する
+                optional resolve options.
+
+        Returns:
+            BeatmapResolveResult: beatmapなしのpending metadata result.
+        """
+        opts = options or BeatmapResolveOptions()
+        self.calls.append(
+            (
+                "checksum",
+                checksum_md5,
+                opts.require_osu_file,
+                opts.wait_timeout_seconds,
+            )
+        )
+        return _metadata_pending_result()
+
+    @override
+    async def resolve_by_beatmapset_id(
+        self,
+        beatmapset_id: int,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapSetResolveResult:
+        """Beatmapset ID resolveをfresh resultとして記録してrepositoryへ保存する.
+
+        Args:
+            beatmapset_id (int): resolveするbeatmapset ID.
+            options (BeatmapResolveOptions | None): file requirementとwaitを指定する
+                optional resolve options.
+
+        Returns:
+            BeatmapSetResolveResult: 現行beatmapsetを持つfresh metadata result.
+        """
+        opts = options or BeatmapResolveOptions()
+        self.calls.append(
+            (
+                "beatmapset_id",
+                str(beatmapset_id),
+                opts.require_osu_file,
+                opts.wait_timeout_seconds,
+            )
+        )
+        return self._fresh_beatmapset_result()
+
+
+@final
 class _DelayedBeatmapResolver(_RecordingBeatmapResolver):
     """Wait budgetが十分な場合だけfresh resultを返すdelayed resolver fakeを提供する.
 
@@ -479,6 +564,43 @@ class _DelayedBeatmapResolver(_RecordingBeatmapResolver):
         self.repository.beatmapsets_by_id[self.beatmapset.id] = self.beatmapset
         return _resolve_result(self.beatmap, self.beatmapset)
 
+    @override
+    async def resolve_by_beatmapset_id(
+        self,
+        beatmapset_id: int,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapSetResolveResult:
+        """Beatmapset ID resolveのwait budgetに応じてpendingまたはfresh resultを返す.
+
+        Args:
+            beatmapset_id (int): resolveするbeatmapset ID.
+            options (BeatmapResolveOptions | None): wait budgetを指定するoptional resolve options.
+
+        Returns:
+            BeatmapSetResolveResult: wait不足ならpending result. 十分ならfresh beatmapset result.
+        """
+        opts = options or BeatmapResolveOptions()
+        self.calls.append(
+            (
+                "beatmapset_id",
+                str(beatmapset_id),
+                opts.require_osu_file,
+                opts.wait_timeout_seconds,
+            )
+        )
+        if opts.wait_timeout_seconds < self.available_after_seconds:
+            return BeatmapSetResolveResult(
+                beatmapset=None,
+                metadata_status=BeatmapFetchState.PENDING_FETCH,
+                source=None,
+                verified=False,
+                last_fetched_at=None,
+                next_refresh_at=None,
+                reason="pending",
+            )
+
+        return self._fresh_beatmapset_result()
+
 
 @final
 class _RecordingWarmupUseCase:
@@ -525,7 +647,7 @@ async def test_getscores_resolves_metadata_before_returning_not_found() -> None:
     """Getscoresがnot found response前にmetadata resolveとfile warmupを行うcontractを検証する.
 
     Returns:
-        None: header response, checksum resolve, beatmap ID warmup requestを確認して完了する.
+        None: header response, beatmapset ID resolve, beatmap ID warmup requestを確認して完了する.
     """
     repository = _ScoreListingRepository()
     beatmap = _make_beatmap()
@@ -544,7 +666,7 @@ async def test_getscores_resolves_metadata_before_returning_not_found() -> None:
     assert response.status_code == HTTPStatus.OK
     assert bytes(response.body).split(b"\n")[0] == b"2|false|75|955866|0||"
     assert resolver.calls == [
-        ("checksum", _CHECKSUM, False, _default_metadata_wait_seconds()),
+        ("beatmapset_id", "955866", False, _default_metadata_wait_seconds()),
     ]
     assert warmup.requests == [
         BeatmapFileWarmupRequest(
@@ -631,14 +753,110 @@ async def test_getscores_unavailable_uses_parsed_checksum_for_warmup() -> None:
 
     assert response.status_code == HTTPStatus.OK
     assert response.body == b"-1|false"
-    assert resolver.calls == [
-        ("checksum", _CHECKSUM, False, _default_metadata_wait_seconds()),
-    ]
+    assert resolver.calls[0] == (
+        "beatmapset_id",
+        "955866",
+        False,
+        _default_metadata_wait_seconds(),
+    )
+    assert resolver.calls[1][:3] == ("checksum", _CHECKSUM, False)
+    assert 0.0 <= resolver.calls[1][3] <= _default_metadata_wait_seconds()
     assert warmup.requests == [
         BeatmapFileWarmupRequest(
             entrance=BeatmapFileWarmupEntrance.STABLE_GETSCORES,
             user_id=2,
             checksum_md5=_CHECKSUM,
+        )
+    ]
+
+
+async def test_getscores_checksum_fallback_uses_remaining_metadata_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Beatmapset miss後のchecksum fallbackが残りwait budgetだけを使う契約を検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): getscores moduleのmonotonic clockを固定するfixture.
+
+    Returns:
+        None: checksum fallbackのwait秒数が経過時間ぶん減ることを確認して完了する.
+    """
+    timestamps = iter((10.0, 10.5))
+
+    def monotonic() -> float:
+        """残りwait計算へ固定された単調時刻を返す.
+
+        Returns:
+            float: 呼び出し順に進むsynthetic monotonic timestamp.
+        """
+        return next(timestamps, 10.5)
+
+    monkeypatch.setattr(
+        "osu_server.transports.stable.web_legacy.getscores.monotonic",
+        monotonic,
+    )
+    repository = _ScoreListingRepository()
+    resolver = _UnavailableBeatmapResolver()
+    warmup = _RecordingWarmupUseCase(BeatmapFileWarmupOutcome.METADATA_PENDING)
+    handler = _make_handler(
+        repository=repository,
+        resolver=resolver,
+        warmup=warmup,
+        auth_result=LegacyWebAuthResult(user_id=2, username="PlayerOne"),
+        beatmap_metadata_wait_seconds=1.0,
+    )
+
+    response = await handler(_request(_query()))
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.body == b"-1|false"
+    assert resolver.calls == [
+        ("beatmapset_id", "955866", False, 1.0),
+        ("checksum", _CHECKSUM, False, 0.5),
+    ]
+
+
+async def test_getscores_uses_beatmapset_hint_after_checksum_metadata_miss_for_update() -> None:
+    """古いchecksumのgetscoresがbeatmapset hintでupdate responseになるcontractを検証する.
+
+    Bancho captureでは同じfilenameとbeatmapset IDに対する古いchecksum requestへ`1|false`を返す.
+    checksum lookupで現行beatmapが見つからない場合でも, requestのbeatmapset ID hintから
+    現行metadataを取得してfilename一致とchecksum差異を評価する.
+
+    Returns:
+        None: beatmapset ID resolve後に`1|false`とbeatmap ID warmupを返すことを検証する.
+    """
+    old_checksum = "38a968599f3dfedfb7717d7f2013294a"
+    repository = _ScoreListingRepository()
+    beatmap = _make_beatmap()
+    beatmapset = _make_beatmapset(beatmap=beatmap)
+    query = _query()
+    query["c"] = old_checksum
+    resolver = _ChecksumMissBeatmapsetHitResolver(
+        repository,
+        beatmap,
+        beatmapset,
+    )
+    warmup = _RecordingWarmupUseCase(BeatmapFileWarmupOutcome.REQUESTED)
+    handler = _make_handler(
+        repository=repository,
+        resolver=resolver,
+        warmup=warmup,
+        auth_result=LegacyWebAuthResult(user_id=2, username="PlayerOne"),
+    )
+
+    response = await handler(_request(query))
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.body == b"1|false"
+    assert resolver.calls == [
+        ("beatmapset_id", "955866", False, _default_metadata_wait_seconds()),
+    ]
+    assert warmup.requests == [
+        BeatmapFileWarmupRequest(
+            entrance=BeatmapFileWarmupEntrance.STABLE_GETSCORES,
+            user_id=2,
+            beatmap_id=75,
         )
     ]
 
@@ -702,7 +920,7 @@ async def test_getscores_default_wait_covers_menu_transition_metadata_fetch() ->
     assert response.status_code == HTTPStatus.OK
     assert bytes(response.body).split(b"\n")[0] == b"2|false|75|955866|0||"
     assert resolver.calls == [
-        ("checksum", _CHECKSUM, False, _default_metadata_wait_seconds()),
+        ("beatmapset_id", "955866", False, _default_metadata_wait_seconds()),
     ]
 
 

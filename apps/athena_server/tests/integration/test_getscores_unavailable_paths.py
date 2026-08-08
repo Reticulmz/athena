@@ -62,7 +62,7 @@ if TYPE_CHECKING:
     import httpx2
     from starlette.applications import Starlette
 
-    from osu_server.domain.beatmaps import BeatmapResolveOptions, BeatmapResolveResult
+    from osu_server.domain.beatmaps import BeatmapResolveOptions, BeatmapSetResolveResult
     from osu_server.services.commands.beatmaps import (
         BeatmapFileWarmupRequest,
         BeatmapFileWarmupResult,
@@ -220,6 +220,7 @@ def _build_beatmapset(
     title: str,
     beatmap: Beatmap,
     official_status: BeatmapRankStatus,
+    creator: str = "Author",
 ) -> BeatmapSet:
     """指定Beatmapを含むsynthetic BeatmapSetを構築する.
 
@@ -229,6 +230,7 @@ def _build_beatmapset(
         title (str): response display titleに使うtitle.
         beatmap (Beatmap): 作成するBeatmapSetに含めるBeatmap.
         official_status (BeatmapRankStatus): persistするofficial canonical status.
+        creator (str): filename復元とmetadata表示に使うmapper名.
 
     Returns:
         BeatmapSet: 1件のBeatmapを持つsynthetic BeatmapSet.
@@ -237,7 +239,7 @@ def _build_beatmapset(
         id=beatmapset_id,
         artist=artist,
         title=title,
-        creator="Author",
+        creator=creator,
         artist_unicode=None,
         title_unicode=None,
         official_status=official_status,
@@ -324,14 +326,19 @@ async def _seed_converted_mode_ranked_beatmap(app: Starlette) -> None:
     await seed_beatmapset(app, beatmapset)
 
 
-async def _seed_update_candidate_beatmap(app: Starlette) -> None:
-    """Same set filenameのchecksum mismatch用Beatmapとfile attachmentをseedする.
+async def _seed_update_candidate_beatmap(
+    app: Starlette,
+    *,
+    attach_file: bool = True,
+) -> None:
+    """Same set filenameのchecksum mismatch用Beatmapをseedする.
 
     Args:
         app (Starlette): dependency graphを持つtest application.
+        attach_file (bool): Trueならoriginal filename付きfile attachmentもseedする.
 
     Returns:
-        None: update availableを選択できるBeatmapSetとfile attachmentを永続化して完了する.
+        None: update availableを選択できるBeatmapSetを永続化して完了する.
     """
     beatmap = _build_beatmap(
         beatmap_id=75,
@@ -342,11 +349,14 @@ async def _seed_update_candidate_beatmap(app: Starlette) -> None:
     beatmapset = _build_beatmapset(
         beatmapset_id=1,
         artist="Camellia",
-        title="Exit This Earth's Atomosphere",
+        title="Exit",
         beatmap=beatmap,
         official_status=BeatmapRankStatus.RANKED,
+        creator="Realazy",
     )
     await seed_beatmapset(app, beatmapset)
+    if not attach_file:
+        return
     _ = await attach_beatmap_file(
         app,
         BeatmapFileAttachment(
@@ -639,6 +649,45 @@ class TestUpdateAvailableBody:
                 )
                 _assert_getscores_contract_response(response, case.expected_shape_id)
 
+    def test_update_available_uses_metadata_filename_before_file_attachment(self) -> None:
+        """File未取得のmetadata-only BeatmapSetでもupdate availableになることを検証する.
+
+        Returns:
+            None: metadata由来filenameでcanonical update fixtureを返すことを確認して完了する.
+        """
+        case = _GETSCORES_CASES["update-candidate"]
+        with _test_env():
+            app = create_app()
+            with TestClient(
+                app,
+                base_url="http://osu.athena.localhost",
+                raise_server_exceptions=False,
+            ) as client:
+
+                async def _setup() -> None:
+                    """Authorized Userとmetadata-only update candidateをseedする.
+
+                    Returns:
+                        None: file attachmentなしでupdate responseを取得できるdataを保存する.
+                    """
+                    _ = await _seed_user_with_session(app)
+                    await _seed_update_candidate_beatmap(app, attach_file=False)
+
+                asyncio.run(_setup())
+                response = client.get(
+                    "/web/osu-osz2-getscores.php",
+                    params=build_getscores_contract_query(
+                        case,
+                        _query(
+                            extra={
+                                "f": _UPDATE_FILENAME,
+                                "i": "1",
+                            },
+                        ),
+                    ),
+                )
+                _assert_getscores_contract_response(response, case.expected_shape_id)
+
 
 # ---------------------------------------------------------------------------
 # Post-selection failure invariance (Requirement 1.6)
@@ -667,14 +716,14 @@ class TestShortResponseFailureInvariance:
 
         async def _raise_metadata_preparation(
             _service: BeatmapMirrorService,
-            _checksum_md5: str,
+            _beatmapset_id: int,
             _options: BeatmapResolveOptions | None = None,
-        ) -> BeatmapResolveResult:
+        ) -> BeatmapSetResolveResult:
             """Metadata resolveを記録後にsynthetic failureへ置換する.
 
             Args:
                 _service (BeatmapMirrorService): monkeypatch対象のmirror service instance.
-                _checksum_md5 (str): resolve対象のbeatmap checksum.
+                _beatmapset_id (int): resolve対象のbeatmapset ID.
                 _options (BeatmapResolveOptions | None): resolve option. 未指定時はNone.
 
             Raises:
@@ -685,7 +734,7 @@ class TestShortResponseFailureInvariance:
 
         monkeypatch.setattr(
             BeatmapMirrorService,
-            "resolve_by_checksum",
+            "resolve_by_beatmapset_id",
             _raise_metadata_preparation,
         )
         case = _GETSCORES_CASES["update-candidate"]
