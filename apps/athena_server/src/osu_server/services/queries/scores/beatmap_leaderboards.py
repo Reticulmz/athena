@@ -489,11 +489,6 @@ class BeatmapLeaderboardQuery:
                 beatmapset=beatmapset,
             )
 
-        if beatmapset is None:
-            beatmapset = await self._repository.get_beatmapset(beatmap.beatmapset_id)
-        if beatmapset is None:
-            return _unavailable(BeatmapLeaderboardResolveReason.NOT_FOUND)
-
         if not _is_displayable_in_score_listing(beatmap):
             return _unavailable(BeatmapLeaderboardResolveReason.NOT_SUBMITTED)
 
@@ -512,7 +507,7 @@ class BeatmapLeaderboardQuery:
         self,
         beatmapset_id: int,
         filename: str,
-    ) -> tuple[Beatmap, BeatmapSet | None] | None:
+    ) -> tuple[Beatmap, BeatmapSet] | None:
         """Attachmentまたはmetadata由来のstable filenameでbeatmapとbeatmapsetを検索する.
 
         Args:
@@ -520,15 +515,18 @@ class BeatmapLeaderboardQuery:
             filename (str): stable clientが送ったbeatmap filename.
 
         Returns:
-            tuple[Beatmap, BeatmapSet | None] | None: filenameに一致するbeatmapと,
-                fallbackで読み取ったbeatmapset. 見つからない場合はNone.
+            tuple[Beatmap, BeatmapSet] | None: filenameに一致するbeatmapとbeatmapset.
+                見つからない場合はNone.
         """
         beatmap = await self._repository.find_by_filename_in_beatmapset(
             beatmapset_id,
             filename,
         )
         if beatmap is not None:
-            return beatmap, None
+            beatmapset = await self._repository.get_beatmapset(beatmap.beatmapset_id)
+            if beatmapset is None:
+                return None
+            return beatmap, beatmapset
 
         beatmapset = await self._repository.get_beatmapset(beatmapset_id)
         if beatmapset is None:

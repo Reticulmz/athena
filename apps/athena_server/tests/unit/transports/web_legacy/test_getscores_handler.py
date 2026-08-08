@@ -42,6 +42,7 @@ from tests.factories.config import make_app_config
 from tests.support.starlette_requests import make_starlette_request
 
 if TYPE_CHECKING:
+    import pytest
     from starlette.requests import Request
 
     from osu_server.domain.beatmaps import BeatmapFetchRecord, BeatmapFetchTarget
@@ -752,16 +753,66 @@ async def test_getscores_unavailable_uses_parsed_checksum_for_warmup() -> None:
 
     assert response.status_code == HTTPStatus.OK
     assert response.body == b"-1|false"
-    assert resolver.calls == [
-        ("beatmapset_id", "955866", False, _default_metadata_wait_seconds()),
-        ("checksum", _CHECKSUM, False, _default_metadata_wait_seconds()),
-    ]
+    assert resolver.calls[0] == (
+        "beatmapset_id",
+        "955866",
+        False,
+        _default_metadata_wait_seconds(),
+    )
+    assert resolver.calls[1][:3] == ("checksum", _CHECKSUM, False)
+    assert 0.0 <= resolver.calls[1][3] <= _default_metadata_wait_seconds()
     assert warmup.requests == [
         BeatmapFileWarmupRequest(
             entrance=BeatmapFileWarmupEntrance.STABLE_GETSCORES,
             user_id=2,
             checksum_md5=_CHECKSUM,
         )
+    ]
+
+
+async def test_getscores_checksum_fallback_uses_remaining_metadata_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Beatmapset miss後のchecksum fallbackが残りwait budgetだけを使う契約を検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): getscores moduleのmonotonic clockを固定するfixture.
+
+    Returns:
+        None: checksum fallbackのwait秒数が経過時間ぶん減ることを確認して完了する.
+    """
+    timestamps = iter((10.0, 10.5))
+
+    def monotonic() -> float:
+        """残りwait計算へ固定された単調時刻を返す.
+
+        Returns:
+            float: 呼び出し順に進むsynthetic monotonic timestamp.
+        """
+        return next(timestamps, 10.5)
+
+    monkeypatch.setattr(
+        "osu_server.transports.stable.web_legacy.getscores.monotonic",
+        monotonic,
+    )
+    repository = _ScoreListingRepository()
+    resolver = _UnavailableBeatmapResolver()
+    warmup = _RecordingWarmupUseCase(BeatmapFileWarmupOutcome.METADATA_PENDING)
+    handler = _make_handler(
+        repository=repository,
+        resolver=resolver,
+        warmup=warmup,
+        auth_result=LegacyWebAuthResult(user_id=2, username="PlayerOne"),
+        beatmap_metadata_wait_seconds=1.0,
+    )
+
+    response = await handler(_request(_query()))
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.body == b"-1|false"
+    assert resolver.calls == [
+        ("beatmapset_id", "955866", False, 1.0),
+        ("checksum", _CHECKSUM, False, 0.5),
     ]
 
 
