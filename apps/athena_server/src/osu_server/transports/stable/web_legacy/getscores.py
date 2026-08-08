@@ -237,7 +237,8 @@ class StableGetscoresExchange:
                     file_status=result.file_status.value,
                     reason=result.reason,
                 )
-                return
+                if result.beatmap is not None or request.beatmapset_id_hint is None:
+                    return
 
             if request.beatmapset_id_hint is not None:
                 result = await self._beatmap_resolver.resolve_by_beatmapset_id(
