@@ -198,7 +198,11 @@ def _dependency_conditions(process: dict[str, object]) -> dict[str, str]:
     Returns:
         dict[str, str]: Dependency process名とconditionの対応.
     """
-    dependencies = _require_mapping(process, "depends_on")
+    raw_dependencies = process.get("depends_on")
+    if raw_dependencies is None:
+        return {}
+    assert isinstance(raw_dependencies, dict), raw_dependencies
+    dependencies = cast("dict[str, object]", raw_dependencies)
     return {
         dependency_name: _require_string(
             cast("dict[str, object]", dependency_definition),
@@ -1278,7 +1282,6 @@ def _assert_core_graph_lifecycle(
         ),
         "app-start": _state_time(snapshot_states["app"], "process_start_time"),
         "worker-start": _state_time(snapshot_states["worker"], "process_start_time"),
-        "app-ready": _state_time(snapshot_states["app"], "process_ready_time"),
         "nginx-start": _state_time(snapshot_states["nginx"], "process_start_time"),
     }
     assert startup_times["postgres-ready"] <= startup_times["postgres-init-start"]
@@ -1288,7 +1291,6 @@ def _assert_core_graph_lifecycle(
         assert startup_times["valkey-ready"] <= startup_times[process_name]
         assert startup_times["postgres-init-completed"] <= startup_times[process_name]
         assert startup_times["postgres-migrate-completed"] <= startup_times[process_name]
-    assert startup_times["app-ready"] <= startup_times["nginx-start"]
     termination_indices, completed_indices, completed_states = _index_live_lifecycle_events(events)
     assert termination_indices.keys() >= RUNNING_CORE_PROCESS_NAMES
     assert max(termination_indices[name] for name in DEPENDENT_PROCESS_NAMES) < min(
@@ -1296,10 +1298,6 @@ def _assert_core_graph_lifecycle(
     )
     assert completed_indices.keys() >= RUNNING_CORE_PROCESS_NAMES
     assert completed_states.keys() >= RUNNING_CORE_PROCESS_NAMES
-    assert completed_indices["nginx"] < termination_indices["app"], (
-        completed_indices,
-        termination_indices,
-    )
     assert max(completed_indices[name] for name in ("app", "worker")) < min(
         termination_indices[name] for name in STATE_PROCESS_NAMES
     ), (completed_indices, termination_indices)
@@ -1317,7 +1315,7 @@ def _assert_core_graph_lifecycle(
         shutdown_signal = shutdown.get("signal")
         assert isinstance(shutdown_signal, int), (process_name, shutdown)
         allowed_exit_codes = {0, 128 + shutdown_signal}
-        if process_name == "worker":
+        if process_name in {"app", "worker"}:
             allowed_exit_codes.add(-1)
         assert completed_state.get("exit_code") in allowed_exit_codes, (
             process_name,
@@ -1449,7 +1447,7 @@ def _write_synthetic_worker_shutdown_log(runtime_root: Path, *, stopped: bool = 
 
 
 def _assert_ingress_process_contracts(processes: dict[str, object]) -> None:
-    """NginxとCloudflared processのreadiness、identity、shutdown contractを検証する.
+    """NginxとCloudflared processの独立起動、identity、shutdown contractを検証する.
 
     Args:
         processes (dict[str, object]): Root Process Composeのprocess mapping.
@@ -1462,18 +1460,8 @@ def _assert_ingress_process_contracts(processes: dict[str, object]) -> None:
     assert ".state/nginx/nginx.conf" in nginx_command
     assert "sudo" not in nginx_command
     assert "sysctl" not in nginx_command
-    assert _dependency_conditions(nginx) == {"app": "process_healthy"}
-    nginx_readiness = _require_mapping(nginx, "readiness_probe")
-    nginx_readiness_command = _require_string(
-        _require_mapping(nginx_readiness, "exec"),
-        "command",
-    )
-    assert "tools/monorepo_migration/nginx_tls_probe.py" in nginx_readiness_command
-    assert "probe" in nginx_readiness_command
-    assert "mkcert -CAROOT" in nginx_readiness_command
-    assert "ATHENA_NGINX_TLS_PORT" in nginx_readiness_command
-    assert ":-443" in nginx_readiness_command
-    assert "python -c" not in nginx_readiness_command
+    assert _dependency_conditions(nginx) == {}
+    assert "readiness_probe" not in nginx
     assert _require_mapping(nginx, "shutdown") == {
         "signal": 3,
         "timeout_seconds": 5,
@@ -1491,7 +1479,7 @@ def _assert_ingress_process_contracts(processes: dict[str, object]) -> None:
     assert cloudflared_command.index("--credentials-file") < cloudflared_command.index(
         '"$tunnel_id"'
     )
-    assert _dependency_conditions(cloudflared) == {"nginx": "process_healthy"}
+    assert _dependency_conditions(cloudflared) == {}
     assert _require_mapping(cloudflared, "shutdown") == {
         "signal": 15,
         "timeout_seconds": 35,
@@ -1543,7 +1531,7 @@ def test_process_graph_preserves_core_readiness_dependency_and_shutdown() -> Non
     """Core graphのreadiness、dependency、ordered shutdown contractを検証する.
 
     PostgreSQL、idempotent database init、Valkey、app、worker、Nginxの起動順を確認し、
-    optional cloudflaredがhealthyなNginxだけへ追加依存することを確認する.
+    ingress processがapp restartへ巻き込まれない独立processであることを確認する.
 
     Returns:
         None: Process lifecycle contractを検証して完了し、呼び出し側へ値を返さない.
@@ -1641,18 +1629,19 @@ def test_process_graph_preserves_core_readiness_dependency_and_shutdown() -> Non
     _assert_ingress_process_contracts(processes)
 
 
-def test_lifecycle_assertion_rejects_app_shutdown_before_nginx_completion(
+def test_lifecycle_assertion_allows_app_shutdown_before_nginx_completion(
     tmp_path: Path,
 ) -> None:
-    """Nginx完了前にappを停止するevent列をreverse dependency違反として拒否する.
+    """Nginx完了前にapp停止が始まるevent列を独立processの正常順序として受理する.
 
     Args:
         tmp_path (Path): Synthetic structured worker logを配置するtemporary root.
 
     Returns:
-        None: Invalid lifecycle event列がAssertionErrorになることを検証して完了する.
+        None: Ingressとappがstate serviceより先に停止し、appのunknown sentinelも
+            成功扱いになることを検証して完了する.
     """
-    invalid_order = (
+    lifecycle_order = (
         ("nginx", "Terminating"),
         ("app", "Terminating"),
         ("nginx", "Completed"),
@@ -1666,11 +1655,10 @@ def test_lifecycle_assertion_rejects_app_shutdown_before_nginx_completion(
     )
     _write_synthetic_worker_shutdown_log(tmp_path)
 
-    with pytest.raises(AssertionError):
-        _assert_core_graph_lifecycle(
-            _synthetic_core_graph_lifecycle_events(invalid_order),
-            tmp_path,
-        )
+    _assert_core_graph_lifecycle(
+        _synthetic_core_graph_lifecycle_events(lifecycle_order, exit_codes={"app": -1}),
+        tmp_path,
+    )
 
 
 def test_lifecycle_assertion_rejects_state_shutdown_before_runtime_completion(
@@ -1705,8 +1693,8 @@ def test_lifecycle_assertion_rejects_state_shutdown_before_runtime_completion(
         )
 
 
-def test_lifecycle_assertion_rejects_unknown_nonworker_exit_code(tmp_path: Path) -> None:
-    """Process Composeのunknown exit sentinelをworker以外では拒否する.
+def test_lifecycle_assertion_rejects_unknown_infra_exit_code(tmp_path: Path) -> None:
+    """Process Composeのunknown exit sentinelをinfra processでは拒否する.
 
     Args:
         tmp_path (Path): Synthetic structured worker logを配置するtemporary root.
@@ -1951,7 +1939,7 @@ def test_process_compose_installed_schema_accepts_root_graph() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert "7 configured processes" in result.stdout
+    assert "8 configured processes" in result.stdout
 
 
 def test_cloudflared_process_uses_validated_credential_tunnel_id(tmp_path: Path) -> None:

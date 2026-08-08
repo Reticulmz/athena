@@ -121,20 +121,6 @@ processes:
       -e "$ATHENA_WORKTREE_ROOT/.state/nginx/error.log"
       -c "$ATHENA_WORKTREE_ROOT/.state/nginx/nginx.conf"
       -g "daemon off;"
-    depends_on:
-      app:
-        condition: process_healthy
-    readiness_probe:
-      exec:
-        command: |
-          ca_root="$(mkcert -CAROOT)"
-          exec python \
-            "$ATHENA_WORKTREE_ROOT/tools/monorepo_migration/nginx_tls_probe.py" \
-            probe \
-            "$ca_root/rootCA.pem" \
-            --port "${ATHENA_NGINX_TLS_PORT:-443}"
-      initial_delay_seconds: 1
-      period_seconds: 2
     shutdown:
       signal: 3
       timeout_seconds: 5
@@ -154,9 +140,6 @@ processes:
         run \
         --credentials-file "$ATHENA_WORKTREE_ROOT/.state/cloudflared/credentials.json" \
         "$tunnel_id"
-    depends_on:
-      nginx:
-        condition: process_healthy
     shutdown:
       signal: 15
       timeout_seconds: 35
