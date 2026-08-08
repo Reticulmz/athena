@@ -222,24 +222,6 @@ class StableGetscoresExchange:
             resolverの例外は記録して抑制し, stable response選択を妨げない.
         """
         try:
-            if request.checksum_md5 is not None:
-                result = await self._beatmap_resolver.resolve_by_checksum(
-                    request.checksum_md5,
-                    BeatmapResolveOptions(
-                        wait_timeout_seconds=self._beatmap_metadata_wait_seconds,
-                    ),
-                )
-                logger.info(
-                    "getscores_metadata_resolved",
-                    user_id=user_id,
-                    beatmap_id=result.beatmap.id if result.beatmap is not None else None,
-                    metadata_status=result.metadata_status.value,
-                    file_status=result.file_status.value,
-                    reason=result.reason,
-                )
-                if result.beatmap is not None or request.beatmapset_id_hint is None:
-                    return
-
             if request.beatmapset_id_hint is not None:
                 result = await self._beatmap_resolver.resolve_by_beatmapset_id(
                     request.beatmapset_id_hint,
@@ -254,6 +236,30 @@ class StableGetscoresExchange:
                     metadata_status=result.metadata_status.value,
                     reason=result.reason,
                 )
+                if result.beatmapset is not None or request.checksum_md5 is None:
+                    return
+
+            if request.checksum_md5 is not None:
+                result = await self._beatmap_resolver.resolve_by_checksum(
+                    request.checksum_md5,
+                    BeatmapResolveOptions(
+                        wait_timeout_seconds=(
+                            0.0
+                            if request.beatmapset_id_hint is not None
+                            else self._beatmap_metadata_wait_seconds
+                        ),
+                    ),
+                )
+                logger.info(
+                    "getscores_metadata_resolved",
+                    user_id=user_id,
+                    beatmap_id=result.beatmap.id if result.beatmap is not None else None,
+                    metadata_status=result.metadata_status.value,
+                    file_status=result.file_status.value,
+                    reason=result.reason,
+                )
+                if result.beatmap is not None:
+                    return
         except Exception:
             logger.exception(
                 "getscores_metadata_resolve_failed",

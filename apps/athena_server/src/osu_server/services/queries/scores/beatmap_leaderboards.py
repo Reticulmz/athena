@@ -388,7 +388,7 @@ class BeatmapLeaderboardQuery:
         Returns:
             BeatmapLeaderboardResult: 一致した beatmap の結果, または未発見の利用不可結果.
         """
-        beatmap = await self._repository.find_by_filename_in_beatmapset(
+        beatmap = await self._find_by_filename_in_beatmapset(
             beatmapset_id,
             filename,
         )
@@ -467,7 +467,7 @@ class BeatmapLeaderboardQuery:
             BeatmapLeaderboardResult: checksum が異なる表示可能 beatmap なら update available.
                 checksum 一致時は通常の listing 結果, それ以外は利用不可結果.
         """
-        beatmap = await self._repository.find_by_filename_in_beatmapset(
+        beatmap = await self._find_by_filename_in_beatmapset(
             beatmapset_id,
             filename,
         )
@@ -498,6 +498,32 @@ class BeatmapLeaderboardQuery:
             rows=(),
             reason=BeatmapLeaderboardResolveReason.UPDATE_AVAILABLE,
         )
+
+    async def _find_by_filename_in_beatmapset(
+        self,
+        beatmapset_id: int,
+        filename: str,
+    ) -> Beatmap | None:
+        """Attachmentまたはmetadata由来のstable filenameでbeatmapを検索する.
+
+        Args:
+            beatmapset_id (int): 検索するbeatmapset ID.
+            filename (str): stable clientが送ったbeatmap filename.
+
+        Returns:
+            Beatmap | None: filenameに一致するbeatmap. 見つからない場合はNone.
+        """
+        beatmap = await self._repository.find_by_filename_in_beatmapset(
+            beatmapset_id,
+            filename,
+        )
+        if beatmap is not None:
+            return beatmap
+
+        beatmapset = await self._repository.get_beatmapset(beatmapset_id)
+        if beatmapset is None:
+            return None
+        return _beatmap_by_stable_filename(beatmapset, filename)
 
     async def _resolve_leaderboard_listing(
         self,
@@ -660,6 +686,37 @@ def _is_leaderboard_visible_beatmap(beatmap: Beatmap) -> bool:
         bool: effective status が leaderboard rows 対象なら True.
     """
     return beatmap.effective_status in _LEADERBOARD_VISIBLE_STATUSES
+
+
+def _beatmap_by_stable_filename(beatmapset: BeatmapSet, filename: str) -> Beatmap | None:
+    """Metadataから復元できるstable filenameに一致するbeatmapを返す.
+
+    Args:
+        beatmapset (BeatmapSet): metadata fetchで保存済みのbeatmapset.
+        filename (str): stable clientが送ったbeatmap filename.
+
+    Returns:
+        Beatmap | None: 一致するbeatmap. 見つからない場合はNone.
+    """
+    for beatmap in beatmapset.beatmaps:
+        if _stable_beatmap_filename(beatmapset, beatmap) == filename:
+            return beatmap
+    return None
+
+
+def _stable_beatmap_filename(beatmapset: BeatmapSet, beatmap: Beatmap) -> str:
+    """Stable clientの通常beatmap filenameをmetadataから復元する.
+
+    Args:
+        beatmapset (BeatmapSet): artist, title, creatorを持つbeatmapset.
+        beatmap (Beatmap): difficulty versionを持つbeatmap.
+
+    Returns:
+        str: `Artist - Title (Creator) [Version].osu`形式のfilename.
+    """
+    return (
+        f"{beatmapset.artist} - {beatmapset.title} ({beatmapset.creator}) [{beatmap.version}].osu"
+    )
 
 
 def _leaderboard_scope_from_request(
