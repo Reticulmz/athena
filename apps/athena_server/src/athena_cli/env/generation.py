@@ -18,6 +18,9 @@ if TYPE_CHECKING:
     from osu_server.config import EnvironmentName
 
 
+_STRING_LIST_ADAPTER = TypeAdapter(list[str])
+
+
 @dataclass(frozen=True, slots=True)
 class EnvGenerationInput:
     """environment file生成に必要な入力を表す.
@@ -143,17 +146,22 @@ def _validate_app_config(values: Mapping[str, str]) -> None:
 
 
 def _parse_list_value(value: str) -> list[str]:
-    """JSON arrayまたはcomma区切り環境変数値をlistへ変換する.
+    """JSON arrayまたはcomma区切り環境変数値を正規化済みlistへ変換する.
 
     Args:
         value (str): JSON arrayまたはcomma区切りの環境変数値.
 
     Returns:
         list[str]: 前後空白と空要素を除去した要素のlist.
+
+    Raises:
+        ValidationError: JSON arrayとして解釈する値が不正な場合.
     """
     if value.strip().startswith("["):
-        return TypeAdapter(list[str]).validate_json(value)
-    return [item.strip() for item in value.split(",") if item.strip()]
+        items = _STRING_LIST_ADAPTER.validate_json(value)
+    else:
+        items = value.split(",")
+    return [item.strip() for item in items if item.strip()]
 
 
 def _format_summary_line(env_var: str, value: str) -> str:

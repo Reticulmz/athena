@@ -50,7 +50,7 @@ def create_app(provider_overrides: Iterable[Provider] = ()) -> Starlette:
         DNSなしのlocal development向けpath fallbackを同時に登録する.
         `Host("c.$domain")`,`Host("c<digits>.$domain")`,`Host("ce.$domain")`には
         Bancho routeを,`Host("osu.$domain")`にはweb legacy routeを登録する. path fallbackとして
-        `GET /`,`GET /health`,`POST /web/users`も登録する.
+        `GET /`,`GET /health`,stable web legacy `/web/*` routeも登録する.
     """
     domain = load_routing_config().domain
 
@@ -105,6 +105,26 @@ def create_app(provider_overrides: Iterable[Provider] = ()) -> Starlette:
             "/web",
             routes=[
                 Route("/users", endpoint=registration_endpoint, methods=["POST"]),
+                Route(
+                    "/bancho_connect.php",
+                    endpoint=bancho_connect_endpoint,
+                    methods=["GET"],
+                ),
+                Route(
+                    "/osu-osz2-getscores.php",
+                    endpoint=getscores_endpoint,
+                    methods=["GET"],
+                ),
+                Route(
+                    "/osu-getreplay.php",
+                    endpoint=replay_download_endpoint,
+                    methods=["GET"],
+                ),
+                Route(
+                    "/osu-submit-modular-selector.php",
+                    endpoint=score_submit_endpoint,
+                    methods=["POST"],
+                ),
             ],
         ),
         # Future sub-app mount points

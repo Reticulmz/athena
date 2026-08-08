@@ -1,7 +1,7 @@
 # `just tunnel-setup` copies this template to `.state/cloudflared/config.yml`
 # in the current worktree and replaces the hostname placeholder. The execution
-# credential is the single source of truth for TunnelID, so this route-only
-# config does not duplicate identity.
+# credential at `.state/cloudflared/credentials.json` is the single source of
+# truth for TunnelID, so this route-only config does not duplicate identity.
 
 ingress:
   - hostname: "*.example.com"

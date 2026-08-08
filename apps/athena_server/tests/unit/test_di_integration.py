@@ -315,6 +315,35 @@ def test_create_app_registers_replay_download_primary_route_only() -> None:
     assert not any(path.startswith("/web/replays") for path in web_paths | root_paths)
 
 
+def test_create_app_serves_web_legacy_probe_without_host_match(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """前提: tunnelやproxyがrouting config外のHostでweb legacy pathへ到達する.
+
+    操作: Host routeに一致しないfallback pathでbancho_connectをGETする.
+    結果: fallback routeからhandlerへ到達し,空bodyのHTTP 200を返す.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): app startup用の必須environmentを隔離するfixture.
+        tmp_path (Path): in-memory provider用blob rootを置くtemporary directory.
+
+    Returns:
+        None: fallback `/web/bancho_connect.php` の到達契約を検証する.
+    """
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/athena")
+    monkeypatch.setenv("VALKEY_URL", "redis://localhost:6379/0")
+    created = create_app(
+        provider_overrides=(make_in_memory_runtime_provider_set(blob_root=tmp_path / "blobs"),)
+    )
+
+    with TestClient(created, raise_server_exceptions=False) as client:
+        response = client.get("/web/bancho_connect.php")
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.content == b""
+
+
 def test_create_app_reads_route_domain_from_environment_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

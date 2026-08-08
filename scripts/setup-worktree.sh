@@ -53,9 +53,11 @@ certificate_key_file="$state_root/certs/_wildcard.athena.localhost-key.pem"
 UV_PROJECT_ENVIRONMENT="$venv_root" uv sync --project "$repository_root" --locked --all-groups
 
 if [[ ! -f "$server_development_env_file" ]]; then
-  DATABASE_URL="postgresql://localhost:5432/athena" \
+  UV_PROJECT_ENVIRONMENT="$venv_root" \
+    DATABASE_URL="postgresql://localhost:5432/athena" \
     VALKEY_URL="redis://localhost:6379" \
     uv run --directory "$repository_root/apps/athena_server" \
+      --frozen \
       athena env init development --non-interactive
 fi
 
