@@ -56,7 +56,7 @@ logs/
 
 .playwright-mcp/
 .data/*
-apps/athena_server/.data
+apps/athena_server/.data/*
 
 # Temporary files
 tmp/*
