@@ -12,6 +12,7 @@ venv_root="$repository_root/.venv"
 nginx_template_file="$repository_root/infra/development/nginx/nginx.conf.template"
 nginx_config_file="$state_root/nginx/nginx.conf"
 state_validator_file="$repository_root/infra/development/validate_state.py"
+server_development_env_file="$repository_root/apps/athena_server/.env.development"
 
 if [[ "${ATHENA_WORKTREE_ROOT:-}" != "$repository_root" ]]; then
   echo "setup requires the Nix development shell; run 'nix develop --command just setup'" >&2
@@ -51,6 +52,13 @@ certificate_key_file="$state_root/certs/_wildcard.athena.localhost-key.pem"
 
 UV_PROJECT_ENVIRONMENT="$venv_root" uv sync --project "$repository_root" --locked --all-groups
 
+if [[ ! -f "$server_development_env_file" ]]; then
+  DATABASE_URL="postgresql://localhost:5432/athena" \
+    VALKEY_URL="redis://localhost:6379" \
+    uv run --directory "$repository_root/apps/athena_server" \
+      athena env init development --non-interactive
+fi
+
 pre_commit_config="$(cd "$repository_root" && nix build .#pre-commit-config --no-link --print-out-paths)"
 ln -sfn "$pre_commit_config" "$repository_root/.pre-commit-config.yaml"
 
@@ -62,7 +70,9 @@ git config --worktree core.hooksPath "$state_root/hooks"
 prek --config "$pre_commit_config" install --overwrite --git-dir "$state_root"
 prek --config "$pre_commit_config" install --overwrite --hook-type commit-msg --git-dir "$state_root"
 
-mkcert -install
+# Athena does not use Java tooling, so skip mkcert's Java truststore import.
+# A Nix JAVA_HOME points into the read-only store and cannot accept certificates.
+TRUST_STORES=system,nss mkcert -install
 
 # Nginx keeps the existing Stable/real-client 80/443 ingress contract.  Linux
 # requires an explicit host-level prerequisite before an unprivileged process

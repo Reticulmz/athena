@@ -30,13 +30,14 @@ CORE_PROCESS_NAMES = frozenset(
     {
         "postgres",
         "postgres-init",
+        "postgres-migrate",
         "valkey",
         "app",
         "worker",
         "nginx",
     }
 )
-RUNNING_CORE_PROCESS_NAMES = CORE_PROCESS_NAMES - {"postgres-init"}
+RUNNING_CORE_PROCESS_NAMES = CORE_PROCESS_NAMES - {"postgres-init", "postgres-migrate"}
 DEPENDENT_PROCESS_NAMES = frozenset({"app", "worker", "nginx"})
 STATE_PROCESS_NAMES = frozenset({"postgres", "valkey"})
 VALID_SYNTHETIC_SHUTDOWN_ORDER = (
@@ -728,6 +729,13 @@ def _wait_for_core_graph_readiness(
             and postgres_init_state.get("exit_code") != 0
         ):
             early_exit_states["postgres-init"] = postgres_init_state
+        postgres_migrate_state = states_by_name.get("postgres-migrate")
+        if (
+            postgres_migrate_state is not None
+            and postgres_migrate_state.get("process_end_time")
+            and postgres_migrate_state.get("exit_code") != 0
+        ):
+            early_exit_states["postgres-migrate"] = postgres_migrate_state
         assert not early_exit_states, (
             f"core Process Graph exited before readiness: {early_exit_states!r}\n"
             f"{_process_compose_log(log_path)}\n"
@@ -1253,6 +1261,8 @@ def _assert_core_graph_lifecycle(
         assert snapshot_states[process_name]["is_running"] is True
     assert snapshot_states["postgres-init"]["status"] == "Completed"
     assert snapshot_states["postgres-init"]["exit_code"] == 0
+    assert snapshot_states["postgres-migrate"]["status"] == "Completed"
+    assert snapshot_states["postgres-migrate"]["exit_code"] == 0
     startup_times = {
         "postgres-ready": _state_time(snapshot_states["postgres"], "process_ready_time"),
         "valkey-ready": _state_time(snapshot_states["valkey"], "process_ready_time"),
@@ -1260,16 +1270,24 @@ def _assert_core_graph_lifecycle(
         "postgres-init-completed": _state_time(
             snapshot_states["postgres-init"], "process_end_time"
         ),
+        "postgres-migrate-start": _state_time(
+            snapshot_states["postgres-migrate"], "process_start_time"
+        ),
+        "postgres-migrate-completed": _state_time(
+            snapshot_states["postgres-migrate"], "process_end_time"
+        ),
         "app-start": _state_time(snapshot_states["app"], "process_start_time"),
         "worker-start": _state_time(snapshot_states["worker"], "process_start_time"),
         "app-ready": _state_time(snapshot_states["app"], "process_ready_time"),
         "nginx-start": _state_time(snapshot_states["nginx"], "process_start_time"),
     }
     assert startup_times["postgres-ready"] <= startup_times["postgres-init-start"]
+    assert startup_times["postgres-init-completed"] <= startup_times["postgres-migrate-start"]
     for process_name in ("app-start", "worker-start"):
         assert startup_times["postgres-ready"] <= startup_times[process_name]
         assert startup_times["valkey-ready"] <= startup_times[process_name]
         assert startup_times["postgres-init-completed"] <= startup_times[process_name]
+        assert startup_times["postgres-migrate-completed"] <= startup_times[process_name]
     assert startup_times["app-ready"] <= startup_times["nginx-start"]
     termination_indices, completed_indices, completed_states = _index_live_lifecycle_events(events)
     assert termination_indices.keys() >= RUNNING_CORE_PROCESS_NAMES
@@ -1370,17 +1388,25 @@ def _synthetic_core_graph_lifecycle_events(
             "process_end_time": "2026-08-05T00:00:03+00:00",
         },
         {
+            "name": "postgres-migrate",
+            "status": "Completed",
+            "is_running": False,
+            "exit_code": 0,
+            "process_start_time": "2026-08-05T00:00:03+00:00",
+            "process_end_time": "2026-08-05T00:00:04+00:00",
+        },
+        {
             "name": "app",
             "status": "Running",
             "is_running": True,
-            "process_start_time": "2026-08-05T00:00:04+00:00",
+            "process_start_time": "2026-08-05T00:00:05+00:00",
             "process_ready_time": "2026-08-05T00:00:05+00:00",
         },
         {
             "name": "worker",
             "status": "Running",
             "is_running": True,
-            "process_start_time": "2026-08-05T00:00:04+00:00",
+            "process_start_time": "2026-08-05T00:00:05+00:00",
         },
         {
             "name": "nginx",
@@ -1528,6 +1554,7 @@ def test_process_graph_preserves_core_readiness_dependency_and_shutdown() -> Non
     assert set(processes) == {
         "postgres",
         "postgres-init",
+        "postgres-migrate",
         "valkey",
         "app",
         "worker",
@@ -1538,6 +1565,10 @@ def test_process_graph_preserves_core_readiness_dependency_and_shutdown() -> Non
     postgres = _require_mapping(processes, "postgres")
     postgres_readiness = _require_mapping(postgres, "readiness_probe")
     assert "pg_isready" in _require_string(
+        _require_mapping(postgres_readiness, "exec"),
+        "command",
+    )
+    assert "-d postgres" in _require_string(
         _require_mapping(postgres_readiness, "exec"),
         "command",
     )
@@ -1553,6 +1584,15 @@ def test_process_graph_preserves_core_readiness_dependency_and_shutdown() -> Non
     assert "createdb" in postgres_init_command
     assert "|| true" not in postgres_init_command
     assert _require_mapping(postgres_init, "availability") == {"restart": "no"}
+
+    postgres_migrate = _require_mapping(processes, "postgres-migrate")
+    assert _dependency_conditions(postgres_migrate) == {
+        "postgres": "process_healthy",
+        "postgres-init": "process_completed_successfully",
+    }
+    postgres_migrate_command = _require_string(postgres_migrate, "command")
+    assert "alembic upgrade head" in postgres_migrate_command
+    assert _require_mapping(postgres_migrate, "availability") == {"restart": "no"}
 
     valkey = _require_mapping(processes, "valkey")
     valkey_readiness = _require_mapping(valkey, "readiness_probe")
@@ -1571,6 +1611,7 @@ def test_process_graph_preserves_core_readiness_dependency_and_shutdown() -> Non
     expected_runtime_dependencies = {
         "postgres": "process_healthy",
         "postgres-init": "process_completed_successfully",
+        "postgres-migrate": "process_completed_successfully",
         "valkey": "process_healthy",
     }
     app = _require_mapping(processes, "app")

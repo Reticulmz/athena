@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from pydantic import TypeAdapter
+
 from athena_cli.env.schema import get_config_env_metadata
 from athena_cli.errors import CliUserError
 from athena_cli.presentation import mask_secret
@@ -141,14 +143,16 @@ def _validate_app_config(values: Mapping[str, str]) -> None:
 
 
 def _parse_list_value(value: str) -> list[str]:
-    """comma区切り環境変数値を空要素なしのlistへ変換する.
+    """JSON arrayまたはcomma区切り環境変数値をlistへ変換する.
 
     Args:
-        value (str): comma区切りの環境変数値.
+        value (str): JSON arrayまたはcomma区切りの環境変数値.
 
     Returns:
         list[str]: 前後空白と空要素を除去した要素のlist.
     """
+    if value.strip().startswith("["):
+        return TypeAdapter(list[str]).validate_json(value)
     return [item.strip() for item in value.split(",") if item.strip()]
 
 

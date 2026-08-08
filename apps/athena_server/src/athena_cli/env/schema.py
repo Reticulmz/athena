@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from types import NoneType
 from typing import TYPE_CHECKING, Annotated, cast, get_args, get_origin
@@ -101,7 +102,7 @@ def _stringify_default(field: FieldInfo) -> str:
         return str(default_value).lower()
     if isinstance(default_value, list):
         items = cast("Sequence[object]", default_value)
-        return ",".join(str(item) for item in items)
+        return json.dumps([str(item) for item in items])
     return str(default_value)
 
 

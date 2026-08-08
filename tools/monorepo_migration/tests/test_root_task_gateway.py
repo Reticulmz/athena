@@ -36,6 +36,8 @@ VALID_TUNNEL_CREDENTIALS: dict[str, object] = {
     "TunnelSecret": VALID_TUNNEL_SECRET,
     "TunnelID": VALID_TUNNEL_ID,
 }
+DEVELOPMENT_ENV_INIT_COMMAND = "athena env init development --non-interactive"
+DEVELOPMENT_CONFIG_CHECK_COMMAND = "athena config check --env development"
 
 type _GeneratedPathState = tuple[tuple[str, str, str], ...]
 type _GitConfigurationRecord = tuple[str, str, str, str]
@@ -155,10 +157,16 @@ def _copy_root_task_gateway(repository_root: Path) -> None:
     scripts_directory.mkdir(parents=True)
     nginx_directory = repository_root / "infra" / "development" / "nginx"
     nginx_directory.mkdir(parents=True)
+    cloudflared_directory = repository_root / "infra" / "development" / "cloudflared"
+    cloudflared_directory.mkdir(parents=True)
     development_infra_directory = repository_root / "infra" / "development"
     _ = shutil.copy2(JUSTFILE_PATH, repository_root / "justfile")
     _ = shutil.copy2(SETUP_SCRIPT_PATH, scripts_directory / "setup-worktree.sh")
     _ = shutil.copy2(NGINX_TEMPLATE_PATH, nginx_directory / "nginx.conf.template")
+    _ = shutil.copy2(
+        CLOUDFLARED_TEMPLATE_PATH,
+        cloudflared_directory / "config.yml.example",
+    )
     _ = shutil.copy2(STATE_VALIDATOR_PATH, development_infra_directory / "validate_state.py")
     tooling_directory = repository_root / "tools" / "monorepo_migration"
     tooling_directory.mkdir(parents=True)
@@ -278,10 +286,35 @@ def _fake_setup_environment(repository_root: Path) -> tuple[dict[str, str], Path
         #!/usr/bin/env bash
         set -euo pipefail
         printf 'uv:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
-        [[ "${1:-}" == "sync" ]]
-        mkdir -p "$UV_PROJECT_ENVIRONMENT/bin"
-        printf '#!/usr/bin/env bash\n' > "$UV_PROJECT_ENVIRONMENT/bin/python"
-        chmod +x "$UV_PROJECT_ENVIRONMENT/bin/python"
+        if [[ "${1:-}" == "sync" ]]; then
+          mkdir -p "$UV_PROJECT_ENVIRONMENT/bin"
+          printf '#!/usr/bin/env bash\n' > "$UV_PROJECT_ENVIRONMENT/bin/python"
+          chmod +x "$UV_PROJECT_ENVIRONMENT/bin/python"
+          exit 0
+        fi
+        expected_env_init="run --directory $PWD/apps/athena_server"
+        expected_env_init+=" athena env init development --non-interactive"
+        if [[ "$*" == "$expected_env_init" ]]; then
+          mkdir -p "$PWD/apps/athena_server"
+          {
+            printf 'DATABASE_URL=%s\n' "$DATABASE_URL"
+            printf 'VALKEY_URL=%s\n' "$VALKEY_URL"
+            printf 'ENVIRONMENT=development\n'
+          } > "$PWD/apps/athena_server/.env.development"
+          exit 0
+        fi
+        expected_config_check="run --directory $PWD/apps/athena_server"
+        expected_config_check+=" athena config check --env development"
+        if [[ "$*" == "$expected_config_check" ]]; then
+          if [[ -f "$PWD/apps/athena_server/.env.development" ]] \
+            && grep -q '^DATABASE_URL=' "$PWD/apps/athena_server/.env.development" \
+            && grep -q '^VALKEY_URL=' "$PWD/apps/athena_server/.env.development"; then
+            exit 0
+          fi
+          echo 'Invalid configuration: database_url, valkey_url' >&2
+          exit 2
+        fi
+        exit 2
         """,
     )
     _write_executable(
@@ -314,10 +347,13 @@ def _fake_setup_environment(repository_root: Path) -> tuple[dict[str, str], Path
         """
         #!/usr/bin/env bash
         set -euo pipefail
-        printf 'mkcert:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
         if [[ "${1:-}" == '-install' ]]; then
+          printf 'mkcert:%s|TRUST_STORES=%s\n' "$*" "${TRUST_STORES:-}" \
+            >> "$ATHENA_TEST_COMMAND_LOG"
+          [[ "${TRUST_STORES:-}" == 'system,nss' ]]
           exit 0
         fi
+        printf 'mkcert:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
         certificate_file=''
         certificate_key_file=''
         while (($#)); do
@@ -390,6 +426,7 @@ def _run_just(
     environment: dict[str, str],
     recipe: str,
     *arguments: str,
+    input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Fixture repositoryのpublic Just recipeを実行する.
 
@@ -398,6 +435,7 @@ def _run_just(
         environment (dict[str, str]): fake toolを含むsubprocess environment.
         recipe (str): 実行するpublic recipe名.
         *arguments (str): Recipeへ渡す追加argument.
+        input_text (str | None): 対話recipeへ標準入力として渡すsource.
 
     Returns:
         subprocess.CompletedProcess[str]: captured outputとexit statusを含む実行結果.
@@ -409,6 +447,7 @@ def _run_just(
         capture_output=True,
         text=True,
         env=environment,
+        input=input_text,
         timeout=30,
     )
 
@@ -426,7 +465,12 @@ def _snapshot_generated_worktree_state(
             configuration、source statusの観測結果.
     """
     entries: list[tuple[str, str, str]] = []
-    for relative_root in (Path(".venv"), Path(".state"), Path(".pre-commit-config.yaml")):
+    for relative_root in (
+        Path(".venv"),
+        Path(".state"),
+        Path(".pre-commit-config.yaml"),
+        Path("apps/athena_server/.env.development"),
+    ):
         state_root = repository_root / relative_root
         if not state_root.exists() and not state_root.is_symlink():
             entries.append((relative_root.as_posix(), "missing", ""))
@@ -539,6 +583,7 @@ def _assert_worktree_generated_paths_are_local(repository_root: Path) -> None:
         repository_root / ".state" / "cloudflared" / "login-home" / ".cloudflared" / "cert.pem",
         repository_root / ".state" / "hooks" / "pre-commit",
         repository_root / ".state" / "hooks" / "commit-msg",
+        repository_root / "apps" / "athena_server" / ".env.development",
     )
     assert all(path.exists() for path in expected_paths), expected_paths
     assert all(path.is_relative_to(repository_root) for path in expected_paths)
@@ -564,13 +609,7 @@ def _create_linked_worktree_fixture(
         None: `git worktree add`で独立branchのlinked worktreeを2つ作成して完了する.
     """
     _copy_root_task_gateway(primary_root)
-    cloudflared_directory = primary_root / "infra" / "development" / "cloudflared"
-    cloudflared_directory.mkdir(parents=True)
     _ = shutil.copy2(GITIGNORE_PATH, primary_root / ".gitignore")
-    _ = shutil.copy2(
-        CLOUDFLARED_TEMPLATE_PATH,
-        cloudflared_directory / "config.yml.example",
-    )
     _initialize_git_repository(primary_root)
     for key, value in (("user.name", "Athena Test"), ("user.email", "athena@example.test")):
         _ = subprocess.run(
@@ -740,6 +779,31 @@ def _replace_certificate_validity(
     )
 
 
+def _write_valid_server_development_env(repository_root: Path) -> Path:
+    """Development server config checkを通す最小env fileを書き込む.
+
+    Args:
+        repository_root (Path): Server workspaceを含むfixture repository root.
+
+    Returns:
+        Path: 作成した`.env.development`のpath.
+    """
+    server_env_path = repository_root / "apps" / "athena_server" / ".env.development"
+    server_env_path.parent.mkdir(parents=True, exist_ok=True)
+    server_env_source = textwrap.dedent(
+        """\
+        DATABASE_URL=postgresql://localhost:5432/athena
+        VALKEY_URL=redis://localhost:6379
+        ENVIRONMENT=development
+        """,
+    )
+    _ = server_env_path.write_text(
+        server_env_source,
+        encoding="utf-8",
+    )
+    return server_env_path
+
+
 def _create_complete_core_state(repository_root: Path) -> None:
     """Core development preflightを満たす有効なworktree-local stateを作る.
 
@@ -747,7 +811,8 @@ def _create_complete_core_state(repository_root: Path) -> None:
         repository_root (Path): `.venv`と`.state`を所有するfixture repository root.
 
     Returns:
-        None: Python、state directory、hook、tracked configと有効なcertificate pairを作成する.
+        None: Python、state directory、hook、tracked config、server envと有効なcertificate pairを
+            作成する.
     """
     for directory in (
         repository_root / ".state" / "postgres",
@@ -770,6 +835,7 @@ def _create_complete_core_state(repository_root: Path) -> None:
         NGINX_TEMPLATE_PATH.read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+    _ = _write_valid_server_development_env(repository_root)
     _ = (repository_root / "sysctl-state").write_text("80\n", encoding="utf-8")
 
 
@@ -848,6 +914,9 @@ def test_setup_reexecution_converges_and_reconfirms_local_trust(tmp_path: Path) 
     assert (state_root / "hooks" / "commit-msg").is_file()
     assert (state_root / "certs" / "_wildcard.athena.localhost.pem").is_file()
     assert (state_root / "certs" / "_wildcard.athena.localhost-key.pem").is_file()
+    server_env_path = repository_root / "apps" / "athena_server" / ".env.development"
+    assert server_env_path.is_file()
+    assert "DATABASE_URL=" in server_env_path.read_text(encoding="utf-8")
     assert nginx_config_path.read_text(encoding="utf-8") == expected_nginx_config
     assert (repository_root / ".pre-commit-config.yaml").resolve() == (
         repository_root / "generated-pre-commit.yaml"
@@ -864,7 +933,12 @@ def test_setup_reexecution_converges_and_reconfirms_local_trust(tmp_path: Path) 
 
     command_log = command_log_path.read_text(encoding="utf-8").splitlines()
     assert command_log.count(f"uv:sync --project {repository_root} --locked --all-groups") == 2
-    assert command_log.count("mkcert:-install") == 2
+    server_directory = repository_root / "apps" / "athena_server"
+    expected_env_init_command = (
+        f"uv:run --directory {server_directory} {DEVELOPMENT_ENV_INIT_COMMAND}"
+    )
+    assert command_log.count(expected_env_init_command) == 1
+    assert command_log.count("mkcert:-install|TRUST_STORES=system,nss") == 2
     assert sum(line.startswith("mkcert:-cert-file ") for line in command_log) == 1
     assert command_log.count("sudo:sysctl -w net.ipv4.ip_unprivileged_port_start=80") == 1
 
@@ -1182,9 +1256,60 @@ def test_dev_starts_core_profile_without_tunnel_configuration(tmp_path: Path) ->
 
     assert result.returncode == 0, result.stderr
     command_log = command_log_path.read_text(encoding="utf-8").splitlines()
+    expected_config_check = (
+        f"uv:run --directory {repository_root}/apps/athena_server "
+        f"{DEVELOPMENT_CONFIG_CHECK_COMMAND}"
+    )
     assert command_log == [
         "sysctl:-n net.ipv4.ip_unprivileged_port_start",
+        expected_config_check,
         "process-compose:up app worker nginx",
+    ]
+
+
+def test_dev_rejects_missing_server_environment_without_starting_processes(
+    tmp_path: Path,
+) -> None:
+    """devがserver env不足をapp traceback前に拒否するcontractを検証する.
+
+    Core stateから`.env.development`だけを削除して`dev`を実行し、Process Graphを開始せず
+    Athena CLI config checkの診断を返すことを確認する.
+
+    Args:
+        tmp_path (Path): Server env不足の隔離worktreeを配置するtemporary directory.
+
+    Returns:
+        None: Server config preflight failureとProcess Compose未起動を検証して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    _initialize_git_repository(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+    _create_complete_core_state(repository_root)
+    (repository_root / "apps" / "athena_server" / ".env.development").unlink()
+    binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
+    _write_executable(
+        binary_directory / "process-compose",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'process-compose:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        """,
+    )
+
+    result = _run_just(repository_root, environment, "dev")
+
+    assert result.returncode != 0
+    assert "Invalid configuration" in result.stderr
+    assert "database_url" in result.stderr
+    expected_config_check = (
+        f"uv:run --directory {repository_root}/apps/athena_server "
+        f"{DEVELOPMENT_CONFIG_CHECK_COMMAND}"
+    )
+    assert command_log_path.read_text(encoding="utf-8").splitlines() == [
+        "sysctl:-n net.ipv4.ip_unprivileged_port_start",
+        expected_config_check,
     ]
 
 
@@ -1856,9 +1981,14 @@ def test_dev_tunnel_reads_worktree_local_cloudflare_config(tmp_path: Path) -> No
 
     assert result.returncode == 0, result.stderr
     command_log = command_log_path.read_text(encoding="utf-8").splitlines()
+    expected_config_check = (
+        f"uv:run --directory {repository_root}/apps/athena_server "
+        f"{DEVELOPMENT_CONFIG_CHECK_COMMAND}"
+    )
     assert command_log == [
         "sysctl:-n net.ipv4.ip_unprivileged_port_start",
         f"cloudflared:tunnel --config {tunnel_config_path} ingress validate",
+        expected_config_check,
         "process-compose:up app worker nginx cloudflared",
     ]
 
@@ -1918,20 +2048,20 @@ def test_tunnel_setup_isolated_validation_propagates_cloudflared_failure(
     assert not (repository_root / ".state" / "postgres").exists()
 
 
-def test_tunnel_setup_initializes_account_state_and_guides_execution_credential(
+def test_tunnel_setup_initializes_account_state_and_creates_execution_credential(
     tmp_path: Path,
 ) -> None:
-    """tunnel-setupがaccount stateを初期化しfixed execution credentialを案内するcontractを検証する.
+    """tunnel-setupがaccount stateとexecution credentialを初期化するcontractを検証する.
 
-    Fake loginが`$HOME/.cloudflared/cert.pem`を生成した後、missing execution credentialにfixed
-    create commandを返すことを確認する. Credential配置後の再実行はloginを繰り返さずconfig、
-    account、credentialが利用可能な状態へ収束する.
+    Fake loginが`$HOME/.cloudflared/cert.pem`を生成した後、対話入力のtunnel nameで
+    worktree-local credentials fileを作成することを確認する. 再実行はloginとcreateを繰り返さず
+    config、account、credentialが利用可能な状態へ収束する.
 
     Args:
         tmp_path (Path): Tunnel-only stateとfake cloudflaredを置くtemporary directory.
 
     Returns:
-        None: Account login、credential guidance、再実行の収束を検証して完了する.
+        None: Account login、credential作成、再実行の収束を検証して完了する.
     """
     repository_root = tmp_path / "repository"
     repository_root.mkdir()
@@ -1940,15 +2070,16 @@ def test_tunnel_setup_initializes_account_state_and_guides_execution_credential(
     environment, command_log_path = _fake_setup_environment(repository_root)
     tunnel_state_path = repository_root / ".state" / "cloudflared"
     _ = tunnel_state_path.mkdir(parents=True)
-    tunnel_config_path = tunnel_state_path / "config.yml"
     tunnel_login_home = tunnel_state_path / "login-home"
     origin_certificate_path = tunnel_login_home / ".cloudflared" / "cert.pem"
-    _ = tunnel_config_path.write_text(
-        "ingress:\n  - service: http_status:404\n",
-        encoding="utf-8",
-    )
+    tunnel_config_path = tunnel_state_path / "config.yml"
+    credentials_path = tunnel_state_path / "credentials.json"
     environment["ATHENA_TEST_TUNNEL_LOGIN_HOME"] = str(tunnel_login_home)
     environment["ATHENA_TEST_ORIGIN_CERTIFICATE"] = str(origin_certificate_path)
+    environment["ATHENA_TEST_TUNNEL_CREDENTIAL_SOURCE"] = _serialize_tunnel_credentials(
+        VALID_TUNNEL_CREDENTIALS,
+    )
+    environment["ATHENA_TEST_TUNNEL_ID"] = VALID_TUNNEL_ID
     binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
     _write_executable(
         binary_directory / "cloudflared",
@@ -1966,27 +2097,185 @@ def test_tunnel_setup_initializes_account_state_and_guides_execution_credential(
         if [[ "$*" == "$expected_ingress" ]]; then
           exit 0
         fi
+        expected_create="tunnel --origincert $ATHENA_TEST_ORIGIN_CERTIFICATE create"
+        expected_create+=" --credentials-file $PWD/.state/cloudflared/credentials.json athena-dev"
+        if [[ "$*" == "$expected_create" ]]; then
+          printf '%s' "$ATHENA_TEST_TUNNEL_CREDENTIAL_SOURCE" \
+            > "$PWD/.state/cloudflared/credentials.json"
+          exit 0
+        fi
+        expected_info="tunnel --origincert $ATHENA_TEST_ORIGIN_CERTIFICATE info"
+        expected_info+=" $ATHENA_TEST_TUNNEL_ID"
+        if [[ "$*" == "$expected_info" ]]; then
+          exit 0
+        fi
         expected_validation="tunnel --origincert $ATHENA_TEST_ORIGIN_CERTIFICATE"
         expected_validation+=" --config $PWD/.state/cloudflared/config.yml list"
         [[ "$*" == "$expected_validation" && -f "$ATHENA_TEST_ORIGIN_CERTIFICATE" ]]
         """,
     )
 
-    first_result = _run_just(repository_root, environment, "tunnel-setup")
+    first_result = _run_just(
+        repository_root,
+        environment,
+        "tunnel-setup",
+        input_text="dev.example.test\nathena-dev\n",
+    )
+    second_result = _run_just(repository_root, environment, "tunnel-setup")
+
+    assert first_result.returncode == 0, first_result.stderr
+    assert second_result.returncode == 0, second_result.stderr
+    assert origin_certificate_path.is_file()
+    assert credentials_path.is_file()
+    assert 'hostname: "dev.example.test"' in tunnel_config_path.read_text(encoding="utf-8")
+    command_log = command_log_path.read_text(encoding="utf-8").splitlines()
+    expected_ingress_command = f"cloudflared:tunnel --config {tunnel_config_path} ingress validate"
+    expected_create_command = " ".join(
+        (
+            "cloudflared:tunnel",
+            "--origincert",
+            str(origin_certificate_path),
+            "create",
+            "--credentials-file",
+            str(credentials_path),
+            "athena-dev",
+        )
+    )
+    expected_validation_command = " ".join(
+        (
+            "cloudflared:tunnel",
+            "--origincert",
+            str(origin_certificate_path),
+            "--config",
+            str(tunnel_config_path),
+            "list",
+        )
+    )
+    expected_info_command = " ".join(
+        (
+            "cloudflared:tunnel",
+            "--origincert",
+            str(origin_certificate_path),
+            "info",
+            VALID_TUNNEL_ID,
+        )
+    )
+    assert command_log == [
+        "cloudflared:tunnel login",
+        expected_ingress_command,
+        expected_create_command,
+        expected_validation_command,
+        expected_ingress_command,
+        expected_info_command,
+        expected_validation_command,
+    ]
+    assert not (repository_root / ".venv").exists()
+    assert not (repository_root / ".state" / "postgres").exists()
+
+
+def test_tunnel_setup_replaces_stale_execution_credential(
+    tmp_path: Path,
+) -> None:
+    """tunnel-setupがCloudflare側にないcredentialを作り直すcontractを検証する.
+
+    Local credentialのschemaは正しいが`cloudflared tunnel info`が対象TunnelIDを見つけない場合、
+    既存fileを退避して対話入力のtunnel nameでworktree-local credentialを再作成することを確認する.
+
+    Args:
+        tmp_path (Path): Stale credentialを持つ隔離worktreeを配置するtemporary directory.
+
+    Returns:
+        None: Stale credentialの退避と再作成を検証して完了する.
+    """
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    _copy_root_task_gateway(repository_root)
+    _initialize_git_repository(repository_root)
+    environment, command_log_path = _fake_setup_environment(repository_root)
+    tunnel_state_path = repository_root / ".state" / "cloudflared"
+    _ = tunnel_state_path.mkdir(parents=True)
+    tunnel_config_path = tunnel_state_path / "config.yml"
+    _ = tunnel_config_path.write_text(
+        "ingress:\n  - service: http_status:404\n",
+        encoding="utf-8",
+    )
+    origin_certificate_path = tunnel_state_path / "login-home" / ".cloudflared" / "cert.pem"
+    _ = origin_certificate_path.parent.mkdir(parents=True)
+    _ = origin_certificate_path.write_text("fixture account credential\n", encoding="utf-8")
     credentials_path = tunnel_state_path / "credentials.json"
     _ = credentials_path.write_text(
         _serialize_tunnel_credentials(VALID_TUNNEL_CREDENTIALS),
         encoding="utf-8",
     )
-    second_result = _run_just(repository_root, environment, "tunnel-setup")
+    replacement_tunnel_id = "123e4567-e89b-12d3-a456-426614174001"
+    replacement_credentials = dict(VALID_TUNNEL_CREDENTIALS)
+    replacement_credentials["TunnelID"] = replacement_tunnel_id
+    environment["ATHENA_TEST_ORIGIN_CERTIFICATE"] = str(origin_certificate_path)
+    environment["ATHENA_TEST_REPLACEMENT_CREDENTIAL_SOURCE"] = _serialize_tunnel_credentials(
+        replacement_credentials,
+    )
+    binary_directory = Path(environment["PATH"].split(os.pathsep, maxsplit=1)[0])
+    _write_executable(
+        binary_directory / "cloudflared",
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf 'cloudflared:%s\n' "$*" >> "$ATHENA_TEST_COMMAND_LOG"
+        expected_ingress="tunnel --config $PWD/.state/cloudflared/config.yml ingress validate"
+        if [[ "$*" == "$expected_ingress" ]]; then
+          exit 0
+        fi
+        expected_info="tunnel --origincert $ATHENA_TEST_ORIGIN_CERTIFICATE info"
+        expected_info+=" 123e4567-e89b-12d3-a456-426614174000"
+        if [[ "$*" == "$expected_info" ]]; then
+          exit 1
+        fi
+        expected_create="tunnel --origincert $ATHENA_TEST_ORIGIN_CERTIFICATE create"
+        expected_create+=" --credentials-file $PWD/.state/cloudflared/credentials.json athena-dev"
+        if [[ "$*" == "$expected_create" ]]; then
+          printf '%s' "$ATHENA_TEST_REPLACEMENT_CREDENTIAL_SOURCE" \
+            > "$PWD/.state/cloudflared/credentials.json"
+          exit 0
+        fi
+        expected_validation="tunnel --origincert $ATHENA_TEST_ORIGIN_CERTIFICATE"
+        expected_validation+=" --config $PWD/.state/cloudflared/config.yml list"
+        [[ "$*" == "$expected_validation" ]]
+        """,
+    )
 
-    assert first_result.returncode != 0
-    assert str(credentials_path) in first_result.stderr
-    assert "create --credentials-file" in first_result.stderr
-    assert second_result.returncode == 0, second_result.stderr
-    assert origin_certificate_path.is_file()
+    result = _run_just(
+        repository_root,
+        environment,
+        "tunnel-setup",
+        input_text="athena-dev\n",
+    )
+
+    assert result.returncode == 0, result.stderr
+    stale_credentials_path = tunnel_state_path / f"credentials.json.stale.{VALID_TUNNEL_ID}"
+    assert stale_credentials_path.is_file()
+    assert replacement_tunnel_id in credentials_path.read_text(encoding="utf-8")
     command_log = command_log_path.read_text(encoding="utf-8").splitlines()
     expected_ingress_command = f"cloudflared:tunnel --config {tunnel_config_path} ingress validate"
+    expected_info_command = " ".join(
+        (
+            "cloudflared:tunnel",
+            "--origincert",
+            str(origin_certificate_path),
+            "info",
+            VALID_TUNNEL_ID,
+        )
+    )
+    expected_create_command = " ".join(
+        (
+            "cloudflared:tunnel",
+            "--origincert",
+            str(origin_certificate_path),
+            "create",
+            "--credentials-file",
+            str(credentials_path),
+            "athena-dev",
+        )
+    )
     expected_validation_command = " ".join(
         (
             "cloudflared:tunnel",
@@ -1998,13 +2287,11 @@ def test_tunnel_setup_initializes_account_state_and_guides_execution_credential(
         )
     )
     assert command_log == [
-        "cloudflared:tunnel login",
         expected_ingress_command,
-        expected_ingress_command,
+        expected_info_command,
+        expected_create_command,
         expected_validation_command,
     ]
-    assert not (repository_root / ".venv").exists()
-    assert not (repository_root / ".state" / "postgres").exists()
 
 
 def test_validation_recipes_use_root_owned_library_and_propagate_exit_status(

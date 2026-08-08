@@ -23,14 +23,35 @@ tunnel-setup:
     @mkdir -p "{{ tunnel_state }}" "{{ tunnel_login_home }}"
     # cloudflared login ignores --origincert as an output path and writes below $HOME.
     @if [[ ! -f "{{ tunnel_origin_certificate }}" ]]; then HOME="{{ tunnel_login_home }}" cloudflared tunnel login; fi
-    @if [[ ! -f "{{ tunnel_config }}" ]]; then echo ".state/cloudflared/config.yml is missing in this worktree; create it from infra/development/cloudflared/config.yml.example after Cloudflare login" >&2; exit 1; fi
+    @if [[ ! -f "{{ tunnel_config }}" ]]; then \
+      read -r -p "Tunnel hostname (e.g. *.example.com): " tunnel_hostname; \
+      if [[ -z "$tunnel_hostname" ]]; then echo "hostname is required" >&2; exit 1; fi; \
+      sed "s/\*\.example\.com/$tunnel_hostname/" "{{ repository_root }}/infra/development/cloudflared/config.yml.example" > "{{ tunnel_config }}"; \
+      echo "created {{ tunnel_config }}"; \
+    fi
     @cloudflared tunnel --config "{{ tunnel_config }}" ingress validate
-    @python "{{ state_validator }}" tunnel-credentials "{{ repository_root }}" || { echo "create the worktree-local execution credential with:" >&2; echo "cloudflared tunnel --origincert \"{{ tunnel_origin_certificate }}\" create --credentials-file \"{{ tunnel_credentials }}\" YOUR_TUNNEL_NAME" >&2; exit 1; }
+    @if ! python "{{ state_validator }}" tunnel-credentials "{{ repository_root }}" >/dev/null 2>&1; then \
+      read -r -p "Tunnel name: " tunnel_name; \
+      if [[ -z "$tunnel_name" ]]; then echo "tunnel name is required" >&2; exit 1; fi; \
+      cloudflared tunnel --origincert "{{ tunnel_origin_certificate }}" create --credentials-file "{{ tunnel_credentials }}" "$tunnel_name"; \
+    else \
+      tunnel_id="$(python "{{ state_validator }}" tunnel-id "{{ repository_root }}")"; \
+      if ! cloudflared tunnel --origincert "{{ tunnel_origin_certificate }}" info "$tunnel_id" >/dev/null 2>&1; then \
+        stale_credentials="{{ tunnel_credentials }}.stale.$tunnel_id"; \
+        if [[ -e "$stale_credentials" ]]; then stale_credentials="$stale_credentials.$(date +%s)"; fi; \
+        mv "{{ tunnel_credentials }}" "$stale_credentials"; \
+        echo "moved stale tunnel credentials to $stale_credentials" >&2; \
+        read -r -p "Tunnel name: " tunnel_name; \
+        if [[ -z "$tunnel_name" ]]; then echo "tunnel name is required" >&2; exit 1; fi; \
+        cloudflared tunnel --origincert "{{ tunnel_origin_certificate }}" create --credentials-file "{{ tunnel_credentials }}" "$tunnel_name"; \
+      fi; \
+    fi
+    @python "{{ state_validator }}" tunnel-credentials "{{ repository_root }}"
     @cloudflared tunnel --origincert "{{ tunnel_origin_certificate }}" --config "{{ tunnel_config }}" list
 
-_core-preflight: _setup-state _low-port-state
+_core-preflight: _setup-state _low-port-state _server-config-state
 
-_tunnel-preflight: _setup-state _low-port-state _tunnel-state
+_tunnel-preflight: _setup-state _low-port-state _tunnel-state _server-config-state
 
 _setup-state:
     @if [[ ! -x "{{ repository_root }}/.venv/bin/python" || ! -d "{{ state_root }}/postgres" || ! -d "{{ state_root }}/valkey" || ! -f "{{ state_root }}/nginx/nginx.conf" || ! -f "{{ state_root }}/certs/_wildcard.athena.localhost.pem" || ! -f "{{ state_root }}/certs/_wildcard.athena.localhost-key.pem" || ! -x "{{ state_root }}/hooks/pre-commit" || ! -x "{{ state_root }}/hooks/commit-msg" ]]; then echo "development setup is incomplete; run 'just setup' in this worktree" >&2; exit 1; fi
@@ -40,8 +61,11 @@ _setup-state:
 _low-port-state:
     @if [[ "$(uname -s)" == "Linux" ]]; then unprivileged_port_start="$(sysctl -n net.ipv4.ip_unprivileged_port_start)" || { echo "cannot read net.ipv4.ip_unprivileged_port_start; run 'just setup' in this worktree" >&2; exit 1; }; if ((unprivileged_port_start > 80)); then echo "development ingress requires net.ipv4.ip_unprivileged_port_start <= 80; run 'just setup' in this worktree" >&2; exit 1; fi; fi
 
+_server-config-state:
+    @uv run --directory "{{ server_root }}" athena config check --env development
+
 _tunnel-state:
-    @if [[ ! -f "{{ tunnel_config }}" ]]; then echo "tunnel setup is incomplete: .state/cloudflared/config.yml is missing in this worktree; copy infra/development/cloudflared/config.yml.example and run 'just tunnel-setup'" >&2; exit 1; fi
+    @if [[ ! -f "{{ tunnel_config }}" ]]; then echo "tunnel setup is incomplete: .state/cloudflared/config.yml is missing in this worktree; run 'just tunnel-setup' to generate it interactively" >&2; exit 1; fi
     @if [[ ! -f "{{ tunnel_origin_certificate }}" ]]; then echo "tunnel setup is incomplete: worktree-local origin certificate is missing; run 'just tunnel-setup'" >&2; exit 1; fi
     @python "{{ state_validator }}" tunnel-credentials "{{ repository_root }}" || { echo "tunnel setup is incomplete: .state/cloudflared/credentials.json must contain valid AccountTag, TunnelSecret, and TunnelID fields; run 'just tunnel-setup' in this worktree" >&2; exit 1; }
     @cloudflared tunnel --config "{{ tunnel_config }}" ingress validate
