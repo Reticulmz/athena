@@ -130,6 +130,13 @@ cause if failure remains.
 ## Spec Work
 
 - Check `.kiro/specs/` before feature work.
+- When spawning Kiro sub-agents, use higher-reasoning models for spec
+  creation, validation, review, verification, and debugging. Prefer
+  `gpt-5.6-sol` with `xhigh` or `max`; use `.codex/agents/kiro-reviewer.toml`
+  for task-local implementation review when available.
+- For implementation sub-agents, use `gpt-5.5` with `xhigh` by default. Use
+  `gpt-5.6-luna` with `xhigh`/`max` only when the user requests Luna, or use
+  Sol when task risk justifies it.
 - For multi-task Kiro specs, create `spec/<spec-name>` as the integration
   branch first. Branch parallel task worktrees from that spec branch, then
   integrate task branches back into it before opening the final PR to `main`.

@@ -227,6 +227,26 @@ def _tracked_worktreeinclude_entries() -> set[str]:
     }
 
 
+def _git_ignored_paths(paths: set[str]) -> set[str]:
+    """指定したpathのうちGit ignore対象として扱われるものを返す.
+
+    Args:
+        paths (set[str]): repository rootから見たignore確認対象path.
+
+    Returns:
+        set[str]: `git check-ignore`がignore対象として返したpath集合.
+    """
+    result = subprocess.run(
+        ["git", "-C", str(REPOSITORY_ROOT), "check-ignore", "--stdin"],
+        check=False,
+        capture_output=True,
+        input="\n".join(sorted(paths)) + "\n",
+        text=True,
+    )
+    assert result.returncode in {0, 1}, result.stderr
+    return set(result.stdout.splitlines())
+
+
 def _fingerprint_environment_entry_path(
     path: Path,
 ) -> tuple[tuple[str, str, int, int, int, int, str], ...]:
@@ -1510,21 +1530,28 @@ def test_development_templates_have_canonical_infra_ownership() -> None:
         assert not legacy_template_path.exists(), legacy_template_path
 
 
-def test_generated_ingress_state_is_ignored_and_not_copied_between_worktrees() -> None:
-    """Generated ingress stateとcredentialをGit追跡およびworktree copyから除外する.
+def test_worktreeinclude_entries_are_ignored_local_state_sources() -> None:
+    """Worktreeへ引き継ぐlocal stateがGit追跡外のcopy対象であることを検証する.
 
-    `.state`を包括的にignoreし、linked worktreeへcopyする対象をuser-authored server envだけに
-    限定してcertificate、actual proxy/tunnel config、credentialを共有しないことを確認する.
+    実osu!stable client検証とagent onboarding短縮に必要なlocal env、runtime state、
+    agent cache、blob dataをworktree copy対象にしつつ、Git追跡対象にはしないことを確認する.
 
     Returns:
-        None: Generated stateの隔離policyを検証して完了し、呼び出し側へ値を返さない.
+        None: Worktree include policyを検証して完了し、呼び出し側へ値を返さない.
     """
-    gitignore = (REPOSITORY_ROOT / ".gitignore").read_text(encoding="utf-8")
-    assert ".state/" in gitignore.splitlines()
-    assert _tracked_worktreeinclude_entries() == {
+    expected_entries = {
+        ".env.development",
+        ".env.test",
+        ".pre-commit-config.yaml",
+        ".state/",
+        ".serena/",
+        ".gitnexus/",
+        "apps/athena_server/.data/",
         "apps/athena_server/.env.development",
         "apps/athena_server/.env.test",
     }
+    assert _tracked_worktreeinclude_entries() == expected_entries
+    assert _git_ignored_paths(expected_entries) == expected_entries
 
 
 def test_process_graph_preserves_core_readiness_dependency_and_shutdown() -> None:

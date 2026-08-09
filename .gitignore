@@ -48,6 +48,7 @@ certs/
 # Local agent/tool runtime state (configuration directories are not ignored)
 .rtk/
 .serena/
+.gitnexus/
 .antigravitycli/
 
 # Application logs
