@@ -104,7 +104,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 4.1, 4.2_
   - _Boundary: DirectAccessAndParsing_
 
-- [ ] 4.2 Implement direct search query and metadata hydration
+- [x] 4.2 Implement direct search query and metadata hydration
   - Recognize `Newest`, `Top Rated`, and `Most Played` as special listing requests rather than literal text.
   - Search through the configured backend and hydrate final beatmapsets from Beatmap Mirror metadata.
   - Exclude incomplete, childless, inactive, deleted, or not submitted beatmapsets.

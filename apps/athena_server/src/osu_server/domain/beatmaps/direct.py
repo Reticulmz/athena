@@ -423,7 +423,7 @@ def build_beatmapset_search_document(
         modes=_document_modes(beatmapset.beatmaps),
         status=beatmapset.official_status,
         last_update_at=_last_update_at(beatmapset.beatmaps),
-        is_active=_is_active_direct_beatmapset(beatmapset),
+        is_active=is_direct_searchable_beatmapset(beatmapset),
         document_version=previous.document_version if previous is not None else 1,
         updated_at=previous.updated_at if previous is not None else now,
     )
@@ -436,8 +436,8 @@ def build_beatmapset_search_document(
     return document
 
 
-def _is_active_direct_beatmapset(beatmapset: BeatmapSet) -> bool:
-    """Beatmapsetがosu!direct検索対象としてactiveか判定する.
+def is_direct_searchable_beatmapset(beatmapset: BeatmapSet) -> bool:
+    """Beatmapsetがosu!direct検索結果として利用可能か判定する.
 
     Args:
         beatmapset (BeatmapSet): statusとchildを評価するbeatmapset.
@@ -571,4 +571,5 @@ __all__ = [
     "DirectSearchListing",
     "DirectSearchRequest",
     "build_beatmapset_search_document",
+    "is_direct_searchable_beatmapset",
 ]

@@ -17,6 +17,7 @@ from osu_server.domain.beatmaps.direct import (
     DirectSearchListing,
     DirectSearchRequest,
     build_beatmapset_search_document,
+    is_direct_searchable_beatmapset,
 )
 from osu_server.domain.beatmaps.eligibility import (
     BeatmapStatus,
@@ -107,5 +108,6 @@ __all__ = [
     "LocalBeatmapStatus",
     "OsuFileFetchResult",
     "build_beatmapset_search_document",
+    "is_direct_searchable_beatmapset",
     "map_external_status",
 ]
