@@ -34,10 +34,10 @@ jobs:
           OPENAI__KEY: ${{ env.PR_AGENT_OPENAI_KEY }}
           OPENAI__API_BASE: ${{ env.PR_AGENT_OPENAI_API_BASE }}
           config.model: "gpt-5.6-sol"
-          config.fallback_models: '["gpt-5.6-luna"]'
+          config.fallback_models: '["gpt-5.6-luna", "gpt-5.5"]'
           config.model_reasoning: "gpt-5.6-sol"
           config.model_weak: "gpt-5.6-luna"
-          config.reasoning_effort: "max"
+          config.reasoning_effort: "xhigh"
           config.max_model_tokens: "128000"
           config.repo_context_files: '["AGENTS.md", "apps/athena_server/AGENTS.md", "packages/athena_crypto/AGENTS.md", ".agents/skills/athena-python-style/SKILL.md", "docs/agent-python.md"]'
           config.repo_context_max_lines: "1000"
