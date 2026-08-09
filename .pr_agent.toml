@@ -1,6 +1,6 @@
 [config]
 model = "gpt-5.6-sol"
-fallback_models = ["gpt-5.6-luna", "gpt-5.5"]
+fallback_models = ["gpt-5.6-luna"]
 model_reasoning = "gpt-5.6-sol"
 model_weak = "gpt-5.6-luna"
 reasoning_effort = "max"
