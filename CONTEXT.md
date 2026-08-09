@@ -50,6 +50,14 @@ _Avoid_: Friend list, all users list, session store
 Stable client が Athena 経由で beatmap search や download を利用できる compatibility feature。Client 側の unlock には Bancho Client Permission の Supporter flag が必要だが、Server policy によりログイン成功ユーザーへ開放される機能であり、Supporter Entitlement の有無を意味しない。
 _Avoid_: Paid Supporter perk, billing entitlement, supporter-only access
 
+### osu!direct Search Catalog
+osu!direct Access の検索/一覧 response を生成するために Athena が保持する beatmapset と difficulty の metadata 集合。Beatmap file body、beatmapset archive、query response cache ではない。
+_Avoid_: Beatmap file cache, osz mirror, response cache
+
+### osu!direct Search Coverage
+osu!direct Search Catalog が外部 beatmap source のどの範囲をいつ取得済みとして扱えるかを表す運用上の鮮度状態。公式 catalog 全体の完全性や特定 query response の保存済み結果を意味しない。
+_Avoid_: Full catalog completeness, cached search response, API quota
+
 ### Server Policy
 Athena instance 全体に適用される operator-controlled behavior setting。User entitlement ではなく、self-host instance の運用方針を表す。
 _Avoid_: User preference, billing entitlement, role permission
