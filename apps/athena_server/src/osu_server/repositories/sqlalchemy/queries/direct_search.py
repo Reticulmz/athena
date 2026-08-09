@@ -145,8 +145,10 @@ def _search_statement(request: DirectSearchRequest) -> Executable:
         score,
     ).where(BeatmapSetSearchDocumentModel.is_active.is_(True))
 
-    if request.status is not None:
-        statement = statement.where(BeatmapSetSearchDocumentModel.status == request.status.value)
+    if request.statuses:
+        statement = statement.where(
+            BeatmapSetSearchDocumentModel.status.in_([status.value for status in request.statuses])
+        )
     if request.mode is not None:
         statement = statement.where(
             BeatmapSetSearchDocumentModel.modes.contains([request.mode.value])

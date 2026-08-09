@@ -39,6 +39,71 @@ class DirectSearchListing(StrEnum):
     MOST_PLAYED = "most_played"
 
 
+class DirectAccessPolicyMode(StrEnum):
+    """osu!direct access policyの設定値を表す.
+
+    Attributes:
+        AUTHENTICATED (DirectAccessPolicyMode): 認証済みstable userを許可する既定policy.
+        DISABLED (DirectAccessPolicyMode): osu!direct accessを全認証済みuserへ拒否するpolicy.
+        SUPPORTER_ENTITLEMENT (DirectAccessPolicyMode): supporter権利を要求する予約policy.
+    """
+
+    AUTHENTICATED = "authenticated"
+    DISABLED = "disabled"
+    SUPPORTER_ENTITLEMENT = "supporter_entitlement"
+
+
+class DirectAccessDecision(StrEnum):
+    """osu!direct access policyの判定結果を表す.
+
+    Attributes:
+        ALLOWED (DirectAccessDecision): osu!direct workを開始してよい状態.
+        AUTHENTICATION_REQUIRED (DirectAccessDecision): stable legacy認証が必要な状態.
+        DENIED (DirectAccessDecision): 認証済みだがpolicyにより拒否する状態.
+    """
+
+    ALLOWED = "allowed"
+    AUTHENTICATION_REQUIRED = "authentication_required"
+    DENIED = "denied"
+
+
+@dataclass(slots=True, frozen=True)
+class DirectAccessPolicy:
+    """osu!direct access可否をsearch rankingやcoverageから分離して判定する.
+
+    Attributes:
+        mode (DirectAccessPolicyMode): deploymentが選んだaccess policy.
+    """
+
+    mode: DirectAccessPolicyMode
+
+    def evaluate(
+        self,
+        *,
+        authenticated_user_id: int | None,
+        has_supporter_entitlement: bool = False,
+    ) -> DirectAccessDecision:
+        """認証状態とpolicy設定からosu!direct access decisionを返す.
+
+        Args:
+            authenticated_user_id (int | None): legacy認証で解決したuser ID.
+            has_supporter_entitlement (bool): supporter_entitlement policyを満たすか.
+
+        Returns:
+            DirectAccessDecision: handlerがwork開始前に適用するaccess decision.
+        """
+        if authenticated_user_id is None:
+            return DirectAccessDecision.AUTHENTICATION_REQUIRED
+        if self.mode is DirectAccessPolicyMode.DISABLED:
+            return DirectAccessDecision.DENIED
+        if (
+            self.mode is DirectAccessPolicyMode.SUPPORTER_ENTITLEMENT
+            and not has_supporter_entitlement
+        ):
+            return DirectAccessDecision.DENIED
+        return DirectAccessDecision.ALLOWED
+
+
 class DirectExternalIndexBackend(StrEnum):
     """osu!direct external index backendの閉集合を表す.
 
@@ -108,16 +173,18 @@ class DirectSearchRequest:
     """osu!direct検索backendへ渡す検索入力を表す.
 
     Attributes:
+        authenticated_user_id (int): stable legacy認証で解決したuser ID.
         query_text (str): stable clientが指定した検索文字列.
-        status (BeatmapRankStatus | None): direct status filter. 指定なしならNone.
+        statuses (tuple[BeatmapRankStatus, ...]): direct status filter. 空なら全status.
         mode (BeatmapMode | None): stable mode filter. 指定なしならNone.
         page (int): 0始まりのpage番号.
         page_size (int): 1 pageあたりの候補数.
         listing (DirectSearchListing): text検索かspecial listingかを示す種別.
     """
 
+    authenticated_user_id: int
     query_text: str
-    status: BeatmapRankStatus | None = None
+    statuses: tuple[BeatmapRankStatus, ...] = ()
     mode: BeatmapMode | None = None
     page: int = 0
     page_size: int = 100
@@ -130,8 +197,11 @@ class DirectSearchRequest:
             None: page入力が使用可能であることを示す.
 
         Raises:
-            ValueError: pageが負値,またはpage_sizeが正でない場合.
+            ValueError: user IDが正でない場合, pageが負値,またはpage_sizeが正でない場合.
         """
+        if self.authenticated_user_id <= 0:
+            msg = "authenticated_user_id must be positive"
+            raise ValueError(msg)
         if self.page < 0:
             msg = "page must not be negative"
             raise ValueError(msg)
@@ -486,6 +556,9 @@ def _document_content_changed(
 
 __all__ = [
     "BeatmapSetSearchDocument",
+    "DirectAccessDecision",
+    "DirectAccessPolicy",
+    "DirectAccessPolicyMode",
     "DirectCoverageKind",
     "DirectCoverageRecord",
     "DirectCoverageStatusScope",

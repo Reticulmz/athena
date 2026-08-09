@@ -95,7 +95,7 @@
   - _Boundary: DirectRangeCrawl_
 
 - [ ] 4. Stable search and point lookup use-cases
-- [ ] 4.1 Implement direct search access policy and request parsing
+- [x] 4.1 Implement direct search access policy and request parsing
   - Authenticate stable users before search or point lookup work begins.
   - Apply authenticated default, disabled, and reserved supporter-entitlement policy decisions.
   - Parse stable search parameters for text query, status, mode, and page.

@@ -172,8 +172,9 @@ async def test_text_search_returns_candidates_and_compiles_declared_filters() ->
 
     result = await backend.search(
         DirectSearchRequest(
+            authenticated_user_id=42,
             query_text="camellia exit",
-            status=BeatmapRankStatus.RANKED,
+            statuses=(BeatmapRankStatus.RANKED,),
             mode=BeatmapMode.OSU,
             page=2,
             page_size=2,
@@ -199,7 +200,7 @@ async def test_text_search_returns_candidates_and_compiles_declared_filters() ->
     ):
         assert f"beatmapset_search_documents.{field} ||| 'camellia exit'" in sql
     assert "@@@" not in sql
-    assert "beatmapset_search_documents.status = 'ranked'" in sql
+    assert "beatmapset_search_documents.status IN ('ranked')" in sql
     assert "beatmapset_search_documents.modes @> ARRAY['osu']" in sql
     assert "ORDER BY score DESC" in sql
     assert "last_update_at DESC NULLS LAST" in sql
@@ -232,6 +233,7 @@ async def test_special_listing_uses_fallback_order_without_text_predicate(
 
     result = await backend.search(
         DirectSearchRequest(
+            authenticated_user_id=42,
             query_text=listing.value,
             page=0,
             page_size=100,
