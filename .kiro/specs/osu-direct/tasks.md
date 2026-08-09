@@ -85,7 +85,7 @@
   - _Requirements: 2.2, 2.4, 2.6, 3.1, 3.2, 3.4, 3.6_
   - _Boundary: DirectFeedSync_
 
-- [ ] 3.3 (P) Implement explicit beatmapset id range crawl coverage
+- [x] 3.3 (P) Implement explicit beatmapset id range crawl coverage
   - Process configured id chunks under the shared budget.
   - Record completed id range chunks with status scope, from id, to id, and completion time.
   - Record failed chunks without marking the range covered.

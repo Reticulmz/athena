@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 
 _UPSTREAM_BUDGET_WINDOW_SECONDS = 60
+_ID_RANGE_SORT_KEY = "id-range"
 
 _logger = cast(
     "structlog.stdlib.BoundLogger",
@@ -132,6 +133,68 @@ class DirectFeedWindowFetcher(Protocol):
 
         Returns:
             DirectFeedWindowFetchResult: 観測したmetadata snapshotと次cursor.
+        """
+        ...
+
+
+@dataclass(slots=True, frozen=True)
+class DirectRangeCrawlChunk:
+    """Explicit beatmapset id range crawl対象のchunkを表す.
+
+    Attributes:
+        source (BeatmapMetadataSource): id range metadataの取得source.
+        status_scope (DirectCoverageStatusScope): crawl対象のstatus scope.
+        from_beatmapset_id (int): crawl chunk開始beatmapset ID.
+        to_beatmapset_id (int): crawl chunk終了beatmapset ID.
+    """
+
+    source: BeatmapMetadataSource
+    status_scope: DirectCoverageStatusScope
+    from_beatmapset_id: int
+    to_beatmapset_id: int
+
+    def __post_init__(self) -> None:
+        """Crawl chunkの永続coverage用range制約を検証する.
+
+        Returns:
+            None: rangeがcoverage recordへ保存可能であることを示す.
+
+        Raises:
+            ValueError: rangeが負値または順序不正の場合.
+        """
+        if self.from_beatmapset_id < 0:
+            msg = "from_beatmapset_id must not be negative"
+            raise ValueError(msg)
+        if self.to_beatmapset_id < self.from_beatmapset_id:
+            msg = "to_beatmapset_id must be greater than or equal to from_beatmapset_id"
+            raise ValueError(msg)
+
+
+@dataclass(slots=True, frozen=True)
+class DirectRangeCrawlFetchResult:
+    """ID range crawl fetchのmetadata結果を表す.
+
+    Attributes:
+        beatmapsets (tuple[BeatmapsetSnapshot, ...]): chunkから取得したbeatmapset snapshot列.
+    """
+
+    beatmapsets: tuple[BeatmapsetSnapshot, ...]
+
+
+class DirectRangeCrawlFetcher(Protocol):
+    """ID range chunkからbeatmapset metadata snapshotを取得するportを定義する."""
+
+    async def fetch_id_range(
+        self,
+        chunk: DirectRangeCrawlChunk,
+    ) -> DirectRangeCrawlFetchResult:
+        """指定されたid range chunkのbeatmapset snapshot列を取得する.
+
+        Args:
+            chunk (DirectRangeCrawlChunk): 取得対象のid range chunk.
+
+        Returns:
+            DirectRangeCrawlFetchResult: chunkから取得したmetadata snapshot列.
         """
         ...
 
@@ -422,6 +485,105 @@ class DirectFeedSync:
             await uow.commit()
 
 
+class DirectRangeCrawl:
+    """ID range chunkを同期しmetadata保存後に強いcoverage stateを記録するuse-case.
+
+    Attributes:
+        _unit_of_work_factory (UnitOfWorkFactory): metadataとcoverageを保存するUoW factory.
+        _scheduler (DirectCatalogScheduler): upstream budgetと優先度を制御するscheduler.
+        _range_crawl_fetcher (DirectRangeCrawlFetcher): id range metadata取得port.
+    """
+
+    _unit_of_work_factory: UnitOfWorkFactory
+    _scheduler: DirectCatalogScheduler
+    _range_crawl_fetcher: DirectRangeCrawlFetcher
+
+    def __init__(
+        self,
+        *,
+        unit_of_work_factory: UnitOfWorkFactory,
+        scheduler: DirectCatalogScheduler,
+        range_crawl_fetcher: DirectRangeCrawlFetcher,
+    ) -> None:
+        """Range crawlに必要な保存境界, scheduler, fetcherを保持する.
+
+        Args:
+            unit_of_work_factory (UnitOfWorkFactory): metadataとcoverage用のUoW factory.
+            scheduler (DirectCatalogScheduler): shared upstream budget scheduler.
+            range_crawl_fetcher (DirectRangeCrawlFetcher): id range metadata fetcher.
+        """
+        self._unit_of_work_factory = unit_of_work_factory
+        self._scheduler = scheduler
+        self._range_crawl_fetcher = range_crawl_fetcher
+
+    async def execute(self, chunk: DirectRangeCrawlChunk) -> DirectCatalogScheduleResult:
+        """Shared budget下でid range chunkを同期し, coverage結果を保存する.
+
+        Args:
+            chunk (DirectRangeCrawlChunk): 同期するid range chunk.
+
+        Returns:
+            DirectCatalogScheduleResult: schedulerによる完了, delay, failure結果.
+
+        Notes:
+            成功coverageはmetadata保存と同じUoWで記録する. 失敗coverageはschedulerが返す
+            sanitize済みreasonだけを別UoWで記録し, covered扱いにしない.
+        """
+
+        async def work() -> None:
+            """Schedulerへ渡す実同期workを実行する.
+
+            Returns:
+                None: metadataと完了coverageを保存して値を返さずに完了する.
+            """
+            result = await self._range_crawl_fetcher.fetch_id_range(chunk)
+
+            async with self._unit_of_work_factory() as uow:
+                for snapshot in result.beatmapsets:
+                    await uow.beatmaps.save_beatmapset_snapshot(_snapshot_to_beatmapset(snapshot))
+                coverage = _id_range_coverage_record(
+                    chunk,
+                    completed_at=datetime.now(UTC),
+                    failed_at=None,
+                    failure_reason=None,
+                )
+                await uow.beatmaps.record_direct_coverage(coverage)
+                await uow.commit()
+
+        result = await self._scheduler.run(DirectCatalogWorkKind.ID_RANGE_CRAWL, work)
+        if result.outcome is DirectCatalogScheduleOutcome.FAILED:
+            await self._record_failed_coverage(
+                chunk,
+                failure_reason=result.failure_reason or "catalog work failed",
+            )
+        return result
+
+    async def _record_failed_coverage(
+        self,
+        chunk: DirectRangeCrawlChunk,
+        *,
+        failure_reason: str,
+    ) -> None:
+        """ID range chunk失敗状態をcovered扱いせずに保存する.
+
+        Args:
+            chunk (DirectRangeCrawlChunk): 失敗したid range chunk.
+            failure_reason (str): schedulerがsanitizeしたoperator向け失敗理由.
+
+        Returns:
+            None: 失敗coverage recordを保存して完了する.
+        """
+        coverage = _id_range_coverage_record(
+            chunk,
+            completed_at=None,
+            failed_at=datetime.now(UTC),
+            failure_reason=failure_reason,
+        )
+        async with self._unit_of_work_factory() as uow:
+            await uow.beatmaps.record_direct_coverage(coverage)
+            await uow.commit()
+
+
 def _is_catalog_work(work_kind: DirectCatalogWorkKind) -> bool:
     """Work種別がbackground catalog workか判定する.
 
@@ -503,6 +665,39 @@ def _feed_window_coverage_record(
     )
 
 
+def _id_range_coverage_record(
+    chunk: DirectRangeCrawlChunk,
+    *,
+    completed_at: datetime | None,
+    failed_at: datetime | None,
+    failure_reason: str | None,
+) -> DirectCoverageRecord:
+    """ID range chunk scopeと実行結果からcoverage recordを作る.
+
+    Args:
+        chunk (DirectRangeCrawlChunk): coverage scopeを定義するid range chunk.
+        completed_at (datetime | None): 成功完了時刻.
+        failed_at (datetime | None): 失敗時刻.
+        failure_reason (str | None): sanitized failure reason.
+
+    Returns:
+        DirectCoverageRecord: 保存するid range coverage state.
+    """
+    return DirectCoverageRecord(
+        coverage_kind=DirectCoverageKind.ID_RANGE,
+        source=chunk.source,
+        status_scope=chunk.status_scope,
+        sort_key=_ID_RANGE_SORT_KEY,
+        window_key=f"{chunk.from_beatmapset_id}-{chunk.to_beatmapset_id}",
+        from_beatmapset_id=chunk.from_beatmapset_id,
+        to_beatmapset_id=chunk.to_beatmapset_id,
+        cursor=None,
+        completed_at=completed_at,
+        failed_at=failed_at,
+        failure_reason=failure_reason,
+    )
+
+
 def _snapshot_to_beatmapset(snapshot: BeatmapsetSnapshot) -> BeatmapSet:
     """Provider snapshotを永続化用BeatmapSetへ変換する.
 
@@ -567,4 +762,8 @@ __all__ = [
     "DirectFeedWindow",
     "DirectFeedWindowFetchResult",
     "DirectFeedWindowFetcher",
+    "DirectRangeCrawl",
+    "DirectRangeCrawlChunk",
+    "DirectRangeCrawlFetchResult",
+    "DirectRangeCrawlFetcher",
 ]

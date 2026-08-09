@@ -25,6 +25,9 @@ from osu_server.services.commands.beatmaps.direct_catalog_sync import (
     DirectFeedSync,
     DirectFeedWindow,
     DirectFeedWindowFetchResult,
+    DirectRangeCrawl,
+    DirectRangeCrawlChunk,
+    DirectRangeCrawlFetchResult,
 )
 
 _NOW = datetime(2026, 6, 4, tzinfo=UTC)
@@ -128,6 +131,63 @@ class FailingFeedWindowFetcher:
             RuntimeError: schedulerとfailure coverageのsanitize契約を検証するため発生する.
         """
         _ = window
+        raise RuntimeError(self.secret_value)
+
+
+@dataclass(slots=True)
+class RecordingRangeCrawlFetcher:
+    """ID range crawlの結果と呼出対象を記録するtest double.
+
+    Attributes:
+        result (DirectRangeCrawlFetchResult): id range crawlから返すbeatmapset snapshots.
+        calls (list[DirectRangeCrawlChunk]): crawl対象として受け取ったchunk列.
+    """
+
+    result: DirectRangeCrawlFetchResult
+    calls: list[DirectRangeCrawlChunk]
+
+    async def fetch_id_range(
+        self,
+        chunk: DirectRangeCrawlChunk,
+    ) -> DirectRangeCrawlFetchResult:
+        """ID range crawl要求を記録し固定結果を返す.
+
+        Args:
+            chunk (DirectRangeCrawlChunk): crawl対象のid range chunk.
+
+        Returns:
+            DirectRangeCrawlFetchResult: testで設定したcrawl結果.
+        """
+        self.calls.append(chunk)
+        return self.result
+
+
+@dataclass(slots=True)
+class FailingRangeCrawlFetcher:
+    """ID range crawl取得の失敗を再現するtest double.
+
+    Attributes:
+        secret_value (str): raw upstream bodyを含むsentinel error message.
+    """
+
+    secret_value: str = "secret-token full upstream body"
+
+    async def fetch_id_range(
+        self,
+        chunk: DirectRangeCrawlChunk,
+    ) -> DirectRangeCrawlFetchResult:
+        """ID range crawl取得で常に例外を送出する.
+
+        Args:
+            chunk (DirectRangeCrawlChunk): crawl対象のid range chunk.
+
+        Returns:
+            DirectRangeCrawlFetchResult: 正常終了しないため返されない.
+
+        Raises:
+            RuntimeError: schedulerとfailure coverageのsanitize契約を検証するため発生する.
+        """
+        _ = chunk
         raise RuntimeError(self.secret_value)
 
 
@@ -317,6 +377,90 @@ async def test_feed_window_failure_records_failed_coverage_without_metadata() ->
     assert "upstream body" not in repr(coverage)
 
 
+async def test_range_crawl_saves_metadata_and_completed_id_range_coverage() -> None:
+    """ID range crawl成功時にmetadata保存後の強いcoverage完了recordを保存する契約を検証する.
+
+    Configured chunkのID範囲をcrawlし, metadata保存pathでsearch projectionが作られた後,
+    source, status scope, from/to ID, completion timeがID_RANGEとして記録されることを確認する.
+
+    Returns:
+        None: 保存済みmetadata, search projection, id range coverage recordを検証して完了する.
+    """
+    factory = InMemoryUnitOfWorkFactory(InMemoryCommandRepositoryState())
+    chunk = _make_range_chunk(from_beatmapset_id=2_000, to_beatmapset_id=2_010)
+    fetcher = RecordingRangeCrawlFetcher(
+        result=DirectRangeCrawlFetchResult(
+            beatmapsets=(
+                _make_feed_snapshot(beatmapset_id=2_000),
+                _make_feed_snapshot(beatmapset_id=2_010),
+            )
+        ),
+        calls=[],
+    )
+    crawl = DirectRangeCrawl(
+        unit_of_work_factory=factory,
+        scheduler=DirectCatalogScheduler(request_budget_per_minute=10),
+        range_crawl_fetcher=fetcher,
+    )
+
+    result = await crawl.execute(chunk)
+
+    snapshot = factory.snapshot()
+    assert result.outcome is DirectCatalogScheduleOutcome.COMPLETED
+    assert fetcher.calls == [chunk]
+    assert snapshot.beatmapsets_by_id[2_000].title == "Feed Title 2000"
+    assert snapshot.search_documents_by_beatmapset_id[2_000].is_active is True
+    assert snapshot.search_documents_by_beatmapset_id[2_010].is_active is True
+
+    coverage = snapshot.direct_coverage_records_by_scope[_range_coverage_key(chunk)]
+    assert coverage.coverage_kind is DirectCoverageKind.ID_RANGE
+    assert coverage.source is BeatmapMetadataSource.MIRROR
+    assert coverage.status_scope is DirectCoverageStatusScope.RANKED
+    assert coverage.sort_key == "id-range"
+    assert coverage.window_key == "2000-2010"
+    assert coverage.from_beatmapset_id == 2_000
+    assert coverage.to_beatmapset_id == 2_010
+    assert coverage.cursor is None
+    assert coverage.completed_at is not None
+    assert coverage.failed_at is None
+    assert coverage.failure_reason is None
+
+
+async def test_range_crawl_failure_records_failed_chunk_without_metadata() -> None:
+    """ID range crawl失敗時にcovered扱いせずretry可能な失敗recordだけを保存する契約を検証する.
+
+    Raw upstream bodyを含む例外を送出し, metadata/search projectionを作らず,失敗時刻とsanitize済み
+    reasonだけをID_RANGE coverage stateへ残すことを確認する.
+
+    Returns:
+        None: failure result, id range failure state, metadata未保存を検証して完了する.
+    """
+    factory = InMemoryUnitOfWorkFactory(InMemoryCommandRepositoryState())
+    chunk = _make_range_chunk(from_beatmapset_id=2_020, to_beatmapset_id=2_030)
+    crawl = DirectRangeCrawl(
+        unit_of_work_factory=factory,
+        scheduler=DirectCatalogScheduler(request_budget_per_minute=10),
+        range_crawl_fetcher=FailingRangeCrawlFetcher(),
+    )
+
+    result = await crawl.execute(chunk)
+
+    snapshot = factory.snapshot()
+    coverage = snapshot.direct_coverage_records_by_scope[_range_coverage_key(chunk)]
+    assert result.outcome is DirectCatalogScheduleOutcome.FAILED
+    assert result.retry_eligible is True
+    assert coverage.coverage_kind is DirectCoverageKind.ID_RANGE
+    assert coverage.completed_at is None
+    assert coverage.failed_at is not None
+    assert coverage.failure_reason == result.failure_reason
+    assert snapshot.beatmapsets_by_id == {}
+    assert snapshot.search_documents_by_beatmapset_id == {}
+    assert "secret-token" not in repr(result)
+    assert "upstream body" not in repr(result)
+    assert "secret-token" not in repr(coverage)
+    assert "upstream body" not in repr(coverage)
+
+
 def _make_feed_window(*, window_key: str) -> DirectFeedWindow:
     """Feed sync test用のranked newest windowを作成する.
 
@@ -331,6 +475,24 @@ def _make_feed_window(*, window_key: str) -> DirectFeedWindow:
         status_scope=DirectCoverageStatusScope.RANKED,
         sort_key="newest",
         window_key=window_key,
+    )
+
+
+def _make_range_chunk(*, from_beatmapset_id: int, to_beatmapset_id: int) -> DirectRangeCrawlChunk:
+    """ID range crawl test用のranked chunkを作成する.
+
+    Args:
+        from_beatmapset_id (int): crawl chunk開始ID.
+        to_beatmapset_id (int): crawl chunk終了ID.
+
+    Returns:
+        DirectRangeCrawlChunk: mirror ranked id range chunk.
+    """
+    return DirectRangeCrawlChunk(
+        source=BeatmapMetadataSource.MIRROR,
+        status_scope=DirectCoverageStatusScope.RANKED,
+        from_beatmapset_id=from_beatmapset_id,
+        to_beatmapset_id=to_beatmapset_id,
     )
 
 
@@ -397,4 +559,24 @@ def _coverage_key(
         window.window_key,
         from_beatmapset_id,
         to_beatmapset_id,
+    )
+
+
+def _range_coverage_key(chunk: DirectRangeCrawlChunk) -> tuple[str, str, str, str, str, int, int]:
+    """In-memory coverage stateのid range scope keyを作成する.
+
+    Args:
+        chunk (DirectRangeCrawlChunk): coverage scopeを決めるid range chunk.
+
+    Returns:
+        tuple[str, str, str, str, str, int, int]: repository stateで使うscope key.
+    """
+    return (
+        DirectCoverageKind.ID_RANGE.value,
+        chunk.source.value,
+        chunk.status_scope.value,
+        "id-range",
+        f"{chunk.from_beatmapset_id}-{chunk.to_beatmapset_id}",
+        chunk.from_beatmapset_id,
+        chunk.to_beatmapset_id,
     )
