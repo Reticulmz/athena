@@ -18,7 +18,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 7.1, 7.2, 7.3, 7.4, 8.4, 9.3, 9.5_
   - _Boundary: Persistence_
 
-- [ ] 1.3 Define the shared direct search field declaration
+- [x] 1.3 Define the shared direct search field declaration
   - Define one code-owned declaration for searchable, filterable, sortable, and displayed fields.
   - Include artist, title, creator, source, tags, difficulty names, unicode artist, and unicode title as searchable fields.
   - Include status, mode, and beatmapset id as filterable fields.
