@@ -39,6 +39,8 @@ jobs:
           config.model_weak: "gpt-5.6-luna"
           config.reasoning_effort: "max"
           config.max_model_tokens: "128000"
+          config.repo_context_files: '["AGENTS.md", "apps/athena_server/AGENTS.md", "packages/athena_crypto/AGENTS.md", ".agents/skills/athena-python-style/SKILL.md", "docs/agent-python.md"]'
+          config.repo_context_max_lines: "1000"
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "true"
           github_action_config.auto_improve: "false"

@@ -6,7 +6,14 @@ model_weak = "gpt-5.6-luna"
 reasoning_effort = "max"
 max_model_tokens = 128000
 response_language = "ja-JP"
-repo_context_files = ["AGENTS.md"]
+repo_context_files = [
+    "AGENTS.md",
+    "apps/athena_server/AGENTS.md",
+    "packages/athena_crypto/AGENTS.md",
+    ".agents/skills/athena-python-style/SKILL.md",
+    "docs/agent-python.md",
+]
+repo_context_max_lines = 1000
 restricted_mode = true
 output_run_details = true
 
