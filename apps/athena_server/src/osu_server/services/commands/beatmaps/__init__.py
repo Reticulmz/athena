@@ -4,6 +4,13 @@
 再 export する. 永続化実装や provider の具体型はこの namespace から公開しない.
 """
 
+from osu_server.services.commands.beatmaps.direct_catalog_sync import (
+    DirectCatalogScheduleOutcome,
+    DirectCatalogScheduler,
+    DirectCatalogScheduleResult,
+    DirectCatalogWork,
+    DirectCatalogWorkKind,
+)
 from osu_server.services.commands.beatmaps.fetch import (
     BeatmapBlobStorage,
     FetchBeatmapFileUseCase,
@@ -25,6 +32,11 @@ __all__ = [
     "BeatmapFileWarmupRequest",
     "BeatmapFileWarmupResolver",
     "BeatmapFileWarmupResult",
+    "DirectCatalogScheduleOutcome",
+    "DirectCatalogScheduleResult",
+    "DirectCatalogScheduler",
+    "DirectCatalogWork",
+    "DirectCatalogWorkKind",
     "FetchBeatmapFileUseCase",
     "FetchBeatmapMetadataUseCase",
     "RequestBeatmapFileWarmupUseCase",

@@ -67,7 +67,7 @@
   - _Boundary: DirectIndexingCommands_
 
 - [ ] 3. Catalog synchronization and upstream priority
-- [ ] 3.1 Implement shared upstream budget and priority scheduling
+- [x] 3.1 Implement shared upstream budget and priority scheduling
   - Apply one request budget across point lookup, feed sync, and id range crawl work.
   - Give point lookup higher priority than background catalog crawl.
   - Delay low-priority catalog work when the budget is exhausted instead of blocking stable request handling.
