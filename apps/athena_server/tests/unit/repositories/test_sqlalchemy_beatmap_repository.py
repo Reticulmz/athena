@@ -28,6 +28,9 @@ from osu_server.domain.beatmaps import (
     BeatmapRankStatus,
     BeatmapSet,
     BeatmapSourceVerification,
+    DirectExternalIndexBackend,
+    DirectExternalIndexState,
+    DirectExternalIndexStatus,
     LocalBeatmapStatus,
 )
 from osu_server.repositories.interfaces.commands.beatmaps import BeatmapCommandRepository
@@ -37,6 +40,7 @@ from osu_server.repositories.sqlalchemy.commands.beatmaps import (
     SQLAlchemyBeatmapCommandRepository,
 )
 from osu_server.repositories.sqlalchemy.models.beatmap import (
+    BeatmapDirectExternalIndexStateModel,
     BeatmapFetchStateModel,
     BeatmapFileAttachmentModel,
     BeatmapModel,
@@ -420,6 +424,39 @@ def _fetch_state_model(status: str = "pending_fetch") -> BeatmapFetchStateModel:
     )
 
 
+def _search_document_model(
+    *,
+    beatmapset_id: int = 1_000,
+    document_version: int = 1,
+) -> BeatmapSetSearchDocumentModel:
+    """保存済みosu!direct検索projection model fixtureを作成する.
+
+    Args:
+        beatmapset_id (int): projection対象のbeatmapset ID.
+        document_version (int): 保存済みprojection version.
+
+    Returns:
+        BeatmapSetSearchDocumentModel: SQLAlchemy repositoryの読込変換に使うmodel.
+    """
+    return BeatmapSetSearchDocumentModel(
+        beatmapset_id=beatmapset_id,
+        artist="Camellia",
+        title="Exit This Earth's Atomosphere",
+        creator="Realazy",
+        artist_unicode=None,
+        title_unicode=None,
+        source="",
+        tags="",
+        difficulty_names="Another",
+        modes=["osu"],
+        status="ranked",
+        last_update_at=_NOW,
+        is_active=True,
+        document_version=document_version,
+        updated_at=_NOW,
+    )
+
+
 def _merged_search_document(session: FakeSession) -> BeatmapSetSearchDocumentModel:
     """Session fakeがmergeしたosu!direct検索documentを1件返す.
 
@@ -437,6 +474,27 @@ def _merged_search_document(session: FakeSession) -> BeatmapSetSearchDocumentMod
     ]
     assert len(documents) == 1
     return documents[0]
+
+
+def _merged_index_state(session: FakeSession) -> BeatmapDirectExternalIndexStateModel:
+    """Session fakeがmergeしたexternal index stateを1件返す.
+
+    Args:
+        session (FakeSession): index state保存に使ったSQLAlchemy session fake.
+
+    Returns:
+        BeatmapDirectExternalIndexStateModel: 保存pathがmergeしたindex state model.
+
+    Raises:
+        AssertionError: index state modelが1件だけmergeされていない場合.
+    """
+    states = [
+        model
+        for model in session.merged
+        if isinstance(model, BeatmapDirectExternalIndexStateModel)
+    ]
+    assert len(states) == 1
+    return states[0]
 
 
 def _beatmap_domain(
@@ -768,6 +826,140 @@ async def test_save_snapshot_fails_when_direct_search_projection_update_fails() 
         await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
 
     assert session.flushes == 0
+
+
+async def test_get_search_document_returns_direct_projection_domain() -> None:
+    """保存済み検索projectionをdomain値として取得できることを検証する.
+
+    Returns:
+        None: projection fieldとversionをassertして完了する.
+
+    Raises:
+        AssertionError: projection modelがdomain値へ復元されない場合.
+    """
+    session = FakeSession(
+        get_results={(BeatmapSetSearchDocumentModel, 1_000): _search_document_model()}
+    )
+
+    document = await _repo(session).get_search_document(1_000)
+
+    assert document is not None
+    assert document.beatmapset_id == 1_000
+    assert document.status is BeatmapRankStatus.RANKED
+    assert document.modes == (BeatmapMode.OSU,)
+    assert document.document_version == 1
+
+
+async def test_list_search_documents_returns_direct_projection_domains() -> None:
+    """External index rebuild用に検索projection群をdomain値で列挙することを検証する.
+
+    Returns:
+        None: projection document列がdomain値に変換されることをassertして完了する.
+
+    Raises:
+        AssertionError: projection一覧が変換または返却されない場合.
+    """
+    session = FakeSession(
+        execute_results=[
+            FakeResult(
+                values=[
+                    _search_document_model(beatmapset_id=1_000),
+                    _search_document_model(beatmapset_id=2_000),
+                ]
+            )
+        ]
+    )
+
+    documents = await _repo(session).list_search_documents()
+
+    assert [document.beatmapset_id for document in documents] == [1_000, 2_000]
+    assert documents[0].status is BeatmapRankStatus.RANKED
+
+
+async def test_rebuild_search_projection_merges_documents_from_stored_metadata() -> None:
+    """保存済みmetadataから検索projectionを再構築できることを検証する.
+
+    Returns:
+        None: beatmapsetとchild beatmapからprojection modelがmergeされることをassertする.
+
+    Raises:
+        AssertionError: rebuildがprojectionを復元しない場合.
+    """
+    session = FakeSession(
+        execute_results=[
+            FakeResult(values=[_beatmapset_model()]),
+            FakeResult(values=[_beatmap_model(official_last_updated_at=_NOW)]),
+            FakeResult(values=[]),
+        ]
+    )
+
+    rebuilt_count = await _repo(session).rebuild_search_projection(now=_NOW)
+
+    document = _merged_search_document(session)
+    assert rebuilt_count == 1
+    assert document.beatmapset_id == 1_000
+    assert document.difficulty_names == "Another"
+    assert document.modes == ["osu"]
+    assert document.is_active is True
+    assert session.flushes == 1
+
+
+async def test_rebuild_search_projection_orders_child_beatmaps_for_idempotency() -> None:
+    """Projection rebuildがchild順序でversionを揺らさないqueryを使うことを検証する.
+
+    Returns:
+        None: child beatmap取得queryのORDER BYをassertして完了する.
+
+    Raises:
+        AssertionError: child beatmap取得queryがID順を指定しない場合.
+    """
+    session = FakeSession(
+        execute_results=[
+            FakeResult(values=[_beatmapset_model()]),
+            FakeResult(values=[_beatmap_model(official_last_updated_at=_NOW)]),
+            FakeResult(values=[]),
+        ]
+    )
+
+    _ = await _repo(session).rebuild_search_projection(now=_NOW)
+
+    child_statement = session.executed[1]
+    assert isinstance(child_statement, ClauseElement)
+    statement_text = str(child_statement.compile(dialect=postgresql.dialect()))
+    assert "ORDER BY beatmaps.id ASC" in statement_text
+
+
+async def test_record_index_state_merges_external_index_state() -> None:
+    """External indexの成功/失敗stateを永続modelへmergeすることを検証する.
+
+    Returns:
+        None: backend, version, status, reasonを保存modelで検証して完了する.
+
+    Raises:
+        AssertionError: index stateがmergeまたはflushされない場合.
+    """
+    session = FakeSession()
+    state = DirectExternalIndexState(
+        backend=DirectExternalIndexBackend.MEILISEARCH,
+        beatmapset_id=1_000,
+        document_version=3,
+        status=DirectExternalIndexStatus.FAILED,
+        last_attempted_at=_NOW,
+        last_succeeded_at=None,
+        failure_reason="RuntimeError: external index update failed",
+    )
+
+    await _repo(session).record_index_state(state)
+
+    model = _merged_index_state(session)
+    assert model.backend == "meilisearch"
+    assert model.beatmapset_id == 1_000
+    assert model.document_version == 3
+    assert model.status == "failed"
+    assert model.last_attempted_at == _NOW
+    assert model.last_succeeded_at is None
+    assert model.failure_reason == "RuntimeError: external index update failed"
+    assert session.flushes == 1
 
 
 async def test_save_snapshot_rejects_existing_checksum_conflict_before_flush() -> None:

@@ -57,7 +57,7 @@
   - _Requirements: 6.2, 6.3, 6.4, 6.6, 7.1, 7.5, 7.6, 9.1, 9.2, 9.3, 9.4_
   - _Boundary: ExternalIndexBackend_
 
-- [ ] 2.4 Add projection and external index rebuild commands
+- [x] 2.4 Add projection and external index rebuild commands
   - Rebuild search projection from stored beatmap metadata.
   - Rebuild optional external index state from current projection documents.
   - Make rebuilds idempotent and operator-triggered, not app startup work.

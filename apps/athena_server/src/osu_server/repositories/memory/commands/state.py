@@ -15,6 +15,8 @@ if TYPE_CHECKING:
         BeatmapFileAttachment,
         BeatmapSet,
         BeatmapSetSearchDocument,
+        DirectExternalIndexBackend,
+        DirectExternalIndexState,
     )
     from osu_server.domain.chat.channels import Channel, ChannelRoleOverride
     from osu_server.domain.identity.roles import Role
@@ -229,6 +231,8 @@ class InMemoryCommandRepositoryState:
             beatmap ごとの集計 submission count.
         search_documents_by_beatmapset_id (dict[int, BeatmapSetSearchDocument]):
             osu!direct検索projectionの主記録.
+        external_index_states_by_key (dict[tuple[DirectExternalIndexBackend, int],
+            DirectExternalIndexState]): external index backendとbeatmapset IDごとの同期状態.
         attachments_by_key (dict[tuple[int, str], BeatmapFileAttachment]):
             beatmap file attachment の主記録.
         attachment_keys_by_beatmap_id (dict[int, list[tuple[int, str]]]):
@@ -340,6 +344,10 @@ class InMemoryCommandRepositoryState:
     search_documents_by_beatmapset_id: dict[int, BeatmapSetSearchDocument] = field(
         default_factory=dict
     )
+    external_index_states_by_key: dict[
+        tuple[DirectExternalIndexBackend, int],
+        DirectExternalIndexState,
+    ] = field(default_factory=dict)
     attachments_by_key: dict[tuple[int, str], BeatmapFileAttachment] = field(default_factory=dict)
     attachment_keys_by_beatmap_id: dict[int, list[tuple[int, str]]] = field(default_factory=dict)
     fetch_states_by_target: dict[BeatmapFetchTarget, BeatmapFetchRecord] = field(

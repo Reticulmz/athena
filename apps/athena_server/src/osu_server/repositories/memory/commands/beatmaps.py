@@ -10,6 +10,8 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFetchTarget,
     BeatmapFileState,
+    BeatmapSetSearchDocument,
+    DirectExternalIndexState,
     build_beatmapset_search_document,
 )
 from osu_server.repositories.interfaces.commands.beatmaps import BeatmapSubmissionCounts
@@ -175,6 +177,61 @@ class InMemoryBeatmapCommandRepository:
                 updated_at=now_utc(),
             )
         )
+
+    async def get_search_document(self, beatmapset_id: int) -> BeatmapSetSearchDocument | None:
+        """External indexing用に保存済み検索projectionを返す.
+
+        Args:
+            beatmapset_id (int): 検索projectionを取得するbeatmapset ID.
+
+        Returns:
+            BeatmapSetSearchDocument | None: 保存済みprojection. 未登録ならNone.
+        """
+        return self._state.search_documents_by_beatmapset_id.get(beatmapset_id)
+
+    async def list_search_documents(self) -> tuple[BeatmapSetSearchDocument, ...]:
+        """External index rebuild用に検索projectionをbeatmapset ID順で返す.
+
+        Returns:
+            tuple[BeatmapSetSearchDocument, ...]: 保存済み検索projection列.
+        """
+        return tuple(
+            self._state.search_documents_by_beatmapset_id[beatmapset_id]
+            for beatmapset_id in sorted(self._state.search_documents_by_beatmapset_id)
+        )
+
+    async def rebuild_search_projection(self, *, now: datetime) -> int:
+        """保存済みmetadataから検索projectionを再構築する.
+
+        Args:
+            now (datetime): 変更されたprojectionへ設定するUTC timestamp.
+
+        Returns:
+            int: 再構築対象として処理したbeatmapset数.
+        """
+        rebuilt_count = 0
+        for beatmapset_id in sorted(self._state.beatmapsets_by_id):
+            beatmapset = self._state.beatmapsets_by_id[beatmapset_id]
+            self._state.search_documents_by_beatmapset_id[beatmapset_id] = (
+                build_beatmapset_search_document(
+                    beatmapset,
+                    previous=self._state.search_documents_by_beatmapset_id.get(beatmapset_id),
+                    updated_at=now,
+                )
+            )
+            rebuilt_count += 1
+        return rebuilt_count
+
+    async def record_index_state(self, state: DirectExternalIndexState) -> None:
+        """External index documentの同期状態を保存する.
+
+        Args:
+            state (DirectExternalIndexState): 保存するsuccessまたはfailure state.
+
+        Returns:
+            None: in-memory stateへ同期状態を保存して完了する.
+        """
+        self._state.external_index_states_by_key[(state.backend, state.beatmapset_id)] = state
 
     async def set_local_status_override(
         self, beatmap_id: int, status: LocalBeatmapStatus | None

@@ -38,6 +38,30 @@ class DirectSearchListing(StrEnum):
     MOST_PLAYED = "most_played"
 
 
+class DirectExternalIndexBackend(StrEnum):
+    """osu!direct external index backendの閉集合を表す.
+
+    Attributes:
+        MEILISEARCH (DirectExternalIndexBackend): Meilisearch backendを示す値.
+    """
+
+    MEILISEARCH = "meilisearch"
+
+
+class DirectExternalIndexStatus(StrEnum):
+    """osu!direct external index document同期状態を表す.
+
+    Attributes:
+        PENDING (DirectExternalIndexStatus): 同期が未完了または再試行待ちである状態.
+        SUCCEEDED (DirectExternalIndexStatus): 対象versionの同期に成功した状態.
+        FAILED (DirectExternalIndexStatus): 対象versionの同期に失敗した状態.
+    """
+
+    PENDING = "pending"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
 @dataclass(slots=True, frozen=True)
 class DirectSearchRequest:
     """osu!direct検索backendへ渡す検索入力を表す.
@@ -161,6 +185,45 @@ class BeatmapSetSearchDocument:
     is_active: bool
     document_version: int
     updated_at: datetime
+
+
+@dataclass(slots=True, frozen=True)
+class DirectExternalIndexState:
+    """osu!direct external index documentのretry可能な同期状態を表す.
+
+    Attributes:
+        backend (DirectExternalIndexBackend): 状態を記録するexternal index backend.
+        beatmapset_id (int): 同期対象のbeatmapset ID.
+        document_version (int): 同期を試行したprojection version.
+        status (DirectExternalIndexStatus): 同期結果または再試行待ち状態.
+        last_attempted_at (datetime | None): 最後に同期を試行したUTC timestamp.
+        last_succeeded_at (datetime | None): 最後に同期へ成功したUTC timestamp.
+        failure_reason (str | None): 失敗時のsanitized reason. 成功時はNone.
+    """
+
+    backend: DirectExternalIndexBackend
+    beatmapset_id: int
+    document_version: int
+    status: DirectExternalIndexStatus
+    last_attempted_at: datetime | None
+    last_succeeded_at: datetime | None
+    failure_reason: str | None
+
+    def __post_init__(self) -> None:
+        """External index stateの永続化前制約を検証する.
+
+        Returns:
+            None: stateが永続化可能な値であることを示す.
+
+        Raises:
+            ValueError: beatmapset_idまたはdocument_versionが正でない場合.
+        """
+        if self.beatmapset_id <= 0:
+            msg = "beatmapset_id must be positive"
+            raise ValueError(msg)
+        if self.document_version <= 0:
+            msg = "document_version must be positive"
+            raise ValueError(msg)
 
 
 def build_beatmapset_search_document(
@@ -329,6 +392,9 @@ def _document_content_changed(
 
 __all__ = [
     "BeatmapSetSearchDocument",
+    "DirectExternalIndexBackend",
+    "DirectExternalIndexState",
+    "DirectExternalIndexStatus",
     "DirectSearchBackend",
     "DirectSearchBackendResult",
     "DirectSearchCandidate",

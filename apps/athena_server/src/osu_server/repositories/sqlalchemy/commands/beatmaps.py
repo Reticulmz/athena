@@ -26,11 +26,13 @@ from osu_server.domain.beatmaps import (
     BeatmapSet,
     BeatmapSetSearchDocument,
     BeatmapSourceVerification,
+    DirectExternalIndexState,
     LocalBeatmapStatus,
     build_beatmapset_search_document,
 )
 from osu_server.repositories.interfaces.commands.beatmaps import BeatmapSubmissionCounts
 from osu_server.repositories.sqlalchemy.models.beatmap import (
+    BeatmapDirectExternalIndexStateModel,
     BeatmapFetchStateModel,
     BeatmapFileAttachmentModel,
     BeatmapModel,
@@ -293,6 +295,97 @@ class SQLAlchemyBeatmapCommandRepository:
             return
         _ = await self._session.merge(_search_document_to_model(document))
 
+    async def get_search_document(self, beatmapset_id: int) -> BeatmapSetSearchDocument | None:
+        """External indexing用に保存済み検索projectionを返す.
+
+        Args:
+            beatmapset_id (int): 検索projectionを取得するbeatmapset ID.
+
+        Returns:
+            BeatmapSetSearchDocument | None: 保存済みprojection. 未登録ならNone.
+        """
+        model = await self._session.get(BeatmapSetSearchDocumentModel, beatmapset_id)
+        if not isinstance(model, BeatmapSetSearchDocumentModel):
+            return None
+        return _search_document_to_domain(model)
+
+    async def list_search_documents(self) -> tuple[BeatmapSetSearchDocument, ...]:
+        """External index rebuild用に検索projectionをbeatmapset ID順で返す.
+
+        Returns:
+            tuple[BeatmapSetSearchDocument, ...]: 保存済み検索projection列.
+        """
+        models = (
+            (
+                await self._session.execute(
+                    select(BeatmapSetSearchDocumentModel).order_by(
+                        BeatmapSetSearchDocumentModel.beatmapset_id.asc()
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return tuple(_search_document_to_domain(model) for model in models)
+
+    async def rebuild_search_projection(self, *, now: datetime) -> int:
+        """保存済みmetadataから検索projectionを再構築する.
+
+        Args:
+            now (datetime): 変更されたprojectionへ設定するUTC timestamp.
+
+        Returns:
+            int: 再構築対象として処理したbeatmapset数.
+        """
+        beatmapset_models = (
+            (
+                await self._session.execute(
+                    select(BeatmapSetModel).order_by(BeatmapSetModel.id.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        rebuilt_count = 0
+        for beatmapset_model in beatmapset_models:
+            beatmap_models = await self._get_beatmap_models_for_set(
+                beatmapset_id=beatmapset_model.id
+            )
+            beatmaps = tuple(
+                _beatmap_to_domain(beatmap_model, None) for beatmap_model in beatmap_models
+            )
+            previous_model = await self._session.get(
+                BeatmapSetSearchDocumentModel,
+                beatmapset_model.id,
+            )
+            previous = (
+                _search_document_to_domain(previous_model)
+                if isinstance(previous_model, BeatmapSetSearchDocumentModel)
+                else None
+            )
+            document = build_beatmapset_search_document(
+                _beatmapset_to_domain(beatmapset_model, beatmaps),
+                previous=previous,
+                updated_at=now,
+            )
+            if document != previous:
+                _ = await self._session.merge(_search_document_to_model(document))
+            rebuilt_count += 1
+        await self._session.flush()
+        return rebuilt_count
+
+    async def record_index_state(self, state: DirectExternalIndexState) -> None:
+        """External index documentの同期状態を保存する.
+
+        Args:
+            state (DirectExternalIndexState): 保存するsuccessまたはfailure state.
+
+        Returns:
+            None: sessionへ同期状態をmergeしてflushしたことを示す.
+        """
+        _ = await self._session.merge(_index_state_to_model(state))
+        await self._session.flush()
+
     async def set_local_status_override(
         self, beatmap_id: int, status: LocalBeatmapStatus | None
     ) -> Beatmap:
@@ -554,7 +647,9 @@ class SQLAlchemyBeatmapCommandRepository:
         return list(
             (
                 await self._session.execute(
-                    select(BeatmapModel).where(BeatmapModel.beatmapset_id == beatmapset_id)
+                    select(BeatmapModel)
+                    .where(BeatmapModel.beatmapset_id == beatmapset_id)
+                    .order_by(BeatmapModel.id.asc())
                 )
             )
             .scalars()
@@ -821,6 +916,26 @@ def _search_document_to_domain(
         is_active=model.is_active,
         document_version=model.document_version,
         updated_at=model.updated_at,
+    )
+
+
+def _index_state_to_model(state: DirectExternalIndexState) -> BeatmapDirectExternalIndexStateModel:
+    """Domain external index stateをSQLAlchemy保存modelへ変換する.
+
+    Args:
+        state (DirectExternalIndexState): 保存するexternal index同期状態.
+
+    Returns:
+        BeatmapDirectExternalIndexStateModel: enumを永続化値へ変換したmodel.
+    """
+    return BeatmapDirectExternalIndexStateModel(
+        backend=state.backend.value,
+        beatmapset_id=state.beatmapset_id,
+        document_version=state.document_version,
+        status=state.status.value,
+        last_attempted_at=state.last_attempted_at,
+        last_succeeded_at=state.last_succeeded_at,
+        failure_reason=state.failure_reason,
     )
 
 

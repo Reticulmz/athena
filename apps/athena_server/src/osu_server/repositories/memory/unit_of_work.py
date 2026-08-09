@@ -184,23 +184,7 @@ class InMemoryUnitOfWorkFactory:
         _replace_mapping(self._state.blob_id_by_sha256, committed.blob_id_by_sha256)
         self._state.next_blob_id = committed.next_blob_id
 
-        _replace_mapping(self._state.beatmapsets_by_id, committed.beatmapsets_by_id)
-        _replace_mapping(self._state.beatmaps_by_id, committed.beatmaps_by_id)
-        _replace_mapping(self._state.beatmap_id_by_checksum, committed.beatmap_id_by_checksum)
-        _replace_mapping(
-            self._state.beatmap_submission_counts_by_id,
-            committed.beatmap_submission_counts_by_id,
-        )
-        _replace_mapping(
-            self._state.search_documents_by_beatmapset_id,
-            committed.search_documents_by_beatmapset_id,
-        )
-        _replace_mapping(self._state.attachments_by_key, committed.attachments_by_key)
-        _replace_mapping(
-            self._state.attachment_keys_by_beatmap_id,
-            committed.attachment_keys_by_beatmap_id,
-        )
-        _replace_mapping(self._state.fetch_states_by_target, committed.fetch_states_by_target)
+        self._commit_beatmap_state(committed)
 
         _replace_mapping(
             self._state.performance_calculations_by_id,
@@ -340,6 +324,40 @@ class InMemoryUnitOfWorkFactory:
             committed.score_leaderboard_eligibility_by_id,
         )
         self._state.next_score_id = committed.next_score_id
+
+    def _commit_beatmap_state(
+        self,
+        committed: InMemoryCommandRepositoryState,
+    ) -> None:
+        """Beatmap metadata, projection, attachment, fetch stateを置き換える.
+
+        Args:
+            committed (InMemoryCommandRepositoryState): 反映元となるclone済みUoW state.
+
+        Returns:
+            None: beatmap関連の主記録とindexをcommitted stateへ更新する.
+        """
+        _replace_mapping(self._state.beatmapsets_by_id, committed.beatmapsets_by_id)
+        _replace_mapping(self._state.beatmaps_by_id, committed.beatmaps_by_id)
+        _replace_mapping(self._state.beatmap_id_by_checksum, committed.beatmap_id_by_checksum)
+        _replace_mapping(
+            self._state.beatmap_submission_counts_by_id,
+            committed.beatmap_submission_counts_by_id,
+        )
+        _replace_mapping(
+            self._state.search_documents_by_beatmapset_id,
+            committed.search_documents_by_beatmapset_id,
+        )
+        _replace_mapping(
+            self._state.external_index_states_by_key,
+            committed.external_index_states_by_key,
+        )
+        _replace_mapping(self._state.attachments_by_key, committed.attachments_by_key)
+        _replace_mapping(
+            self._state.attachment_keys_by_beatmap_id,
+            committed.attachment_keys_by_beatmap_id,
+        )
+        _replace_mapping(self._state.fetch_states_by_target, committed.fetch_states_by_target)
 
     def seed_roles(self, roles: list[Role]) -> None:
         """Factory の committed state に Role を直接 seed するテスト helper.

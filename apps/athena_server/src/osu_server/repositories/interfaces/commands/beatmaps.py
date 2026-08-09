@@ -14,6 +14,8 @@ if TYPE_CHECKING:
         BeatmapFetchTarget,
         BeatmapFileAttachment,
         BeatmapSet,
+        BeatmapSetSearchDocument,
+        DirectExternalIndexState,
         LocalBeatmapStatus,
     )
 
@@ -120,6 +122,47 @@ class BeatmapCommandRepository(Protocol):
         Raises:
             ValueError: Snapshot 内または保存済み Beatmap と,同じ checksum を異なる Beatmap ID に
                 対応付けようとした場合に送出する.
+        """
+        ...
+
+    async def get_search_document(self, beatmapset_id: int) -> BeatmapSetSearchDocument | None:
+        """External indexing用に保存済み検索projectionを返す.
+
+        Args:
+            beatmapset_id (int): 取得するbeatmapset検索projectionの識別子.
+
+        Returns:
+            BeatmapSetSearchDocument | None: 保存済みprojection. 存在しない場合はNone.
+        """
+        ...
+
+    async def list_search_documents(self) -> tuple[BeatmapSetSearchDocument, ...]:
+        """External index rebuild用に検索projectionを列挙する.
+
+        Returns:
+            tuple[BeatmapSetSearchDocument, ...]: beatmapset ID順の検索projection.
+        """
+        ...
+
+    async def rebuild_search_projection(self, *, now: datetime) -> int:
+        """保存済みmetadataから検索projectionを再構築する.
+
+        Args:
+            now (datetime): 変更されたprojectionへ設定するUTC timestamp.
+
+        Returns:
+            int: 再構築対象として処理したbeatmapset数.
+        """
+        ...
+
+    async def record_index_state(self, state: DirectExternalIndexState) -> None:
+        """External index documentの同期状態を記録する.
+
+        Args:
+            state (DirectExternalIndexState): 保存するsuccessまたはfailure state.
+
+        Returns:
+            None: stateがUnit of Workへ反映されたことを示す.
         """
         ...
 
