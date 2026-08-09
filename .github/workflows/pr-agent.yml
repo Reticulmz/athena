@@ -16,14 +16,29 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
+    env:
+      PR_AGENT_OPENAI_API_BASE: ${{ secrets.PR_AGENT_OPENAI_API_BASE || vars.PR_AGENT_OPENAI_API_BASE }}
+      PR_AGENT_OPENAI_KEY: ${{ secrets.PR_AGENT_OPENAI_KEY }}
 
     steps:
+      - name: Skip when PR-Agent credentials are not configured
+        if: ${{ env.PR_AGENT_OPENAI_KEY == '' || env.PR_AGENT_OPENAI_API_BASE == '' }}
+        run: echo "PR-Agent skipped because PR_AGENT_OPENAI_KEY or PR_AGENT_OPENAI_API_BASE is not configured."
+
       - name: Run PR Agent
-        uses: the-pr-agent/pr-agent@main
+        if: ${{ env.PR_AGENT_OPENAI_KEY != '' && env.PR_AGENT_OPENAI_API_BASE != '' }}
+        uses: docker://pragent/pr-agent@sha256:b81235c3bddc551939a1feca8926f4b6e8abcec2ae5bf4620424f8f56dd9cb93
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENAI__KEY: ${{ secrets.PR_AGENT_OPENAI_KEY }}
-          OPENAI__API_BASE: ${{ secrets.PR_AGENT_OPENAI_API_BASE || vars.PR_AGENT_OPENAI_API_BASE }}
+          OPENAI_KEY: ${{ env.PR_AGENT_OPENAI_KEY }}
+          OPENAI__KEY: ${{ env.PR_AGENT_OPENAI_KEY }}
+          OPENAI__API_BASE: ${{ env.PR_AGENT_OPENAI_API_BASE }}
+          config.model: "gpt-5.6-sol"
+          config.fallback_models: '["gpt-5.6-luna", "gpt-5.5"]'
+          config.model_reasoning: "gpt-5.6-sol"
+          config.model_weak: "gpt-5.6-luna"
+          config.reasoning_effort: "max"
+          config.max_model_tokens: "128000"
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "true"
           github_action_config.auto_improve: "false"
