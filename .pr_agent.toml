@@ -1,17 +1,25 @@
 [config]
-model = "openai/gpt-5.6-sol"
-fallback_models = ["openai/gpt-5.6-luna", "openai/gpt-5.5"]
-model_reasoning = "openai/gpt-5.6-sol"
-model_weak = "openai/gpt-5.6-luna"
-reasoning_effort = "xhigh"
-custom_model_max_tokens = 128000
+model = "gpt-5.6-sol"
+fallback_models = ["gpt-5.6-luna", "gpt-5.5"]
+model_reasoning = "gpt-5.6-sol"
+model_weak = "gpt-5.6-luna"
+reasoning_effort = "max"
+max_model_tokens = 128000
 response_language = "ja-JP"
 repo_context_files = ["AGENTS.md"]
 restricted_mode = true
 output_run_details = true
 
 [pr_reviewer]
+num_max_findings = 6
+require_can_be_split_review = true
+require_todo_scan = true
 extra_instructions = """\
 AGENTS.md と scoped guidance を尊重してください。
 正確性、テスト不足、セキュリティ、runtime failure、stable/lazer/API 互換性の回帰を優先して、再現可能な指摘だけを具体的に出してください。
 """
+
+[pr_code_suggestions]
+suggestions_score_threshold = 5
+num_code_suggestions_per_chunk = 4
+max_number_of_calls = 3
