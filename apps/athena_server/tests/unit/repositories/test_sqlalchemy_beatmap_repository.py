@@ -28,6 +28,9 @@ from osu_server.domain.beatmaps import (
     BeatmapRankStatus,
     BeatmapSet,
     BeatmapSourceVerification,
+    DirectCoverageKind,
+    DirectCoverageRecord,
+    DirectCoverageStatusScope,
     DirectExternalIndexBackend,
     DirectExternalIndexState,
     DirectExternalIndexStatus,
@@ -40,6 +43,7 @@ from osu_server.repositories.sqlalchemy.commands.beatmaps import (
     SQLAlchemyBeatmapCommandRepository,
 )
 from osu_server.repositories.sqlalchemy.models.beatmap import (
+    BeatmapDirectCoverageModel,
     BeatmapDirectExternalIndexStateModel,
     BeatmapFetchStateModel,
     BeatmapFileAttachmentModel,
@@ -495,6 +499,28 @@ def _merged_index_state(session: FakeSession) -> BeatmapDirectExternalIndexState
     ]
     assert len(states) == 1
     return states[0]
+
+
+def _direct_coverage_model() -> BeatmapDirectCoverageModel:
+    """保存済みosu!direct coverage model fixtureを作成する.
+
+    Returns:
+        BeatmapDirectCoverageModel: coverage upsert testに使う永続化model.
+    """
+    return BeatmapDirectCoverageModel(
+        id=1,
+        coverage_kind="feed_window",
+        source="mirror",
+        status_scope="ranked",
+        sort_key="newest",
+        window_key="page-1",
+        from_beatmapset_id=1_000,
+        to_beatmapset_id=1_010,
+        cursor="cursor:old",
+        completed_at=_NOW,
+        failed_at=None,
+        failure_reason=None,
+    )
 
 
 def _beatmap_domain(
@@ -959,6 +985,51 @@ async def test_record_index_state_merges_external_index_state() -> None:
     assert model.last_attempted_at == _NOW
     assert model.last_succeeded_at is None
     assert model.failure_reason == "RuntimeError: external index update failed"
+    assert session.flushes == 1
+
+
+async def test_record_direct_coverage_upserts_scope_state() -> None:
+    """Direct coverage recordがunique scopeでupsertされることを検証する.
+
+    Returns:
+        None: PostgreSQL upsert文, bind param, flush回数をassertして完了する.
+
+    Raises:
+        AssertionError: coverage stateがscope upsertとして構築されない場合.
+    """
+    session = FakeSession(execute_results=[FakeResult(_direct_coverage_model())])
+    record = DirectCoverageRecord(
+        coverage_kind=DirectCoverageKind.FEED_WINDOW,
+        source=BeatmapMetadataSource.MIRROR,
+        status_scope=DirectCoverageStatusScope.RANKED,
+        sort_key="newest",
+        window_key="page-1",
+        from_beatmapset_id=1_000,
+        to_beatmapset_id=1_010,
+        cursor="cursor:next",
+        completed_at=_NOW,
+        failed_at=None,
+        failure_reason=None,
+    )
+
+    await _repo(session).record_direct_coverage(record)
+
+    assert len(session.executed) == 1
+    statement = session.executed[0]
+    assert isinstance(statement, ClauseElement)
+    compiled = statement.compile(dialect=postgresql.dialect())
+    statement_text = str(compiled)
+    params = cast("dict[str, object]", compiled.construct_params())
+    assert "INSERT INTO beatmap_direct_coverage" in statement_text
+    assert "ON CONFLICT ON CONSTRAINT uq_beatmap_direct_coverage_scope" in statement_text
+    assert params["coverage_kind"] == "feed_window"
+    assert params["source"] == "mirror"
+    assert params["status_scope"] == "ranked"
+    assert params["sort_key"] == "newest"
+    assert params["window_key"] == "page-1"
+    assert params["from_beatmapset_id"] == 1_000
+    assert params["to_beatmapset_id"] == 1_010
+    assert params["cursor"] == "cursor:next"
     assert session.flushes == 1
 
 

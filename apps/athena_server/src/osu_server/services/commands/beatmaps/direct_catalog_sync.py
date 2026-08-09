@@ -7,10 +7,28 @@ import math
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
-from typing import cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 import structlog
+
+from osu_server.domain.beatmaps import (
+    Beatmap,
+    BeatmapFetchState,
+    BeatmapFileState,
+    BeatmapSet,
+    DirectCoverageKind,
+    DirectCoverageRecord,
+)
+
+if TYPE_CHECKING:
+    from osu_server.domain.beatmaps import (
+        BeatmapMetadataSource,
+        BeatmapsetSnapshot,
+        DirectCoverageStatusScope,
+    )
+    from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 
 _UPSTREAM_BUDGET_WINDOW_SECONDS = 60
 
@@ -68,6 +86,54 @@ class DirectCatalogScheduleResult:
     retry_eligible: bool
     retry_after_seconds: int | None = None
     failure_reason: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class DirectFeedWindow:
+    """Catalog feed同期対象のstatus/sort/window scopeを表す.
+
+    Attributes:
+        source (BeatmapMetadataSource): feed metadataの取得source.
+        status_scope (DirectCoverageStatusScope): 同期対象のstatus scope.
+        sort_key (str): upstream feedのsort識別子.
+        window_key (str): page, cursor,またはwindowの識別子.
+    """
+
+    source: BeatmapMetadataSource
+    status_scope: DirectCoverageStatusScope
+    sort_key: str
+    window_key: str
+
+
+@dataclass(slots=True, frozen=True)
+class DirectFeedWindowFetchResult:
+    """Catalog feed window fetchのmetadata結果を表す.
+
+    Attributes:
+        beatmapsets (tuple[BeatmapsetSnapshot, ...]): feedから観測したbeatmapset snapshot列.
+        cursor (str | None): 次回取得に使えるupstream cursorまたはpage marker.
+    """
+
+    beatmapsets: tuple[BeatmapsetSnapshot, ...]
+    cursor: str | None = None
+
+
+class DirectFeedWindowFetcher(Protocol):
+    """Feed windowからbeatmapset metadata snapshotを取得するportを定義する."""
+
+    async def fetch_feed_window(
+        self,
+        window: DirectFeedWindow,
+    ) -> DirectFeedWindowFetchResult:
+        """指定されたfeed windowのbeatmapset snapshot列を取得する.
+
+        Args:
+            window (DirectFeedWindow): 取得対象のfeed window scope.
+
+        Returns:
+            DirectFeedWindowFetchResult: 観測したmetadata snapshotと次cursor.
+        """
+        ...
 
 
 class DirectCatalogScheduler:
@@ -240,6 +306,122 @@ class DirectCatalogScheduler:
         )
 
 
+class DirectFeedSync:
+    """Feed windowを同期しmetadata保存後にcoverage stateを記録するuse-case.
+
+    Attributes:
+        _unit_of_work_factory (UnitOfWorkFactory): metadataとcoverageを保存するUoW factory.
+        _scheduler (DirectCatalogScheduler): upstream budgetと優先度を制御するscheduler.
+        _feed_window_fetcher (DirectFeedWindowFetcher): feed window metadata取得port.
+    """
+
+    _unit_of_work_factory: UnitOfWorkFactory
+    _scheduler: DirectCatalogScheduler
+    _feed_window_fetcher: DirectFeedWindowFetcher
+
+    def __init__(
+        self,
+        *,
+        unit_of_work_factory: UnitOfWorkFactory,
+        scheduler: DirectCatalogScheduler,
+        feed_window_fetcher: DirectFeedWindowFetcher,
+    ) -> None:
+        """Feed syncに必要な保存境界, scheduler, fetcherを保持する.
+
+        Args:
+            unit_of_work_factory (UnitOfWorkFactory): metadataとcoverage用のUoW factory.
+            scheduler (DirectCatalogScheduler): shared upstream budget scheduler.
+            feed_window_fetcher (DirectFeedWindowFetcher): feed window metadata fetcher.
+        """
+        self._unit_of_work_factory = unit_of_work_factory
+        self._scheduler = scheduler
+        self._feed_window_fetcher = feed_window_fetcher
+
+    async def execute(self, window: DirectFeedWindow) -> DirectCatalogScheduleResult:
+        """Shared budget下でfeed windowを同期し, coverage結果を保存する.
+
+        Args:
+            window (DirectFeedWindow): 同期するfeed window scope.
+
+        Returns:
+            DirectCatalogScheduleResult: schedulerによる完了, delay, failure結果.
+
+        Notes:
+            成功coverageはmetadata保存と同じUoWで記録する. 失敗coverageはschedulerが返す
+            sanitize済みreasonだけを別UoWで記録し, covered扱いにしない.
+        """
+        observed_range: tuple[int, int] | None = None
+        cursor: str | None = None
+
+        async def work() -> None:
+            """Schedulerへ渡す実同期workを実行する.
+
+            Returns:
+                None: metadataと完了coverageを保存して値を返さずに完了する.
+            """
+            nonlocal observed_range, cursor
+
+            result = await self._feed_window_fetcher.fetch_feed_window(window)
+            observed_range = _observed_beatmapset_id_range(result.beatmapsets)
+            cursor = result.cursor
+
+            async with self._unit_of_work_factory() as uow:
+                for snapshot in result.beatmapsets:
+                    await uow.beatmaps.save_beatmapset_snapshot(_snapshot_to_beatmapset(snapshot))
+                completed_at = datetime.now(UTC)
+                coverage = _feed_window_coverage_record(
+                    window,
+                    observed_range=observed_range,
+                    cursor=cursor,
+                    completed_at=completed_at,
+                    failed_at=None,
+                    failure_reason=None,
+                )
+                await uow.beatmaps.record_direct_coverage(coverage)
+                await uow.commit()
+
+        result = await self._scheduler.run(DirectCatalogWorkKind.FEED_SYNC, work)
+        if result.outcome is DirectCatalogScheduleOutcome.FAILED:
+            await self._record_failed_coverage(
+                window,
+                observed_range=observed_range or (0, 0),
+                cursor=cursor,
+                failure_reason=result.failure_reason or "catalog work failed",
+            )
+        return result
+
+    async def _record_failed_coverage(
+        self,
+        window: DirectFeedWindow,
+        *,
+        observed_range: tuple[int, int],
+        cursor: str | None,
+        failure_reason: str,
+    ) -> None:
+        """Feed window失敗状態をcovered扱いせずに保存する.
+
+        Args:
+            window (DirectFeedWindow): 失敗したfeed window scope.
+            observed_range (tuple[int, int]): 失敗前に観測できたID範囲. 不明なら(0, 0).
+            cursor (str | None): 失敗前に得られたcursor. 不明ならNone.
+            failure_reason (str): schedulerがsanitizeしたoperator向け失敗理由.
+
+        Returns:
+            None: 失敗coverage recordを保存して完了する.
+        """
+        coverage = _feed_window_coverage_record(
+            window,
+            observed_range=observed_range,
+            cursor=cursor,
+            completed_at=None,
+            failed_at=datetime.now(UTC),
+            failure_reason=failure_reason,
+        )
+        async with self._unit_of_work_factory() as uow:
+            await uow.beatmaps.record_direct_coverage(coverage)
+            await uow.commit()
+
+
 def _is_catalog_work(work_kind: DirectCatalogWorkKind) -> bool:
     """Work種別がbackground catalog workか判定する.
 
@@ -266,10 +448,123 @@ def _sanitize_failure_reason(work_kind: DirectCatalogWorkKind, exc: Exception) -
     return f"{type(exc).__name__}: {category} work failed"
 
 
+def _observed_beatmapset_id_range(
+    beatmapsets: tuple[BeatmapsetSnapshot, ...],
+) -> tuple[int, int]:
+    """Feed結果から観測beatmapset ID範囲を求める.
+
+    Args:
+        beatmapsets (tuple[BeatmapsetSnapshot, ...]): feed windowで観測したsnapshot列.
+
+    Returns:
+        tuple[int, int]: 観測IDの最小値と最大値. 空feedでは(0, 0).
+    """
+    if not beatmapsets:
+        return (0, 0)
+    beatmapset_ids = [snapshot.beatmapset_id for snapshot in beatmapsets]
+    return (min(beatmapset_ids), max(beatmapset_ids))
+
+
+def _feed_window_coverage_record(
+    window: DirectFeedWindow,
+    *,
+    observed_range: tuple[int, int],
+    cursor: str | None,
+    completed_at: datetime | None,
+    failed_at: datetime | None,
+    failure_reason: str | None,
+) -> DirectCoverageRecord:
+    """Feed window scopeと実行結果からcoverage recordを作る.
+
+    Args:
+        window (DirectFeedWindow): coverage scopeを定義するfeed window.
+        observed_range (tuple[int, int]): 観測したbeatmapset ID範囲.
+        cursor (str | None): upstream cursorまたはpage marker.
+        completed_at (datetime | None): 成功完了時刻.
+        failed_at (datetime | None): 失敗時刻.
+        failure_reason (str | None): sanitized failure reason.
+
+    Returns:
+        DirectCoverageRecord: 保存するfeed window coverage state.
+    """
+    from_beatmapset_id, to_beatmapset_id = observed_range
+    return DirectCoverageRecord(
+        coverage_kind=DirectCoverageKind.FEED_WINDOW,
+        source=window.source,
+        status_scope=window.status_scope,
+        sort_key=window.sort_key,
+        window_key=window.window_key,
+        from_beatmapset_id=from_beatmapset_id,
+        to_beatmapset_id=to_beatmapset_id,
+        cursor=cursor,
+        completed_at=completed_at,
+        failed_at=failed_at,
+        failure_reason=failure_reason,
+    )
+
+
+def _snapshot_to_beatmapset(snapshot: BeatmapsetSnapshot) -> BeatmapSet:
+    """Provider snapshotを永続化用BeatmapSetへ変換する.
+
+    Args:
+        snapshot (BeatmapsetSnapshot): feed fetcherから得たbeatmapset metadata.
+
+    Returns:
+        BeatmapSet: command repositoryへ保存するmetadata aggregate.
+    """
+    beatmaps = tuple(
+        Beatmap(
+            id=beatmap.beatmap_id,
+            beatmapset_id=beatmap.beatmapset_id,
+            checksum_md5=beatmap.checksum_md5,
+            mode=beatmap.mode,
+            version=beatmap.version,
+            total_length=beatmap.total_length,
+            hit_length=beatmap.hit_length,
+            max_combo=beatmap.max_combo,
+            bpm=beatmap.bpm,
+            cs=beatmap.cs,
+            od=beatmap.od,
+            ar=beatmap.ar,
+            hp=beatmap.hp,
+            difficulty_rating=beatmap.difficulty_rating,
+            official_status=beatmap.official_status,
+            official_status_source=beatmap.official_status_source,
+            official_status_verified=beatmap.official_status_verified,
+            local_status_override=beatmap.local_status_override,
+            metadata_fetch_state=BeatmapFetchState.FRESH,
+            file_state=BeatmapFileState.MISSING,
+            file_attachment=None,
+            last_fetched_at=beatmap.last_fetched_at,
+            next_refresh_at=beatmap.next_refresh_at,
+            official_last_updated_at=beatmap.official_last_updated_at,
+        )
+        for beatmap in snapshot.beatmaps
+    )
+    return BeatmapSet(
+        id=snapshot.beatmapset_id,
+        artist=snapshot.artist,
+        title=snapshot.title,
+        creator=snapshot.creator,
+        artist_unicode=snapshot.artist_unicode,
+        title_unicode=snapshot.title_unicode,
+        official_status=snapshot.official_status,
+        official_status_source=snapshot.official_status_source,
+        official_status_verified=snapshot.official_status_verified,
+        beatmaps=beatmaps,
+        last_fetched_at=snapshot.last_fetched_at,
+        next_refresh_at=snapshot.next_refresh_at,
+    )
+
+
 __all__ = [
     "DirectCatalogScheduleOutcome",
     "DirectCatalogScheduleResult",
     "DirectCatalogScheduler",
     "DirectCatalogWork",
     "DirectCatalogWorkKind",
+    "DirectFeedSync",
+    "DirectFeedWindow",
+    "DirectFeedWindowFetchResult",
+    "DirectFeedWindowFetcher",
 ]

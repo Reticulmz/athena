@@ -2,6 +2,9 @@
 
 from osu_server.domain.beatmaps.direct import (
     BeatmapSetSearchDocument,
+    DirectCoverageKind,
+    DirectCoverageRecord,
+    DirectCoverageStatusScope,
     DirectExternalIndexBackend,
     DirectExternalIndexState,
     DirectExternalIndexStatus,
@@ -83,6 +86,9 @@ __all__ = [
     "BeatmapSourceVerification",
     "BeatmapStatus",
     "BeatmapsetSnapshot",
+    "DirectCoverageKind",
+    "DirectCoverageRecord",
+    "DirectCoverageStatusScope",
     "DirectExternalIndexBackend",
     "DirectExternalIndexState",
     "DirectExternalIndexStatus",

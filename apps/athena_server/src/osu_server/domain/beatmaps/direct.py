@@ -7,6 +7,7 @@ from typing import Final, Protocol
 
 from osu_server.domain.beatmaps.models import (
     Beatmap,
+    BeatmapMetadataSource,
     BeatmapMode,
     BeatmapRankStatus,
     BeatmapSet,
@@ -60,6 +61,46 @@ class DirectExternalIndexStatus(StrEnum):
     PENDING = "pending"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+
+
+class DirectCoverageKind(StrEnum):
+    """osu!direct catalog coverage recordの種別を表す.
+
+    Attributes:
+        FEED_WINDOW (DirectCoverageKind): feed window観測によるcoverage.
+        ID_RANGE (DirectCoverageKind): explicit id range crawlによるcoverage.
+    """
+
+    FEED_WINDOW = "feed_window"
+    ID_RANGE = "id_range"
+
+
+class DirectCoverageStatusScope(StrEnum):
+    """osu!direct catalog coverage recordのstatus scopeを表す.
+
+    Attributes:
+        ALL (DirectCoverageStatusScope): 全statusを対象にするscope.
+        RANKED (DirectCoverageStatusScope): rankedのみを対象にするscope.
+        APPROVED (DirectCoverageStatusScope): approvedのみを対象にするscope.
+        LOVED (DirectCoverageStatusScope): lovedのみを対象にするscope.
+        QUALIFIED (DirectCoverageStatusScope): qualifiedのみを対象にするscope.
+        PENDING (DirectCoverageStatusScope): pendingのみを対象にするscope.
+        WIP (DirectCoverageStatusScope): work in progressのみを対象にするscope.
+        GRAVEYARD (DirectCoverageStatusScope): graveyardのみを対象にするscope.
+        NOT_SUBMITTED (DirectCoverageStatusScope): not submittedのみを対象にするscope.
+        UNKNOWN (DirectCoverageStatusScope): unknownのみを対象にするscope.
+    """
+
+    ALL = "all"
+    RANKED = "ranked"
+    APPROVED = "approved"
+    LOVED = "loved"
+    QUALIFIED = "qualified"
+    PENDING = "pending"
+    WIP = "wip"
+    GRAVEYARD = "graveyard"
+    NOT_SUBMITTED = "not_submitted"
+    UNKNOWN = "unknown"
 
 
 @dataclass(slots=True, frozen=True)
@@ -223,6 +264,59 @@ class DirectExternalIndexState:
             raise ValueError(msg)
         if self.document_version <= 0:
             msg = "document_version must be positive"
+            raise ValueError(msg)
+
+
+@dataclass(slots=True, frozen=True)
+class DirectCoverageRecord:
+    """osu!direct catalog syncの観測または失敗状態を表す.
+
+    Attributes:
+        coverage_kind (DirectCoverageKind): feed windowかid range crawlかを示す種別.
+        source (BeatmapMetadataSource): coverageを記録したmetadata source.
+        status_scope (DirectCoverageStatusScope): 同期対象status scope.
+        sort_key (str): feed sortまたはcrawl sortの識別子.
+        window_key (str): cursor, page, window identifierを保存する識別子.
+        from_beatmapset_id (int): 観測またはcrawlした範囲開始ID.
+        to_beatmapset_id (int): 観測またはcrawlした範囲終了ID.
+        cursor (str | None): upstream cursorまたはpage marker.
+        completed_at (datetime | None): 完了時刻. success時のみ値を持つ.
+        failed_at (datetime | None): 失敗時刻. failure時のみ値を持つ.
+        failure_reason (str | None): sanitized operational reason. failure時のみ値を持つ.
+    """
+
+    coverage_kind: DirectCoverageKind
+    source: BeatmapMetadataSource
+    status_scope: DirectCoverageStatusScope
+    sort_key: str
+    window_key: str
+    from_beatmapset_id: int
+    to_beatmapset_id: int
+    cursor: str | None
+    completed_at: datetime | None
+    failed_at: datetime | None
+    failure_reason: str | None
+
+    def __post_init__(self) -> None:
+        """Coverage recordの不変条件を検証する.
+
+        Returns:
+            None: positive rangeとtimestamp exclusivityを検証して完了する.
+
+        Raises:
+            ValueError: rangeが負値または順序不正の場合,もしくは成功/失敗時刻が両方ある場合.
+        """
+        if self.from_beatmapset_id < 0:
+            msg = "from_beatmapset_id must not be negative"
+            raise ValueError(msg)
+        if self.to_beatmapset_id < 0:
+            msg = "to_beatmapset_id must not be negative"
+            raise ValueError(msg)
+        if self.to_beatmapset_id < self.from_beatmapset_id:
+            msg = "to_beatmapset_id must not be less than from_beatmapset_id"
+            raise ValueError(msg)
+        if self.completed_at is not None and self.failed_at is not None:
+            msg = "completed_at and failed_at must not both be set"
             raise ValueError(msg)
 
 
@@ -392,6 +486,9 @@ def _document_content_changed(
 
 __all__ = [
     "BeatmapSetSearchDocument",
+    "DirectCoverageKind",
+    "DirectCoverageRecord",
+    "DirectCoverageStatusScope",
     "DirectExternalIndexBackend",
     "DirectExternalIndexState",
     "DirectExternalIndexStatus",

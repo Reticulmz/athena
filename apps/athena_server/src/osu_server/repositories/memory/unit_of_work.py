@@ -349,6 +349,10 @@ class InMemoryUnitOfWorkFactory:
             committed.search_documents_by_beatmapset_id,
         )
         _replace_mapping(
+            self._state.direct_coverage_records_by_scope,
+            committed.direct_coverage_records_by_scope,
+        )
+        _replace_mapping(
             self._state.external_index_states_by_key,
             committed.external_index_states_by_key,
         )

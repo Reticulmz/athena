@@ -26,12 +26,14 @@ from osu_server.domain.beatmaps import (
     BeatmapSet,
     BeatmapSetSearchDocument,
     BeatmapSourceVerification,
+    DirectCoverageRecord,
     DirectExternalIndexState,
     LocalBeatmapStatus,
     build_beatmapset_search_document,
 )
 from osu_server.repositories.interfaces.commands.beatmaps import BeatmapSubmissionCounts
 from osu_server.repositories.sqlalchemy.models.beatmap import (
+    BeatmapDirectCoverageModel,
     BeatmapDirectExternalIndexStateModel,
     BeatmapFetchStateModel,
     BeatmapFileAttachmentModel,
@@ -384,6 +386,41 @@ class SQLAlchemyBeatmapCommandRepository:
             None: sessionへ同期状態をmergeしてflushしたことを示す.
         """
         _ = await self._session.merge(_index_state_to_model(state))
+        await self._session.flush()
+
+    async def record_direct_coverage(self, record: DirectCoverageRecord) -> None:
+        """osu!direct catalog coverage recordをupsertする.
+
+        Args:
+            record (DirectCoverageRecord): feed windowまたはid range crawlのcoverage record.
+
+        Returns:
+            None: coverage stateをsessionへ反映してflushしたことを示す.
+        """
+        insert_statement = insert(BeatmapDirectCoverageModel).values(
+            coverage_kind=record.coverage_kind.value,
+            source=record.source.value,
+            status_scope=record.status_scope.value,
+            sort_key=record.sort_key,
+            window_key=record.window_key,
+            from_beatmapset_id=record.from_beatmapset_id,
+            to_beatmapset_id=record.to_beatmapset_id,
+            cursor=record.cursor,
+            completed_at=record.completed_at,
+            failed_at=record.failed_at,
+            failure_reason=record.failure_reason,
+        )
+        _ = await self._session.execute(
+            insert_statement.on_conflict_do_update(
+                constraint="uq_beatmap_direct_coverage_scope",
+                set_={
+                    "cursor": record.cursor,
+                    "completed_at": record.completed_at,
+                    "failed_at": record.failed_at,
+                    "failure_reason": record.failure_reason,
+                },
+            )
+        )
         await self._session.flush()
 
     async def set_local_status_override(

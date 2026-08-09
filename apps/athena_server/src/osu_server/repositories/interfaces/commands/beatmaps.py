@@ -15,6 +15,7 @@ if TYPE_CHECKING:
         BeatmapFileAttachment,
         BeatmapSet,
         BeatmapSetSearchDocument,
+        DirectCoverageRecord,
         DirectExternalIndexState,
         LocalBeatmapStatus,
     )
@@ -277,5 +278,16 @@ class BeatmapCommandRepository(Protocol):
 
         Returns:
             None: 失敗状態が Unit of Work に反映されたことを示す.
+        """
+        ...
+
+    async def record_direct_coverage(self, record: DirectCoverageRecord) -> None:
+        """osu!direct catalog coverage recordを保存する.
+
+        Args:
+            record (DirectCoverageRecord): feed windowまたはid range crawlのcoverage record.
+
+        Returns:
+            None: coverage stateがUnit of Workへ反映されたことを示す.
         """
         ...

@@ -11,6 +11,7 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchTarget,
     BeatmapFileState,
     BeatmapSetSearchDocument,
+    DirectCoverageRecord,
     DirectExternalIndexState,
     build_beatmapset_search_document,
 )
@@ -232,6 +233,17 @@ class InMemoryBeatmapCommandRepository:
             None: in-memory stateへ同期状態を保存して完了する.
         """
         self._state.external_index_states_by_key[(state.backend, state.beatmapset_id)] = state
+
+    async def record_direct_coverage(self, record: DirectCoverageRecord) -> None:
+        """osu!direct catalog coverage recordを保存する.
+
+        Args:
+            record (DirectCoverageRecord): feed windowまたはid range crawlのcoverage record.
+
+        Returns:
+            None: coverage stateを保存して完了する.
+        """
+        self._state.direct_coverage_records_by_scope[_coverage_scope_key(record)] = record
 
     async def set_local_status_override(
         self, beatmap_id: int, status: LocalBeatmapStatus | None
@@ -563,3 +575,23 @@ class InMemoryBeatmapCommandRepository:
         if beatmap is None:
             raise BeatmapNotFoundError(beatmap_id)
         return beatmap
+
+
+def _coverage_scope_key(record: DirectCoverageRecord) -> tuple[str, str, str, str, str, int, int]:
+    """Direct coverage record から in-memory scope key を作る.
+
+    Args:
+        record (DirectCoverageRecord): key を抽出する coverage record.
+
+    Returns:
+        tuple[str, str, str, str, str, int, int]: scope を表す mapping key.
+    """
+    return (
+        record.coverage_kind.value,
+        record.source.value,
+        record.status_scope.value,
+        record.sort_key,
+        record.window_key,
+        record.from_beatmapset_id,
+        record.to_beatmapset_id,
+    )

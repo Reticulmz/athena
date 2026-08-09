@@ -15,6 +15,7 @@ if TYPE_CHECKING:
         BeatmapFileAttachment,
         BeatmapSet,
         BeatmapSetSearchDocument,
+        DirectCoverageRecord,
         DirectExternalIndexBackend,
         DirectExternalIndexState,
     )
@@ -231,6 +232,8 @@ class InMemoryCommandRepositoryState:
             beatmap ごとの集計 submission count.
         search_documents_by_beatmapset_id (dict[int, BeatmapSetSearchDocument]):
             osu!direct検索projectionの主記録.
+        direct_coverage_records_by_scope (dict[tuple[str, str, str, str, str, int, int],
+            DirectCoverageRecord]): feed windowまたはid range crawlのcoverage state.
         external_index_states_by_key (dict[tuple[DirectExternalIndexBackend, int],
             DirectExternalIndexState]): external index backendとbeatmapset IDごとの同期状態.
         attachments_by_key (dict[tuple[int, str], BeatmapFileAttachment]):
@@ -344,6 +347,10 @@ class InMemoryCommandRepositoryState:
     search_documents_by_beatmapset_id: dict[int, BeatmapSetSearchDocument] = field(
         default_factory=dict
     )
+    direct_coverage_records_by_scope: dict[
+        tuple[str, str, str, str, str, int, int],
+        DirectCoverageRecord,
+    ] = field(default_factory=dict)
     external_index_states_by_key: dict[
         tuple[DirectExternalIndexBackend, int],
         DirectExternalIndexState,

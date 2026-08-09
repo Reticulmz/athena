@@ -76,7 +76,7 @@
   - _Requirements: 3.3, 3.4, 3.5, 3.6, 10.5, 10.6_
   - _Boundary: DirectCatalogScheduler_
 
-- [ ] 3.2 (P) Implement feed window catalog synchronization
+- [x] 3.2 (P) Implement feed window catalog synchronization
   - Fetch configured status and sort feed windows through Beatmap Mirror metadata fetch paths.
   - Record source, status scope, sort or window identifier, observed id range, cursor or page marker, and completion time only after success.
   - Record failed feed windows without marking them covered.
