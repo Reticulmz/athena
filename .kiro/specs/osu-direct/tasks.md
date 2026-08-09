@@ -47,7 +47,7 @@
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 6.1, 6.3, 6.4, 6.5, 7.5, 12.3, 12.4, 12.5_
   - _Boundary: ParadeDBSearchBackend_
 
-- [ ] 2.3 (P) Implement optional external index synchronization
+- [x] 2.3 (P) Implement optional external index synchronization
   - Apply the shared field declaration to the external index settings.
   - Index projection documents only after metadata and projection changes are committed.
   - Record failed index updates for retry or rebuild.
