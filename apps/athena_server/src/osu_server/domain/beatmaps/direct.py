@@ -2,7 +2,8 @@
 
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import Final
+from enum import StrEnum
+from typing import Final, Protocol
 
 from osu_server.domain.beatmaps.models import (
     Beatmap,
@@ -18,6 +19,109 @@ _DIRECT_INACTIVE_STATUSES: Final = frozenset(
         BeatmapRankStatus.UNKNOWN,
     }
 )
+
+
+class DirectSearchListing(StrEnum):
+    """Stable osu!direct検索のlisting種別を表す.
+
+    Attributes:
+        SEARCH (DirectSearchListing): 通常のtext検索または空queryのcatalog listing.
+        NEWEST (DirectSearchListing): `Newest` special queryから導出するlisting.
+        TOP_RATED (DirectSearchListing): rating実装までfallback順で返すspecial listing.
+        MOST_PLAYED (DirectSearchListing): playcount ranking実装までfallback順で返す
+            special listing.
+    """
+
+    SEARCH = "search"
+    NEWEST = "newest"
+    TOP_RATED = "top_rated"
+    MOST_PLAYED = "most_played"
+
+
+@dataclass(slots=True, frozen=True)
+class DirectSearchRequest:
+    """osu!direct検索backendへ渡す検索入力を表す.
+
+    Attributes:
+        query_text (str): stable clientが指定した検索文字列.
+        status (BeatmapRankStatus | None): direct status filter. 指定なしならNone.
+        mode (BeatmapMode | None): stable mode filter. 指定なしならNone.
+        page (int): 0始まりのpage番号.
+        page_size (int): 1 pageあたりの候補数.
+        listing (DirectSearchListing): text検索かspecial listingかを示す種別.
+    """
+
+    query_text: str
+    status: BeatmapRankStatus | None = None
+    mode: BeatmapMode | None = None
+    page: int = 0
+    page_size: int = 100
+    listing: DirectSearchListing = DirectSearchListing.SEARCH
+
+    def __post_init__(self) -> None:
+        """Page入力の永続backend向け制約を検証する.
+
+        Returns:
+            None: page入力が使用可能であることを示す.
+
+        Raises:
+            ValueError: pageが負値,またはpage_sizeが正でない場合.
+        """
+        if self.page < 0:
+            msg = "page must not be negative"
+            raise ValueError(msg)
+        if self.page_size <= 0:
+            msg = "page_size must be positive"
+            raise ValueError(msg)
+
+
+@dataclass(slots=True, frozen=True)
+class DirectSearchCandidate:
+    """Search backendが返すbeatmapset候補を表す.
+
+    Attributes:
+        beatmapset_id (int): hydration対象にするbeatmapset ID.
+        score (float): backendが計算したranking score. fallback listingでは0.0を使う.
+    """
+
+    beatmapset_id: int
+    score: float
+
+
+@dataclass(slots=True, frozen=True)
+class DirectSearchBackendResult:
+    """Search backendの候補結果を表す.
+
+    Attributes:
+        candidates (tuple[DirectSearchCandidate, ...]): page内に返す候補列.
+        has_more (bool): page_sizeを超える候補がある場合はTrue.
+    """
+
+    candidates: tuple[DirectSearchCandidate, ...]
+    has_more: bool
+
+
+class DirectSearchBackend(Protocol):
+    """osu!direct検索backendのservice-facing contractを表す."""
+
+    async def search(self, request: DirectSearchRequest) -> DirectSearchBackendResult:
+        """検索入力からbeatmapset候補を返す.
+
+        Args:
+            request (DirectSearchRequest): stable inputから導出されたbackend検索条件.
+
+        Returns:
+            DirectSearchBackendResult: hydration前の候補IDとscore.
+        """
+        ...
+
+    async def validate(self) -> None:
+        """Backendが検索trafficを受けられる状態か検証する.
+
+        Returns:
+            None: backend capabilityが揃っていることを示す.
+        """
+        ...
 
 
 @dataclass(slots=True, frozen=True)
@@ -225,5 +329,10 @@ def _document_content_changed(
 
 __all__ = [
     "BeatmapSetSearchDocument",
+    "DirectSearchBackend",
+    "DirectSearchBackendResult",
+    "DirectSearchCandidate",
+    "DirectSearchListing",
+    "DirectSearchRequest",
     "build_beatmapset_search_document",
 ]

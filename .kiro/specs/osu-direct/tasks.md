@@ -37,7 +37,7 @@
   - _Requirements: 2.1, 8.1, 8.2, 8.3, 8.4, 8.5, 11.1, 11.2, 11.4, 11.5_
   - _Boundary: SearchProjection_
 
-- [ ] 2.2 (P) Implement the required SQL search backend
+- [x] 2.2 (P) Implement the required SQL search backend
   - Search active projection documents by stable text, status, mode, and page inputs.
   - Return candidate beatmapset ids with ranking scores only.
   - Support fallback ordering for empty query and special listing requests.

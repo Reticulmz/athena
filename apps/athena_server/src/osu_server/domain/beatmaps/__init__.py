@@ -2,6 +2,11 @@
 
 from osu_server.domain.beatmaps.direct import (
     BeatmapSetSearchDocument,
+    DirectSearchBackend,
+    DirectSearchBackendResult,
+    DirectSearchCandidate,
+    DirectSearchListing,
+    DirectSearchRequest,
     build_beatmapset_search_document,
 )
 from osu_server.domain.beatmaps.eligibility import (
@@ -75,6 +80,11 @@ __all__ = [
     "BeatmapSourceVerification",
     "BeatmapStatus",
     "BeatmapsetSnapshot",
+    "DirectSearchBackend",
+    "DirectSearchBackendResult",
+    "DirectSearchCandidate",
+    "DirectSearchListing",
+    "DirectSearchRequest",
     "EligibilityResult",
     "LocalBeatmapStatus",
     "OsuFileFetchResult",
