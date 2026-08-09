@@ -10,7 +10,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.5, 3.1, 3.2, 3.4, 6.1, 6.2, 6.5, 6.6, 10.7_
   - _Boundary: Config_
 
-- [ ] 1.2 Add durable search projection, coverage, and index state storage
+- [x] 1.2 Add durable search projection, coverage, and index state storage
   - Add schema for set-centered search documents, catalog coverage records, and external index state.
   - Add the required SQL search index over declared searchable, filterable, and sortable fields.
   - Enforce non-null semantic identity for coverage and index state scopes.

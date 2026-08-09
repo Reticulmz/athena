@@ -23,11 +23,17 @@ from sqlalchemy import (
     UniqueConstraint,
     column,
     func,
+    or_,
 )
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
 
 from osu_server.infrastructure.database.base import Base
 from osu_server.repositories.sqlalchemy.models.enum_types import (
+    BEATMAP_DIRECT_COVERAGE_KIND_ENUM,
+    BEATMAP_DIRECT_EXTERNAL_INDEX_BACKEND_ENUM,
+    BEATMAP_DIRECT_EXTERNAL_INDEX_STATUS_ENUM,
+    BEATMAP_DIRECT_STATUS_SCOPE_ENUM,
     BEATMAP_FETCH_STATE_ENUM,
     BEATMAP_FETCH_TARGET_KIND_ENUM,
     BEATMAP_FILE_SOURCE_ENUM,
@@ -39,6 +45,16 @@ from osu_server.repositories.sqlalchemy.models.enum_types import (
 
 _PLAY_COUNT_COLUMN = column("play_count", BigInteger)
 _PASS_COUNT_COLUMN = column("pass_count", BigInteger)
+_BEATMAP_MODE_VALUES = ("osu", "taiko", "fruits", "mania", "unknown")
+_SEARCH_DOCUMENT_MODES_COLUMN = column("modes", postgresql.ARRAY(String(length=16)))
+_SEARCH_DOCUMENT_VERSION_COLUMN = column("document_version", Integer)
+_COVERAGE_FROM_BEATMAPSET_ID_COLUMN = column("from_beatmapset_id", Integer)
+_COVERAGE_TO_BEATMAPSET_ID_COLUMN = column("to_beatmapset_id", Integer)
+_COVERAGE_COMPLETED_AT_COLUMN = column("completed_at", DateTime(timezone=True))
+_COVERAGE_FAILED_AT_COLUMN = column("failed_at", DateTime(timezone=True))
+_INDEX_STATE_DOCUMENT_VERSION_COLUMN = column("document_version", Integer)
+_INDEX_STATE_FAILURE_REASON_COLUMN = column("failure_reason", Text)
+_INDEX_STATE_STATUS_COLUMN = column("status", String(length=16))
 
 
 class BeatmapSetModel(Base):
@@ -278,3 +294,218 @@ class BeatmapFetchStateModel(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class BeatmapSetSearchDocumentModel(Base):
+    """osu!direct検索backendへ渡すbeatmap set単位のprojectionを表す.
+
+    Attributes:
+        __tablename__ (str): 保存先のbeatmapset_search_documents table名.
+        __table_args__ (tuple[UniqueConstraint | Index | CheckConstraint, ...]):
+            mode値, version制約, active listing lookup index.
+        beatmapset_id (Mapped[int]): projection対象のbeatmap set識別子.
+        artist (Mapped[str]): 検索対象のartist名.
+        title (Mapped[str]): 検索対象のtitle.
+        creator (Mapped[str]): 検索対象のmapper名.
+        artist_unicode (Mapped[str | None]): Unicode artist名. 未提供ならNULL.
+        title_unicode (Mapped[str | None]): Unicode title. 未提供ならNULL.
+        source (Mapped[str]): upstream source文字列. 未提供なら空文字列を保存する.
+        tags (Mapped[str]): upstream tag文字列. 未提供なら空文字列を保存する.
+        difficulty_names (Mapped[str]): 子beatmapのdifficulty名を検索用に結合した文字列.
+        modes (Mapped[list[str]]): 子beatmapが持つmodeの閉集合.
+        status (Mapped[str]): direct検索で使うeffective status.
+        last_update_at (Mapped[datetime | None]): upstream metadata更新時刻. 未提供ならNULL.
+        is_active (Mapped[bool]): 検索対象として有効なprojectionか.
+        document_version (Mapped[int]): projection内容の更新version.
+        updated_at (Mapped[datetime]): projectionを最後に更新したUTC timestamp.
+    """
+
+    __tablename__: str = "beatmapset_search_documents"
+    __table_args__: tuple[UniqueConstraint | Index | CheckConstraint, ...] = (
+        CheckConstraint(
+            _SEARCH_DOCUMENT_VERSION_COLUMN > 0,
+            name="ck_beatmapset_search_documents_document_version_positive",
+        ),
+        CheckConstraint(
+            func.cardinality(_SEARCH_DOCUMENT_MODES_COLUMN) > 0,
+            name="ck_beatmapset_search_documents_modes_not_empty",
+        ),
+        CheckConstraint(
+            _SEARCH_DOCUMENT_MODES_COLUMN.op("<@")(
+                postgresql.array(_BEATMAP_MODE_VALUES, type_=String(length=16))
+            ),
+            name="ck_beatmapset_search_documents_modes_known",
+        ),
+        Index(
+            "idx_beatmapset_search_documents_active_status_update",
+            "is_active",
+            "status",
+            "last_update_at",
+            "beatmapset_id",
+        ),
+    )
+
+    beatmapset_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "beatmapsets.id",
+            name="fk_beatmapset_search_documents_beatmapset_id",
+        ),
+        primary_key=True,
+        autoincrement=False,
+    )
+    artist: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    creator: Mapped[str] = mapped_column(String(255), nullable=False)
+    artist_unicode: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    title_unicode: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    tags: Mapped[str] = mapped_column(Text, nullable=False)
+    difficulty_names: Mapped[str] = mapped_column(Text, nullable=False)
+    modes: Mapped[list[str]] = mapped_column(
+        postgresql.ARRAY(String(16)),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(BEATMAP_RANK_STATUS_ENUM, nullable=False)
+    last_update_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    document_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class BeatmapDirectCoverageModel(Base):
+    """osu!direct catalog同期のcoverageと失敗状態を表す.
+
+    Attributes:
+        __tablename__ (str): 保存先のbeatmap_direct_coverage table名.
+        __table_args__ (tuple[UniqueConstraint | Index | CheckConstraint, ...]):
+            coverage scope一意性, 範囲制約, 完了/失敗状態制約, lookup index.
+        id (Mapped[int]): 自動採番するcoverage recordのprimary key.
+        coverage_kind (Mapped[str]): feed windowまたはid range crawlを区別する種別.
+        source (Mapped[str]): upstream source識別子.
+        status_scope (Mapped[str]): 同期対象status scope. 全体対象はallを保存する.
+        sort_key (Mapped[str]): feed sortまたはid crawl種別.
+        window_key (Mapped[str]): cursor/page/window識別子. id chunkでは空文字列を保存する.
+        from_beatmapset_id (Mapped[int]): 観測またはcrawlした範囲開始id. 未特定なら0.
+        to_beatmapset_id (Mapped[int]): 観測またはcrawlした範囲終了id. 未特定なら0.
+        cursor (Mapped[str | None]): upstream cursor. 未提供ならNULL.
+        completed_at (Mapped[datetime | None]): coverage完了時刻. 失敗recordではNULL.
+        failed_at (Mapped[datetime | None]): 同期失敗時刻. 完了recordではNULL.
+        failure_reason (Mapped[str | None]): sanitized failure reason. 成功時または未記録ならNULL.
+    """
+
+    __tablename__: str = "beatmap_direct_coverage"
+    __table_args__: tuple[UniqueConstraint | Index | CheckConstraint, ...] = (
+        UniqueConstraint(
+            "coverage_kind",
+            "source",
+            "status_scope",
+            "sort_key",
+            "window_key",
+            "from_beatmapset_id",
+            "to_beatmapset_id",
+            name="uq_beatmap_direct_coverage_scope",
+        ),
+        CheckConstraint(
+            _COVERAGE_FROM_BEATMAPSET_ID_COLUMN >= 0,
+            name="ck_beatmap_direct_coverage_range_non_negative",
+        ),
+        CheckConstraint(
+            _COVERAGE_TO_BEATMAPSET_ID_COLUMN >= _COVERAGE_FROM_BEATMAPSET_ID_COLUMN,
+            name="ck_beatmap_direct_coverage_range_ordered",
+        ),
+        CheckConstraint(
+            or_(_COVERAGE_COMPLETED_AT_COLUMN.is_(None), _COVERAGE_FAILED_AT_COLUMN.is_(None)),
+            name="ck_beatmap_direct_coverage_not_completed_and_failed",
+        ),
+        CheckConstraint(
+            or_(column("failure_reason", Text).is_(None), _COVERAGE_FAILED_AT_COLUMN.is_not(None)),
+            name="ck_beatmap_direct_coverage_failure_reason_requires_failed_at",
+        ),
+        Index(
+            "idx_beatmap_direct_coverage_scope_lookup",
+            "coverage_kind",
+            "source",
+            "status_scope",
+            "sort_key",
+            "window_key",
+        ),
+        Index("idx_beatmap_direct_coverage_failure_lookup", "failed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    coverage_kind: Mapped[str] = mapped_column(BEATMAP_DIRECT_COVERAGE_KIND_ENUM, nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    status_scope: Mapped[str] = mapped_column(BEATMAP_DIRECT_STATUS_SCOPE_ENUM, nullable=False)
+    sort_key: Mapped[str] = mapped_column(Text, nullable=False)
+    window_key: Mapped[str] = mapped_column(Text, nullable=False)
+    from_beatmapset_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    to_beatmapset_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    cursor: Mapped[str | None] = mapped_column(Text, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class BeatmapDirectExternalIndexStateModel(Base):
+    """osu!direct optional external indexのdocument同期状態を表す.
+
+    Attributes:
+        __tablename__ (str): 保存先のbeatmap_direct_external_index_state table名.
+        __table_args__ (tuple[UniqueConstraint | Index | CheckConstraint, ...]):
+            document version制約, failure reason制約, retry lookup index.
+        backend (Mapped[str]): external index backend識別子.
+        beatmapset_id (Mapped[int]): external document対象のbeatmap set識別子.
+        document_version (Mapped[int]): 同期を試行したprojection version.
+        status (Mapped[str]): pending, succeeded, failedの同期状態.
+        last_attempted_at (Mapped[datetime | None]): 最後に同期を試行した時刻.
+        last_succeeded_at (Mapped[datetime | None]): 最後に同期成功した時刻.
+        failure_reason (Mapped[str | None]): sanitized failure reason. 失敗時以外はNULL.
+    """
+
+    __tablename__: str = "beatmap_direct_external_index_state"
+    __table_args__: tuple[UniqueConstraint | Index | CheckConstraint, ...] = (
+        CheckConstraint(
+            _INDEX_STATE_DOCUMENT_VERSION_COLUMN > 0,
+            name="ck_beatmap_direct_index_state_version_positive",
+        ),
+        CheckConstraint(
+            or_(
+                _INDEX_STATE_FAILURE_REASON_COLUMN.is_(None),
+                _INDEX_STATE_STATUS_COLUMN == "failed",
+            ),
+            name="ck_beatmap_direct_index_state_failure_reason",
+        ),
+        Index(
+            "idx_beatmap_direct_external_index_state_status_lookup",
+            "backend",
+            "status",
+            "last_attempted_at",
+        ),
+    )
+
+    backend: Mapped[str] = mapped_column(
+        BEATMAP_DIRECT_EXTERNAL_INDEX_BACKEND_ENUM,
+        primary_key=True,
+    )
+    beatmapset_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "beatmapsets.id",
+            name="fk_beatmap_direct_external_index_state_beatmapset_id",
+        ),
+        primary_key=True,
+        autoincrement=False,
+    )
+    document_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        BEATMAP_DIRECT_EXTERNAL_INDEX_STATUS_ENUM,
+        nullable=False,
+    )
+    last_attempted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_succeeded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
