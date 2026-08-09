@@ -17,6 +17,10 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 ValkeyDsn = RedisDsn
 
 type EnvironmentName = Literal["development", "test", "production"]
+type OsuDirectAccessPolicy = Literal["authenticated", "disabled", "supporter_entitlement"]
+type OsuDirectCatalogPriorityPolicy = Literal["point_lookup_first"]
+type OsuDirectExternalIndexBackend = Literal["disabled", "meilisearch"]
+type OsuDirectSqlSearchBackend = Literal["paradedb"]
 
 SUPPORTED_ENVIRONMENTS: frozenset[EnvironmentName] = frozenset(
     {"development", "test", "production"}
@@ -157,6 +161,25 @@ class AppConfig(BaseSettings):
         beatmap_mirror_refresh_interval_seconds (int): mirror情報更新間隔の秒数.
         beatmap_default_bounded_wait_seconds (float): beatmap取得時の標準待機時間の秒数.
         beatmap_max_bounded_wait_seconds (float): beatmap取得時に許可する最大待機時間の秒数.
+        osu_direct_access_policy (OsuDirectAccessPolicy): osu!directへのaccess policy.
+        osu_direct_sql_search_backend (OsuDirectSqlSearchBackend): 必須SQL検索backend名.
+        osu_direct_validate_sql_search_backend_on_startup (bool): 起動時SQL backend検証を行うか.
+        osu_direct_external_index_backend (OsuDirectExternalIndexBackend): 任意の外部index名.
+        osu_direct_meilisearch_url (str | None): Meilisearch backendのbase URL.
+        osu_direct_meilisearch_access_key (str | None): Meilisearch backendのaccess key.
+        osu_direct_meilisearch_index_name (str): Meilisearch index名.
+        osu_direct_point_lookup_bounded_wait_seconds (float): point lookupの最大待機秒数.
+        osu_direct_ranked_sync_interval_seconds (int): ranked catalog sync間隔の秒数.
+        osu_direct_approved_sync_interval_seconds (int): approved catalog sync間隔の秒数.
+        osu_direct_loved_sync_interval_seconds (int): loved catalog sync間隔の秒数.
+        osu_direct_qualified_sync_interval_seconds (int): qualified catalog sync間隔の秒数.
+        osu_direct_pending_sync_interval_seconds (int): pending catalog sync間隔の秒数.
+        osu_direct_wip_sync_interval_seconds (int): WIP catalog sync間隔の秒数.
+        osu_direct_graveyard_sync_interval_seconds (int): graveyard catalog sync間隔の秒数.
+        osu_direct_not_submitted_sync_interval_seconds (int): not submitted catalog sync間隔の秒数.
+        osu_direct_shared_upstream_budget_per_minute (int): direct系upstream処理の共有分間予算.
+        osu_direct_catalog_priority_policy (OsuDirectCatalogPriorityPolicy):
+            catalog処理の優先policy.
         model_config (ClassVar[SettingsConfigDict]): environment variableを直接読むSettings設定.
 
     Notes:
@@ -215,6 +238,25 @@ class AppConfig(BaseSettings):
     beatmap_mirror_refresh_interval_seconds: int = 86_400
     beatmap_default_bounded_wait_seconds: float = 3.0
     beatmap_max_bounded_wait_seconds: float = 3.0
+
+    osu_direct_access_policy: OsuDirectAccessPolicy = "authenticated"
+    osu_direct_sql_search_backend: OsuDirectSqlSearchBackend = "paradedb"
+    osu_direct_validate_sql_search_backend_on_startup: bool = True
+    osu_direct_external_index_backend: OsuDirectExternalIndexBackend = "disabled"
+    osu_direct_meilisearch_url: str | None = None
+    osu_direct_meilisearch_access_key: str | None = None
+    osu_direct_meilisearch_index_name: str = "athena_osu_direct_beatmapsets"
+    osu_direct_point_lookup_bounded_wait_seconds: float = 5.0
+    osu_direct_ranked_sync_interval_seconds: int = 86_400
+    osu_direct_approved_sync_interval_seconds: int = 86_400
+    osu_direct_loved_sync_interval_seconds: int = 86_400
+    osu_direct_qualified_sync_interval_seconds: int = 86_400
+    osu_direct_pending_sync_interval_seconds: int = 86_400
+    osu_direct_wip_sync_interval_seconds: int = 86_400
+    osu_direct_graveyard_sync_interval_seconds: int = 86_400
+    osu_direct_not_submitted_sync_interval_seconds: int = 86_400
+    osu_direct_shared_upstream_budget_per_minute: int = 60
+    osu_direct_catalog_priority_policy: OsuDirectCatalogPriorityPolicy = "point_lookup_first"
 
     @property
     def query_diagnostics_effective_enabled(self) -> bool:
@@ -284,6 +326,95 @@ class AppConfig(BaseSettings):
             msg = f"Invalid beatmap_mirror_trust_policy: {v!r}. Valid: trusted, untrusted"
             raise ValueError(msg)
         return lower
+
+    @field_validator("osu_direct_access_policy", mode="before")
+    @classmethod
+    def _validate_osu_direct_access_policy(cls, v: str) -> OsuDirectAccessPolicy:
+        """osu!direct access policyを正規化して許可値を検証する.
+
+        Args:
+            v (str): environmentから読み込んだaccess policy名.
+
+        Returns:
+            OsuDirectAccessPolicy: 小文字化済みの許可されたaccess policy.
+
+        Raises:
+            ValueError: policy名がauthenticated,disabled,supporter_entitlement以外の場合.
+        """
+        normalized = v.lower().replace("-", "_")
+        if normalized == "authenticated":
+            return "authenticated"
+        if normalized == "disabled":
+            return "disabled"
+        if normalized == "supporter_entitlement":
+            return "supporter_entitlement"
+        msg = (
+            f"Invalid osu_direct_access_policy: {v!r}. Valid: authenticated, "
+            "disabled, supporter_entitlement"
+        )
+        raise ValueError(msg)
+
+    @field_validator("osu_direct_sql_search_backend", mode="before")
+    @classmethod
+    def _validate_osu_direct_sql_search_backend(cls, v: str) -> OsuDirectSqlSearchBackend:
+        """必須SQL検索backendを正規化して許可値を検証する.
+
+        Args:
+            v (str): environmentから読み込んだSQL search backend名.
+
+        Returns:
+            OsuDirectSqlSearchBackend: 小文字化済みの`paradedb`.
+
+        Raises:
+            ValueError: SQL search backendが`paradedb`以外の場合.
+        """
+        if v.lower().replace("-", "_") == "paradedb":
+            return "paradedb"
+        msg = f"Invalid osu_direct_sql_search_backend: {v!r}. Valid: paradedb"
+        raise ValueError(msg)
+
+    @field_validator("osu_direct_external_index_backend", mode="before")
+    @classmethod
+    def _validate_osu_direct_external_index_backend(cls, v: str) -> OsuDirectExternalIndexBackend:
+        """任意の外部index backendを正規化して許可値を検証する.
+
+        Args:
+            v (str): environmentから読み込んだexternal index backend名.
+
+        Returns:
+            OsuDirectExternalIndexBackend: 小文字化済みのbackend名.
+
+        Raises:
+            ValueError: backend名がdisabledまたはmeilisearch以外の場合.
+        """
+        normalized = v.lower().replace("-", "_")
+        if normalized == "disabled":
+            return "disabled"
+        if normalized == "meilisearch":
+            return "meilisearch"
+        msg = f"Invalid osu_direct_external_index_backend: {v!r}. Valid: disabled, meilisearch"
+        raise ValueError(msg)
+
+    @field_validator("osu_direct_catalog_priority_policy", mode="before")
+    @classmethod
+    def _validate_osu_direct_catalog_priority_policy(
+        cls, v: str
+    ) -> OsuDirectCatalogPriorityPolicy:
+        """Catalog workの優先policyを正規化して許可値を検証する.
+
+        Args:
+            v (str): environmentから読み込んだcatalog priority policy名.
+
+        Returns:
+            OsuDirectCatalogPriorityPolicy: 小文字化済みの`point_lookup_first`.
+
+        Raises:
+            ValueError: priority policyが`point_lookup_first`以外の場合.
+        """
+        if v.lower().replace("-", "_") == "point_lookup_first":
+            return "point_lookup_first"
+        msg = f"Invalid osu_direct_catalog_priority_policy: {v!r}. Valid: point_lookup_first"
+        raise ValueError(msg)
 
     @field_validator("log_max_files")
     @classmethod
@@ -470,6 +601,41 @@ class AppConfig(BaseSettings):
         if self.beatmap_default_bounded_wait_seconds > self.beatmap_max_bounded_wait_seconds:
             msg = "beatmap default bounded wait cannot exceed the maximum bounded wait"
             raise ValueError(msg)
+
+        osu_direct_runtime_values = (
+            self.osu_direct_point_lookup_bounded_wait_seconds,
+            self.osu_direct_ranked_sync_interval_seconds,
+            self.osu_direct_approved_sync_interval_seconds,
+            self.osu_direct_loved_sync_interval_seconds,
+            self.osu_direct_qualified_sync_interval_seconds,
+            self.osu_direct_pending_sync_interval_seconds,
+            self.osu_direct_wip_sync_interval_seconds,
+            self.osu_direct_graveyard_sync_interval_seconds,
+            self.osu_direct_not_submitted_sync_interval_seconds,
+            self.osu_direct_shared_upstream_budget_per_minute,
+        )
+        if any(value <= 0 for value in osu_direct_runtime_values):
+            msg = "osu_direct runtime values must be greater than 0"
+            raise ValueError(msg)
+        if not self.osu_direct_meilisearch_index_name.strip():
+            msg = "osu_direct_meilisearch_index_name must not be empty"
+            raise ValueError(msg)
+        if (
+            self.osu_direct_external_index_backend == "meilisearch"
+            and not self.osu_direct_meilisearch_url
+        ):
+            msg = (
+                "osu_direct_meilisearch_url is required when "
+                "osu_direct_external_index_backend is meilisearch"
+            )
+            raise ValueError(msg)
+        if self.osu_direct_meilisearch_url:
+            self._validate_beatmap_http_url(
+                self.osu_direct_meilisearch_url,
+                field_name="osu_direct_meilisearch_url",
+                environment=environment,
+                absolute_url_label="URL",
+            )
 
         return self
 

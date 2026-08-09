@@ -1,7 +1,7 @@
 # Implementation Plan
 
 - [ ] 1. Foundation: configuration, schema, and shared search contract
-- [ ] 1.1 Add osu!direct runtime policy and backend configuration
+- [x] 1.1 Add osu!direct runtime policy and backend configuration
   - Add access policy settings for authenticated default, disabled mode, and reserved supporter-entitlement mode.
   - Add search backend settings for required SQL search and optional external index.
   - Add point lookup bounded wait, status sync intervals, shared upstream budget, and catalog priority settings.

@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from pydantic import PostgresDsn, RedisDsn
 
-from osu_server.config import AppConfig, validate_environment_name
+from osu_server.config import (
+    AppConfig,
+    OsuDirectAccessPolicy,
+    OsuDirectCatalogPriorityPolicy,
+    OsuDirectExternalIndexBackend,
+    OsuDirectSqlSearchBackend,
+    validate_environment_name,
+)
 
 _DEFAULT_DATABASE_URL = "postgresql+asyncpg://user:pass@localhost/osu"
 _DEFAULT_VALKEY_URL = "redis://localhost:6379/0"
@@ -51,6 +58,24 @@ def make_app_config(
     beatmap_mirror_refresh_interval_seconds: int = 86_400,
     beatmap_default_bounded_wait_seconds: float = 3.0,
     beatmap_max_bounded_wait_seconds: float = 3.0,
+    osu_direct_access_policy: OsuDirectAccessPolicy = "authenticated",
+    osu_direct_sql_search_backend: OsuDirectSqlSearchBackend = "paradedb",
+    osu_direct_validate_sql_search_backend_on_startup: bool = True,
+    osu_direct_external_index_backend: OsuDirectExternalIndexBackend = "disabled",
+    osu_direct_meilisearch_url: str | None = None,
+    osu_direct_meilisearch_access_key: str | None = None,
+    osu_direct_meilisearch_index_name: str = "athena_osu_direct_beatmapsets",
+    osu_direct_point_lookup_bounded_wait_seconds: float = 5.0,
+    osu_direct_ranked_sync_interval_seconds: int = 86_400,
+    osu_direct_approved_sync_interval_seconds: int = 86_400,
+    osu_direct_loved_sync_interval_seconds: int = 86_400,
+    osu_direct_qualified_sync_interval_seconds: int = 86_400,
+    osu_direct_pending_sync_interval_seconds: int = 86_400,
+    osu_direct_wip_sync_interval_seconds: int = 86_400,
+    osu_direct_graveyard_sync_interval_seconds: int = 86_400,
+    osu_direct_not_submitted_sync_interval_seconds: int = 86_400,
+    osu_direct_shared_upstream_budget_per_minute: int = 60,
+    osu_direct_catalog_priority_policy: OsuDirectCatalogPriorityPolicy = "point_lookup_first",
 ) -> AppConfig:
     """指定値またはtest default値からAppConfigを作る.
 
@@ -95,6 +120,25 @@ def make_app_config(
         beatmap_mirror_refresh_interval_seconds (int): mirror metadataの更新間隔秒数.
         beatmap_default_bounded_wait_seconds (float): default bounded wait秒数.
         beatmap_max_bounded_wait_seconds (float): 許可する最大bounded wait秒数.
+        osu_direct_access_policy (OsuDirectAccessPolicy): osu!direct access policy.
+        osu_direct_sql_search_backend (OsuDirectSqlSearchBackend): 必須SQL検索backend名.
+        osu_direct_validate_sql_search_backend_on_startup (bool): 起動時SQL backend検証を行うか.
+        osu_direct_external_index_backend (OsuDirectExternalIndexBackend): 任意の外部index名.
+        osu_direct_meilisearch_url (str | None): Meilisearch backendのbase URL.
+        osu_direct_meilisearch_access_key (str | None): Meilisearch backendのaccess key.
+        osu_direct_meilisearch_index_name (str): Meilisearch index名.
+        osu_direct_point_lookup_bounded_wait_seconds (float): point lookupの最大待機秒数.
+        osu_direct_ranked_sync_interval_seconds (int): ranked catalog sync間隔の秒数.
+        osu_direct_approved_sync_interval_seconds (int): approved catalog sync間隔の秒数.
+        osu_direct_loved_sync_interval_seconds (int): loved catalog sync間隔の秒数.
+        osu_direct_qualified_sync_interval_seconds (int): qualified catalog sync間隔の秒数.
+        osu_direct_pending_sync_interval_seconds (int): pending catalog sync間隔の秒数.
+        osu_direct_wip_sync_interval_seconds (int): WIP catalog sync間隔の秒数.
+        osu_direct_graveyard_sync_interval_seconds (int): graveyard catalog sync間隔の秒数.
+        osu_direct_not_submitted_sync_interval_seconds (int): not submitted catalog sync間隔の秒数.
+        osu_direct_shared_upstream_budget_per_minute (int): direct系upstream処理の共有分間予算.
+        osu_direct_catalog_priority_policy (OsuDirectCatalogPriorityPolicy):
+            catalog処理の優先policy.
 
     Returns:
         AppConfig: testが型情報を失わずに利用できる設定値.
@@ -146,4 +190,30 @@ def make_app_config(
         beatmap_mirror_refresh_interval_seconds=beatmap_mirror_refresh_interval_seconds,
         beatmap_default_bounded_wait_seconds=beatmap_default_bounded_wait_seconds,
         beatmap_max_bounded_wait_seconds=beatmap_max_bounded_wait_seconds,
+        osu_direct_access_policy=osu_direct_access_policy,
+        osu_direct_sql_search_backend=osu_direct_sql_search_backend,
+        osu_direct_validate_sql_search_backend_on_startup=(
+            osu_direct_validate_sql_search_backend_on_startup
+        ),
+        osu_direct_external_index_backend=osu_direct_external_index_backend,
+        osu_direct_meilisearch_url=osu_direct_meilisearch_url,
+        osu_direct_meilisearch_access_key=osu_direct_meilisearch_access_key,
+        osu_direct_meilisearch_index_name=osu_direct_meilisearch_index_name,
+        osu_direct_point_lookup_bounded_wait_seconds=(
+            osu_direct_point_lookup_bounded_wait_seconds
+        ),
+        osu_direct_ranked_sync_interval_seconds=osu_direct_ranked_sync_interval_seconds,
+        osu_direct_approved_sync_interval_seconds=osu_direct_approved_sync_interval_seconds,
+        osu_direct_loved_sync_interval_seconds=osu_direct_loved_sync_interval_seconds,
+        osu_direct_qualified_sync_interval_seconds=osu_direct_qualified_sync_interval_seconds,
+        osu_direct_pending_sync_interval_seconds=osu_direct_pending_sync_interval_seconds,
+        osu_direct_wip_sync_interval_seconds=osu_direct_wip_sync_interval_seconds,
+        osu_direct_graveyard_sync_interval_seconds=osu_direct_graveyard_sync_interval_seconds,
+        osu_direct_not_submitted_sync_interval_seconds=(
+            osu_direct_not_submitted_sync_interval_seconds
+        ),
+        osu_direct_shared_upstream_budget_per_minute=(
+            osu_direct_shared_upstream_budget_per_minute
+        ),
+        osu_direct_catalog_priority_policy=osu_direct_catalog_priority_policy,
     )
