@@ -11,6 +11,7 @@ from starlette.responses import Response
 from osu_server.domain.beatmaps import (
     BeatmapMode,
     BeatmapRankStatus,
+    DirectAccessDecision,
     is_direct_searchable_beatmapset,
 )
 from osu_server.domain.compatibility.stable.direct import (
@@ -20,12 +21,22 @@ from osu_server.domain.compatibility.stable.direct import (
 from osu_server.domain.compatibility.stable.mode import StableMode
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from datetime import datetime
+
+    from starlette.requests import Request
 
     from osu_server.domain.beatmaps import Beatmap, BeatmapSet
     from osu_server.services.queries.beatmaps import (
+        DirectPointLookupQuery,
         DirectPointLookupQueryResult,
+        DirectSearchQuery,
         DirectSearchQueryResult,
+    )
+    from osu_server.transports.stable.web_legacy.direct_access import StableDirectAccessGate
+    from osu_server.transports.stable.web_legacy.mappers import (
+        StableDirectPointLookupQueryParser,
+        StableDirectSearchQueryParser,
     )
 
 _TEXT_PLAIN_UTF8 = "text/plain; charset=utf-8"
@@ -46,6 +57,146 @@ _MODE_TO_WIRE: Final[dict[BeatmapMode, int]] = {
     BeatmapMode.FRUITS: StableMode.Fruits.value,
     BeatmapMode.MANIA: StableMode.Mania.value,
 }
+
+
+class StableDirectSearchHandler:
+    """`GET /web/osu-search.php`を認証済みdirect search responseへ変換する.
+
+    Attributes:
+        _access_gate (StableDirectAccessGate): legacy credentialとdirect access policyを判定する
+            gate.
+        _search_parser (StableDirectSearchQueryParser): query parameterをsearch requestへ変換する
+            parser.
+        _search_query (DirectSearchQuery): catalog候補をmetadataへhydrateするquery use-case.
+    """
+
+    _access_gate: StableDirectAccessGate
+    _search_parser: StableDirectSearchQueryParser
+    _search_query: DirectSearchQuery
+
+    def __init__(
+        self,
+        *,
+        access_gate: StableDirectAccessGate,
+        search_parser: StableDirectSearchQueryParser,
+        search_query: DirectSearchQuery,
+    ) -> None:
+        """Direct search handlerの依存を保持する.
+
+        Args:
+            access_gate (StableDirectAccessGate): direct work前の認証とaccess policy.
+            search_parser (StableDirectSearchQueryParser): stable search query parser.
+            search_query (DirectSearchQuery): direct search query use-case.
+        """
+        self._access_gate = access_gate
+        self._search_parser = search_parser
+        self._search_query = search_query
+
+    async def __call__(self, request: Request) -> Response:
+        """Starlette requestのquery parameterをstable direct search responseへ変換する.
+
+        Args:
+            request (Request): stable clientから届いたGET request.
+
+        Returns:
+            Response: 認証とdirect search結果を反映したstable response.
+        """
+        return await self.respond(request.query_params)
+
+    async def respond(self, query: Mapping[str, str]) -> Response:
+        """Stable direct search queryを認証してwire responseへ変換する.
+
+        Args:
+            query (Mapping[str, str]): stable clientが送るquery parameter mapping.
+
+        Returns:
+            Response: 認証またはaccess拒否には空のHTTP 401, malformed queryには空検索,
+                成功時にはstable direct count lineとrowを返す.
+        """
+        access_result = await self._access_gate.authorize(query)
+        if access_result.decision is not DirectAccessDecision.ALLOWED:
+            return _access_failure_response()
+
+        user_id = access_result.authenticated_user_id
+        if user_id is None:
+            return _access_failure_response()
+
+        parse_result = self._search_parser.parse(query, authenticated_user_id=user_id)
+        if parse_result.request is None:
+            return _text_response(b"0")
+
+        result = await self._search_query.execute(parse_result.request)
+        return format_direct_search_response(result)
+
+
+class StableDirectPointLookupHandler:
+    """`GET /web/osu-search-set.php`を認証済みpoint lookup responseへ変換する.
+
+    Attributes:
+        _access_gate (StableDirectAccessGate): legacy credentialとdirect access policyを判定する
+            gate.
+        _point_lookup_parser (StableDirectPointLookupQueryParser):
+            query parameterをlookup requestへ変換するparser.
+        _point_lookup_query (DirectPointLookupQuery): metadata point lookup query use-case.
+    """
+
+    _access_gate: StableDirectAccessGate
+    _point_lookup_parser: StableDirectPointLookupQueryParser
+    _point_lookup_query: DirectPointLookupQuery
+
+    def __init__(
+        self,
+        *,
+        access_gate: StableDirectAccessGate,
+        point_lookup_parser: StableDirectPointLookupQueryParser,
+        point_lookup_query: DirectPointLookupQuery,
+    ) -> None:
+        """Direct point lookup handlerの依存を保持する.
+
+        Args:
+            access_gate (StableDirectAccessGate): direct work前の認証とaccess policy.
+            point_lookup_parser (StableDirectPointLookupQueryParser): stable point lookup parser.
+            point_lookup_query (DirectPointLookupQuery): direct point lookup query use-case.
+        """
+        self._access_gate = access_gate
+        self._point_lookup_parser = point_lookup_parser
+        self._point_lookup_query = point_lookup_query
+
+    async def __call__(self, request: Request) -> Response:
+        """Starlette requestのquery parameterをstable point lookup responseへ変換する.
+
+        Args:
+            request (Request): stable clientから届いたGET request.
+
+        Returns:
+            Response: 認証とpoint lookup結果を反映したstable response.
+        """
+        return await self.respond(request.query_params)
+
+    async def respond(self, query: Mapping[str, str]) -> Response:
+        """Stable direct point lookup queryを認証してwire responseへ変換する.
+
+        Args:
+            query (Mapping[str, str]): stable clientが送るquery parameter mapping.
+
+        Returns:
+            Response: 認証またはaccess拒否には空のHTTP 401, malformedまたは未解決lookupには
+                空のHTTP 200, 成功時にはstable direct rowを返す.
+        """
+        access_result = await self._access_gate.authorize(query)
+        if access_result.decision is not DirectAccessDecision.ALLOWED:
+            return _access_failure_response()
+
+        user_id = access_result.authenticated_user_id
+        if user_id is None:
+            return _access_failure_response()
+
+        parse_result = self._point_lookup_parser.parse(query, authenticated_user_id=user_id)
+        if parse_result.request is None:
+            return _text_response(b"")
+
+        result = await self._point_lookup_query.execute(parse_result.request)
+        return format_direct_point_lookup_response(result)
 
 
 def format_direct_search_response(result: DirectSearchQueryResult) -> Response:
@@ -223,7 +374,18 @@ def _text_response(content: bytes) -> Response:
     )
 
 
+def _access_failure_response() -> Response:
+    """Stable direct auth/access failure responseを作る.
+
+    Returns:
+        Response: catalog bodyを持たないHTTP 401 response.
+    """
+    return Response(content=b"", status_code=HTTPStatus.UNAUTHORIZED)
+
+
 __all__ = [
+    "StableDirectPointLookupHandler",
+    "StableDirectSearchHandler",
     "format_direct_point_lookup_response",
     "format_direct_search_response",
 ]

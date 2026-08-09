@@ -14,6 +14,8 @@ from starlette.routing import Host, Mount, Route, Router
 
 from osu_server.composition.endpoints import (
     bancho_endpoint,
+    direct_point_lookup_endpoint,
+    direct_search_endpoint,
     getscores_endpoint,
     registration_endpoint,
     replay_download_endpoint,
@@ -78,6 +80,16 @@ def create_app(provider_overrides: Iterable[Provider] = ()) -> Starlette:
             Route(
                 "/web/osu-osz2-getscores.php",
                 endpoint=getscores_endpoint,
+                methods=["GET"],
+            ),
+            Route(
+                "/web/osu-search.php",
+                endpoint=direct_search_endpoint,
+                methods=["GET"],
+            ),
+            Route(
+                "/web/osu-search-set.php",
+                endpoint=direct_point_lookup_endpoint,
                 methods=["GET"],
             ),
             Route(

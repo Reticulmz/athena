@@ -135,7 +135,7 @@
   - _Boundary: StableDirectFormatter_
 
 - [ ] 5. Runtime integration
-- [ ] 5.1 Wire stable web legacy routes and providers
+- [x] 5.1 Wire stable web legacy routes and providers
   - Register `/web/osu-search.php` and `/web/osu-search-set.php` on the stable web legacy host route.
   - Add endpoint adapters, lifespan state, and provider graph wiring for direct handlers.
   - Preserve existing bancho, getscores, replay, score submit, registration, and health routes.

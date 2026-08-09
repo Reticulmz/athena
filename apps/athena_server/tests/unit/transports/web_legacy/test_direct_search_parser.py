@@ -3,9 +3,12 @@
 from osu_server.domain.beatmaps import (
     BeatmapMode,
     BeatmapRankStatus,
+    DirectPointLookupTargetKind,
     DirectSearchListing,
 )
 from osu_server.transports.stable.web_legacy.mappers import (
+    StableDirectPointLookupParseError,
+    StableDirectPointLookupQueryParser,
     StableDirectSearchParseError,
     StableDirectSearchQueryParser,
 )
@@ -94,3 +97,51 @@ def test_direct_search_parser_returns_sanitized_error_without_credentials() -> N
     assert result.error is StableDirectSearchParseError.MALFORMED_STATUS
     assert "Player" not in repr(result)
     assert "secret-hash" not in repr(result)
+
+
+def test_direct_point_lookup_parser_builds_supported_targets() -> None:
+    """Stable point lookup queryをs,b,cのtarget別requestへ変換する契約を検証する.
+
+    Returns:
+        None: beatmapset ID, beatmap ID, checksumがdomain requestへ写ることを確認する.
+    """
+    parser = StableDirectPointLookupQueryParser()
+
+    by_set = parser.parse({"s": "123"}, authenticated_user_id=42)
+    by_beatmap = parser.parse({"b": "456"}, authenticated_user_id=42)
+    by_checksum = parser.parse(
+        {"c": "ABCDEF0123456789ABCDEF0123456789"},
+        authenticated_user_id=42,
+    )
+
+    assert by_set.request is not None
+    assert by_beatmap.request is not None
+    assert by_checksum.request is not None
+    assert by_set.request.target_kind is DirectPointLookupTargetKind.BEATMAPSET_ID
+    assert by_set.request.target_value == 123
+    assert by_beatmap.request.target_kind is DirectPointLookupTargetKind.BEATMAP_ID
+    assert by_beatmap.request.target_value == 456
+    assert by_checksum.request.target_kind is DirectPointLookupTargetKind.CHECKSUM
+    assert by_checksum.request.target_value == "abcdef0123456789abcdef0123456789"
+
+
+def test_direct_point_lookup_parser_returns_sanitized_error_without_credentials() -> None:
+    """Malformed point lookupがcredentialを含まないparse errorだけを返す契約を検証する.
+
+    Returns:
+        None: target未指定と不正IDがsanitize済みerrorになりcredentialを保持しないことを確認する.
+    """
+    parser = StableDirectPointLookupQueryParser()
+
+    missing = parser.parse({"u": "Player", "h": "secret-hash"}, authenticated_user_id=42)
+    malformed = parser.parse(
+        {"u": "Player", "h": "secret-hash", "s": "not-id"},
+        authenticated_user_id=42,
+    )
+
+    assert missing.request is None
+    assert malformed.request is None
+    assert missing.error is StableDirectPointLookupParseError.MISSING_TARGET
+    assert malformed.error is StableDirectPointLookupParseError.MALFORMED_TARGET
+    assert "Player" not in repr(missing)
+    assert "secret-hash" not in repr(malformed)

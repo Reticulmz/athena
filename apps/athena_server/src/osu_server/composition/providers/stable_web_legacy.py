@@ -8,6 +8,7 @@ from dishka import Provider, Scope
 
 from osu_server.composition.providers._dishka import provide
 from osu_server.config import AppConfig
+from osu_server.domain.beatmaps import DirectAccessPolicy, DirectAccessPolicyMode
 from osu_server.infrastructure.crypto import ScoreCryptoService
 from osu_server.infrastructure.messaging.local import LocalEventBus
 from osu_server.infrastructure.parsers.multipart_parser import MultipartLimits
@@ -24,6 +25,7 @@ from osu_server.services.commands.scores import (
     ProcessScoreSubmissionUseCase,
     ReplayDownloadAccountingPublisher,
 )
+from osu_server.services.queries.beatmaps import DirectPointLookupQuery, DirectSearchQuery
 from osu_server.services.queries.beatmaps.mirror import BeatmapMirrorService
 from osu_server.services.queries.identity import (
     GetFriendEligibleUserIdsQuery,
@@ -36,11 +38,18 @@ from osu_server.services.queries.scores import (
     CurrentUserStatsQuery,
     ReplayDownloadQuery,
 )
+from osu_server.transports.stable.web_legacy.direct import (
+    StableDirectPointLookupHandler,
+    StableDirectSearchHandler,
+)
+from osu_server.transports.stable.web_legacy.direct_access import StableDirectAccessGate
 from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
 from osu_server.transports.stable.web_legacy.mappers import (
     GetscoresQueryParser,
     GetscoresStatusMapper,
     ReplayDownloadQueryParser,
+    StableDirectPointLookupQueryParser,
+    StableDirectSearchQueryParser,
     StableScorePayloadParser,
     StableScoreSubmitDecoder,
     StableScoreSubmitMapper,
@@ -53,6 +62,9 @@ _DISHKA_RUNTIME_HINTS = (
     AppConfig,
     BeatmapLeaderboardQueryRepository,
     BeatmapLeaderboardQuery,
+    DirectAccessPolicy,
+    DirectPointLookupQuery,
+    DirectSearchQuery,
     BeatmapMirrorService,
     BeatmapScoreListingQueryRepository,
     BeatmapScoreListingQuery,
@@ -69,6 +81,11 @@ _DISHKA_RUNTIME_HINTS = (
     ReplayDownloadHandler,
     ScoreCryptoService,
     SessionCredentialsQueryUseCase,
+    StableDirectAccessGate,
+    StableDirectPointLookupHandler,
+    StableDirectPointLookupQueryParser,
+    StableDirectSearchHandler,
+    StableDirectSearchQueryParser,
     StableScorePayloadParser,
     StableScoreSubmitDecoder,
     UserQueryRepository,
@@ -130,6 +147,102 @@ class StableWebLegacyProviderSet(Provider):
                 変換するparser.
         """
         return ReplayDownloadQueryParser()
+
+    @provide
+    def direct_access_policy(self, config: AppConfig) -> DirectAccessPolicy:
+        """設定値からstable direct access policyを構成する.
+
+        Args:
+            config (AppConfig): osu!direct access policy設定を持つ実行時設定.
+
+        Returns:
+            DirectAccessPolicy: stable direct handlerがwork前に適用するpolicy.
+        """
+        return DirectAccessPolicy(DirectAccessPolicyMode(config.osu_direct_access_policy))
+
+    @provide
+    def direct_access_gate(
+        self,
+        auth_query: SessionCredentialsQueryUseCase,
+        access_policy: DirectAccessPolicy,
+    ) -> StableDirectAccessGate:
+        """Stable direct access gateをlegacy auth queryとpolicyで構成する.
+
+        Args:
+            auth_query (SessionCredentialsQueryUseCase): legacy credentialを検証するquery.
+            access_policy (DirectAccessPolicy): direct work前に適用するaccess policy.
+
+        Returns:
+            StableDirectAccessGate: search/point lookup handler共通のaccess gate.
+        """
+        return StableDirectAccessGate(auth_query=auth_query, access_policy=access_policy)
+
+    @provide
+    def direct_search_parser(self) -> StableDirectSearchQueryParser:
+        """Stable direct search query parserを構成する.
+
+        Returns:
+            StableDirectSearchQueryParser: `/web/osu-search.php` queryをtyped requestへ変換する
+                parser.
+        """
+        return StableDirectSearchQueryParser()
+
+    @provide
+    def direct_point_lookup_parser(self) -> StableDirectPointLookupQueryParser:
+        """Stable direct point lookup query parserを構成する.
+
+        Returns:
+            StableDirectPointLookupQueryParser: `/web/osu-search-set.php` queryをtyped requestへ
+                変換するparser.
+        """
+        return StableDirectPointLookupQueryParser()
+
+    @provide
+    def direct_search_handler(
+        self,
+        access_gate: StableDirectAccessGate,
+        search_parser: StableDirectSearchQueryParser,
+        search_query: DirectSearchQuery,
+    ) -> StableDirectSearchHandler:
+        """Stable direct search handlerをaccess gate,parser,queryで構成する.
+
+        Args:
+            access_gate (StableDirectAccessGate): direct search前の認証とaccess policy.
+            search_parser (StableDirectSearchQueryParser): stable query parameter parser.
+            search_query (DirectSearchQuery): direct search query use-case.
+
+        Returns:
+            StableDirectSearchHandler: `/web/osu-search.php`互換requestを処理するhandler.
+        """
+        return StableDirectSearchHandler(
+            access_gate=access_gate,
+            search_parser=search_parser,
+            search_query=search_query,
+        )
+
+    @provide
+    def direct_point_lookup_handler(
+        self,
+        access_gate: StableDirectAccessGate,
+        point_lookup_parser: StableDirectPointLookupQueryParser,
+        point_lookup_query: DirectPointLookupQuery,
+    ) -> StableDirectPointLookupHandler:
+        """Stable direct point lookup handlerをaccess gate,parser,queryで構成する.
+
+        Args:
+            access_gate (StableDirectAccessGate): point lookup前の認証とaccess policy.
+            point_lookup_parser (StableDirectPointLookupQueryParser):
+                stable query parameter parser.
+            point_lookup_query (DirectPointLookupQuery): direct point lookup query use-case.
+
+        Returns:
+            StableDirectPointLookupHandler: `/web/osu-search-set.php`互換requestを処理するhandler.
+        """
+        return StableDirectPointLookupHandler(
+            access_gate=access_gate,
+            point_lookup_parser=point_lookup_parser,
+            point_lookup_query=point_lookup_query,
+        )
 
     @provide
     def getscores_handler(

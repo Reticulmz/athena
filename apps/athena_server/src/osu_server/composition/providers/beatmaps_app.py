@@ -6,13 +6,20 @@ from typing import cast, final
 
 import structlog
 from dishka import Provider, Scope
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from taskiq import AsyncBroker
 
 from osu_server.composition.providers._dishka import provide
 from osu_server.config import AppConfig
-from osu_server.domain.beatmaps import BeatmapFetchTarget, BeatmapFreshnessPolicy
+from osu_server.domain.beatmaps import (
+    BeatmapFetchTarget,
+    BeatmapFreshnessPolicy,
+    DirectSearchBackend,
+)
 from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
+from osu_server.repositories.sqlalchemy.queries.direct_search import ParadeDBSearchBackend
 from osu_server.services.commands.beatmaps import RequestBeatmapFileWarmupUseCase
+from osu_server.services.queries.beatmaps import DirectPointLookupQuery, DirectSearchQuery
 from osu_server.services.queries.beatmaps.mirror import (
     BeatmapEligibilityService,
     BeatmapMirrorService,
@@ -20,11 +27,16 @@ from osu_server.services.queries.beatmaps.mirror import (
 
 _DISHKA_RUNTIME_HINTS = (
     AppConfig,
+    AsyncSession,
     AsyncBroker,
     BeatmapFetchTarget,
     BeatmapFreshnessPolicy,
     BeatmapQueryRepository,
+    DirectPointLookupQuery,
+    DirectSearchBackend,
+    DirectSearchQuery,
     RequestBeatmapFileWarmupUseCase,
+    async_sessionmaker,
 )
 
 logger: structlog.stdlib.BoundLogger = cast(
@@ -42,6 +54,58 @@ class BeatmapAppProviderSet(Provider):
     """
 
     scope = Scope.APP
+
+    @provide
+    def direct_search_backend(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> DirectSearchBackend:
+        """設定済みSQL search backendを構成する.
+
+        Args:
+            session_factory (async_sessionmaker[AsyncSession]): read query用sessionを作るfactory.
+
+        Returns:
+            DirectSearchBackend: candidate IDとscoreだけを返すSQL search backend.
+        """
+        return ParadeDBSearchBackend(session_factory)
+
+    @provide
+    def direct_search_query(
+        self,
+        repository: BeatmapQueryRepository,
+        backend: DirectSearchBackend,
+    ) -> DirectSearchQuery:
+        """Direct search query use-caseをmetadata repositoryとbackendで構成する.
+
+        Args:
+            repository (BeatmapQueryRepository): stable response用metadata source of truth.
+            backend (DirectSearchBackend): hydration前候補を返す検索backend.
+
+        Returns:
+            DirectSearchQuery: direct search用のread-only query use-case.
+        """
+        return DirectSearchQuery(repository, backend)
+
+    @provide
+    def direct_point_lookup_query(
+        self,
+        beatmap_resolver: BeatmapMirrorService,
+        config: AppConfig,
+    ) -> DirectPointLookupQuery:
+        """Direct point lookup query use-caseをBeatmap Mirror resolverで構成する.
+
+        Args:
+            beatmap_resolver (BeatmapMirrorService): cache-first metadata resolver.
+            config (AppConfig): point lookup bounded wait秒数を持つ実行時設定.
+
+        Returns:
+            DirectPointLookupQuery: direct point lookup用のread-only query use-case.
+        """
+        return DirectPointLookupQuery(
+            beatmap_resolver,
+            bounded_wait_seconds=config.osu_direct_point_lookup_bounded_wait_seconds,
+        )
 
     @provide
     def beatmap_mirror_service(

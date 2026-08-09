@@ -121,6 +121,8 @@ from osu_server.services.commands.scores.authorization import ScoreAuthorization
 from osu_server.services.commands.scores.performance import PerformanceRuntimeSettings
 from osu_server.services.commands.storage.blob_storage import BlobStorageService
 from osu_server.services.queries.beatmaps import (
+    DirectPointLookupQuery,
+    DirectSearchQuery,
     ResolveBeatmapByChecksumQuery,
     ResolveBeatmapByIdQuery,
 )
@@ -157,10 +159,17 @@ from osu_server.transports.stable.bancho.workflows.login_response_builder import
     LoginResponseBuilder,
 )
 from osu_server.transports.stable.bancho.workflows.polling import PollingWorkflow
+from osu_server.transports.stable.web_legacy.direct import (
+    StableDirectPointLookupHandler,
+    StableDirectSearchHandler,
+)
+from osu_server.transports.stable.web_legacy.direct_access import StableDirectAccessGate
 from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
 from osu_server.transports.stable.web_legacy.mappers import (
     GetscoresQueryParser,
     GetscoresStatusMapper,
+    StableDirectPointLookupQueryParser,
+    StableDirectSearchQueryParser,
     StableScorePayloadParser,
     StableScoreSubmitDecoder,
     StableScoreSubmitMapper,
@@ -377,6 +386,13 @@ async def test_app_provider_graph_resolves_app_only_provider_groups() -> None:
         StatusChangeHandlers,
         PacketDispatcher,
         PollingWorkflow,
+        DirectSearchQuery,
+        DirectPointLookupQuery,
+        StableDirectAccessGate,
+        StableDirectSearchQueryParser,
+        StableDirectPointLookupQueryParser,
+        StableDirectSearchHandler,
+        StableDirectPointLookupHandler,
         BanchoEndpoint,
         RegistrationHandler,
         GetscoresQueryParser,

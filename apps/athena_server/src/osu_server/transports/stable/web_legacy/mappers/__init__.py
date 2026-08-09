@@ -1,6 +1,9 @@
 """Legacy web transportの公開mapperを集約する."""
 
 from osu_server.transports.stable.web_legacy.mappers.direct import (
+    StableDirectPointLookupParseError,
+    StableDirectPointLookupParseResult,
+    StableDirectPointLookupQueryParser,
     StableDirectSearchParseError,
     StableDirectSearchParseResult,
     StableDirectSearchQueryParser,
@@ -35,6 +38,9 @@ __all__ = [
     "ReplayDownloadParseResult",
     "ReplayDownloadQueryParser",
     "ReplayDownloadRequest",
+    "StableDirectPointLookupParseError",
+    "StableDirectPointLookupParseResult",
+    "StableDirectPointLookupQueryParser",
     "StableDirectSearchParseError",
     "StableDirectSearchParseResult",
     "StableDirectSearchQueryParser",

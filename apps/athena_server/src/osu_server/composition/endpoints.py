@@ -12,6 +12,10 @@ if TYPE_CHECKING:
     from starlette.responses import Response
 
     from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
+    from osu_server.transports.stable.web_legacy.direct import (
+        StableDirectPointLookupHandler,
+        StableDirectSearchHandler,
+    )
     from osu_server.transports.stable.web_legacy.getscores import GetscoresHandler
     from osu_server.transports.stable.web_legacy.registration import RegistrationHandler
     from osu_server.transports.stable.web_legacy.replay_download import ReplayDownloadHandler
@@ -75,6 +79,32 @@ async def getscores_endpoint(request: Request) -> Response:
         Response: GetscoresHandlerが生成したHTTP response.
     """
     handler: GetscoresHandler = request.app.state.getscores_handler  # pyright: ignore[reportAny]
+    return await handler(request)
+
+
+async def direct_search_endpoint(request: Request) -> Response:
+    """DIで解決済みのStableDirectSearchHandlerへrequestを委譲する.
+
+    Args:
+        request (Request): legacy direct search routeへ届いたStarlette request.
+
+    Returns:
+        Response: StableDirectSearchHandlerが生成したHTTP response.
+    """
+    handler: StableDirectSearchHandler = request.app.state.direct_search_handler  # pyright: ignore[reportAny]
+    return await handler(request)
+
+
+async def direct_point_lookup_endpoint(request: Request) -> Response:
+    """DIで解決済みのStableDirectPointLookupHandlerへrequestを委譲する.
+
+    Args:
+        request (Request): legacy direct point lookup routeへ届いたStarlette request.
+
+    Returns:
+        Response: StableDirectPointLookupHandlerが生成したHTTP response.
+    """
+    handler: StableDirectPointLookupHandler = request.app.state.direct_point_lookup_handler  # pyright: ignore[reportAny]
     return await handler(request)
 
 
