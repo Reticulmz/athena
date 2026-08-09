@@ -7,15 +7,34 @@ on:
   issue_comment:
     types: [created, edited]
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
-  cancel-in-progress: true
-
 jobs:
   pr-agent:
-    if: ${{ github.event.sender.type != 'Bot' && (github.event_name == 'pull_request' || github.event.issue.pull_request) }}
+    if: >-
+      ${{
+        github.event.sender.type != 'Bot' &&
+        (
+          github.event_name == 'pull_request' ||
+          (
+            github.event_name == 'issue_comment' &&
+            github.event.issue.pull_request != null &&
+            contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
+            (
+              startsWith(github.event.comment.body, '/review') ||
+              startsWith(github.event.comment.body, '/describe') ||
+              startsWith(github.event.comment.body, '/improve') ||
+              startsWith(github.event.comment.body, '/ask') ||
+              startsWith(github.event.comment.body, '/update_changelog') ||
+              startsWith(github.event.comment.body, '/config') ||
+              startsWith(github.event.comment.body, '/help')
+            )
+          )
+        )
+      }}
     name: Review PR
     runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+      cancel-in-progress: true
     permissions:
       contents: read
       issues: write
@@ -37,39 +56,6 @@ jobs:
           OPENAI_KEY: ${{ env.PR_AGENT_OPENAI_KEY }}
           OPENAI__KEY: ${{ env.PR_AGENT_OPENAI_KEY }}
           OPENAI__API_BASE: ${{ env.PR_AGENT_OPENAI_API_BASE }}
-          config.model: "gpt-5.6-sol"
-          config.fallback_models: '["gpt-5.6-luna", "gpt-5.5"]'
-          config.model_reasoning: "gpt-5.6-sol"
-          config.model_weak: "gpt-5.6-luna"
-          config.reasoning_effort: "xhigh"
-          config.max_model_tokens: "128000"
-          config.repo_context_files: '["AGENTS.md", "apps/athena_server/AGENTS.md", "packages/athena_crypto/AGENTS.md", ".agents/skills/athena-python-style/SKILL.md", "docs/agent-python.md"]'
-          config.repo_context_max_lines: "1000"
-          pr_description.publish_labels: "false"
-          pr_description.generate_ai_title: "true"
-          pr_description.final_update_message: "true"
-          pr_description.add_original_user_description: "true"
-          pr_description.extra_instructions: |-
-            必ず日本語で回答してください。
-            PRタイトルを更新する場合は、Conventional Commits形式のtype接頭辞を使ってください。
-            既存のPR本文に人間が書いた検証結果や注意点がある場合は消さずに残してください。
-          pr_reviewer.require_score_review: "true"
-          pr_reviewer.require_tests_review: "true"
-          pr_reviewer.require_security_review: "true"
-          pr_reviewer.require_ticket_analysis_review: "true"
-          pr_reviewer.inline_code_comments: "true"
-          pr_reviewer.remove_previous_review_comment: "true"
-          pr_reviewer.extra_instructions: |-
-            AGENTS.md と scoped guidance を尊重してください。
-            必ず日本語で回答してください。
-            正確性、テスト不足、セキュリティ、runtime failure、stable/lazer/API 互換性の回帰を優先してください。
-            推測ではなく、再現可能な問題だけを対象ファイルと具体的な条件付きで指摘してください。
-          pr_code_suggestions.commitable_code_suggestions: "true"
-          pr_code_suggestions.focus_only_on_problems: "true"
-          pr_code_suggestions.extra_instructions: |-
-            必ず日本語で回答してください。
-            問題を解消する最小差分だけを提案してください。
-            styleのみの提案や任意のリファクタは避けてください。
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "true"
           github_action_config.auto_improve: "false"

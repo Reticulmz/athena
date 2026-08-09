@@ -5,6 +5,7 @@ model_reasoning = "gpt-5.6-sol"
 model_weak = "gpt-5.6-luna"
 reasoning_effort = "xhigh"
 max_model_tokens = 128000
+custom_model_max_tokens = 128000
 response_language = "ja-JP"
 repo_context_files = [
     "AGENTS.md",
