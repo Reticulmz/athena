@@ -124,7 +124,7 @@
   - _Requirements: 5.2, 5.4, 5.5, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 11.1, 11.3, 11.4, 12.2_
   - _Boundary: DirectPointLookup_
 
-- [ ] 4.4 Implement stable direct response formatting
+- [x] 4.4 Implement stable direct response formatting
   - Format search responses as count line plus stable beatmapset rows with child difficulty summaries.
   - Format point lookup responses as one stable beatmapset row or empty body.
   - Sanitize delimiters and newlines from upstream text fields.
