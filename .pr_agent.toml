@@ -1,0 +1,17 @@
+[config]
+model = "openai/gpt-5.6-sol"
+fallback_models = ["openai/gpt-5.6-luna", "openai/gpt-5.5"]
+model_reasoning = "openai/gpt-5.6-sol"
+model_weak = "openai/gpt-5.6-luna"
+reasoning_effort = "xhigh"
+custom_model_max_tokens = 128000
+response_language = "ja-JP"
+repo_context_files = ["AGENTS.md"]
+restricted_mode = true
+output_run_details = true
+
+[pr_reviewer]
+extra_instructions = """\
+AGENTS.md と scoped guidance を尊重してください。
+正確性、テスト不足、セキュリティ、runtime failure、stable/lazer/API 互換性の回帰を優先して、再現可能な指摘だけを具体的に出してください。
+"""
