@@ -1,4 +1,19 @@
 # Local files copied from the current checkout into agent worktrees.
 # Patterns are repository-root Git pathspecs without pathspec magic.
+
+# Local environment used by tests and development commands.
+.env.development
+.env.test
 apps/athena_server/.env.development
 apps/athena_server/.env.test
+
+# Local runtime state used by manual osu!stable verification.
+.pre-commit-config.yaml
+.state/
+
+# Agent context caches that avoid repeated worktree onboarding.
+.serena/
+.gitnexus/
+
+# Local blob data used by real osu!stable client verification.
+apps/athena_server/.data/
