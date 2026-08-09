@@ -27,6 +27,7 @@ from osu_server.repositories.memory.commands.beatmaps import (
     InMemoryBeatmapCommandRepository,
 )
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 
 _NOW = datetime(2026, 6, 4, tzinfo=UTC)
 _NEXT_REFRESH = _NOW + timedelta(days=30)
@@ -192,6 +193,76 @@ async def test_saves_and_resolves_beatmaps_by_id_set_id_and_checksum() -> None:
     beatmapset = await repo.get_beatmapset(1_000)
     assert beatmapset is not None
     assert beatmapset.beatmaps == (beatmap,)
+
+
+async def test_save_updates_direct_search_projection_state() -> None:
+    """Usableなsnapshot保存がin-memory検索projectionを同じstateに作ることを検証する.
+
+    Returns:
+        None: 検索documentのactive状態とdenormalized fieldをassertして値を返さない.
+
+    Raises:
+        AssertionError: metadata保存と検索projectionが同じstateで更新されない場合.
+    """
+    state = InMemoryCommandRepositoryState()
+    repo = InMemoryBeatmapCommandRepository(state)
+    beatmap = _make_beatmap(official_last_updated_at=_NOW)
+
+    await repo.save_beatmapset_snapshot(_make_beatmapset(beatmap))
+
+    document = state.search_documents_by_beatmapset_id[1_000]
+    assert document.beatmapset_id == 1_000
+    assert document.difficulty_names == "Difficulty 2000"
+    assert document.modes == (BeatmapMode.OSU,)
+    assert document.status is BeatmapRankStatus.RANKED
+    assert document.last_update_at == _NOW
+    assert document.is_active is True
+    assert document.document_version == 1
+
+
+async def test_save_disables_direct_search_projection_for_not_submitted_set() -> None:
+    """Not submitted metadata保存が既知inactive projectionを残すことを検証する.
+
+    Returns:
+        None: inactive documentのstatusとactive flagをassertして値を返さない.
+
+    Raises:
+        AssertionError: not submitted beatmapsetが検索対象として残る場合.
+    """
+    state = InMemoryCommandRepositoryState()
+    repo = InMemoryBeatmapCommandRepository(state)
+
+    await repo.save_beatmapset_snapshot(
+        _make_beatmapset(
+            _make_beatmap(),
+            status=BeatmapRankStatus.NOT_SUBMITTED,
+        )
+    )
+
+    document = state.search_documents_by_beatmapset_id[1_000]
+    assert document.status is BeatmapRankStatus.NOT_SUBMITTED
+    assert document.is_active is False
+    assert document.document_version == 1
+
+
+async def test_unit_of_work_commit_publishes_direct_search_projection_state() -> None:
+    """In-memory UoW commitがmetadataと検索projectionを同時に公開することを検証する.
+
+    Returns:
+        None: committed snapshotにmetadataとprojectionが含まれることをassertして値を返さない.
+
+    Raises:
+        AssertionError: UoW commitがprojection stateを反映しない場合.
+    """
+    factory = InMemoryUnitOfWorkFactory()
+
+    async with factory() as uow:
+        await uow.beatmaps.save_beatmapset_snapshot(_make_beatmapset(_make_beatmap()))
+        await uow.commit()
+
+    snapshot = factory.snapshot()
+    assert 1_000 in snapshot.beatmapsets_by_id
+    assert snapshot.search_documents_by_beatmapset_id[1_000].is_active is True
 
 
 async def test_save_rejects_checksum_reuse_for_different_beatmap() -> None:

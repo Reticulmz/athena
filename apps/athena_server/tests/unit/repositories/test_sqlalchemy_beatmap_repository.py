@@ -7,6 +7,7 @@ in-memory session fakeで確認する.
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast, override
 
@@ -40,6 +41,7 @@ from osu_server.repositories.sqlalchemy.models.beatmap import (
     BeatmapFileAttachmentModel,
     BeatmapModel,
     BeatmapSetModel,
+    BeatmapSetSearchDocumentModel,
 )
 
 if TYPE_CHECKING:
@@ -129,6 +131,7 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         refreshed (list[object]): refresh()したmodel列.
         executed (list[Executable]): execute()へ渡されたSQLAlchemy statement列.
         get_calls (list[tuple[type[object], int, bool]]): get()のmodel, identity, refresh指定.
+        merge_error_for_type (type[object] | None): merge時に失敗させるmodel型.
         flushes (int): 成功したflush()の呼び出し回数.
     """
 
@@ -138,6 +141,7 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         get_results: dict[tuple[type[object], int], object] | None = None,
         execute_results: list[FakeResult] | None = None,
         flush_error: IntegrityError | None = None,
+        merge_error_for_type: type[object] | None = None,
     ) -> None:
         """Repository assertionに必要なsession応答と記録列を初期化する.
 
@@ -147,10 +151,13 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
             execute_results (list[FakeResult] | None): execute()が順に返す結果列.
                 未指定時は空列を使う.
             flush_error (IntegrityError | None): flush()で送出するerror. 未指定時は送出しない.
+            merge_error_for_type (type[object] | None): この型のinstanceをmergeすると失敗する.
+                未指定時は失敗しない.
         """
         self.get_results: dict[tuple[type[object], int], object] = get_results or {}
         self.execute_results: list[FakeResult] = execute_results or []
         self.flush_error: IntegrityError | None = flush_error
+        self.merge_error_for_type: type[object] | None = merge_error_for_type
         self.added: list[object] = []
         self.merged: list[object] = []
         self.refreshed: list[object] = []
@@ -230,7 +237,15 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
 
         Returns:
             object: 記録した入力instance.
+
+        Raises:
+            RuntimeError: instanceがmerge_error_for_typeに一致する場合.
         """
+        if self.merge_error_for_type is not None and isinstance(
+            instance,
+            self.merge_error_for_type,
+        ):
+            raise RuntimeError("projection failed")
         self.merged.append(instance)
         return instance
 
@@ -403,6 +418,25 @@ def _fetch_state_model(status: str = "pending_fetch") -> BeatmapFetchStateModel:
         last_attempted_at=_NOW,
         updated_at=_NOW,
     )
+
+
+def _merged_search_document(session: FakeSession) -> BeatmapSetSearchDocumentModel:
+    """Session fakeがmergeしたosu!direct検索documentを1件返す.
+
+    Args:
+        session (FakeSession): snapshot保存に使ったSQLAlchemy session fake.
+
+    Returns:
+        BeatmapSetSearchDocumentModel: 保存pathがmergeした検索projection model.
+
+    Raises:
+        AssertionError: projection modelが1件だけmergeされていない場合.
+    """
+    documents = [
+        model for model in session.merged if isinstance(model, BeatmapSetSearchDocumentModel)
+    ]
+    assert len(documents) == 1
+    return documents[0]
 
 
 def _beatmap_domain(
@@ -617,6 +651,123 @@ async def test_save_snapshot_preserves_existing_submission_counts() -> None:
     assert len(beatmap_models) == 1
     assert beatmap_models[0].play_count == 9
     assert beatmap_models[0].pass_count == 7
+
+
+async def test_save_snapshot_upserts_active_direct_search_document() -> None:
+    """Usableなmetadata保存が同じflush内でactive検索projectionを作ることを検証する.
+
+    Returns:
+        None: merged search documentの検索fieldとflush回数をassertして値を返さない.
+
+    Raises:
+        AssertionError: active projectionがmetadata保存pathへ連動しない場合.
+    """
+    official_last_updated_at = datetime(2026, 6, 29, 12, 34, 56, tzinfo=UTC)
+    session = FakeSession()
+
+    await _repo(session).save_beatmapset_snapshot(
+        _beatmapset_domain(_beatmap_domain(official_last_updated_at=official_last_updated_at))
+    )
+
+    document = _merged_search_document(session)
+    assert document.beatmapset_id == 1_000
+    assert document.artist == "Camellia"
+    assert document.title == "Exit This Earth's Atomosphere"
+    assert document.creator == "Realazy"
+    assert document.source == ""
+    assert document.tags == ""
+    assert document.difficulty_names == "Another"
+    assert document.modes == ["osu"]
+    assert document.status == "ranked"
+    assert document.last_update_at == official_last_updated_at
+    assert document.is_active is True
+    assert document.document_version == 1
+    assert session.flushes == 1
+
+
+async def test_save_snapshot_disables_direct_search_document_for_childless_set() -> None:
+    """Child beatmapを持たないmetadata保存が検索projectionをinactiveにすることを検証する.
+
+    Returns:
+        None: inactive documentのtombstone fieldをassertして値を返さない.
+
+    Raises:
+        AssertionError: childless beatmapsetが検索対象として保存される場合.
+    """
+    session = FakeSession()
+
+    await _repo(session).save_beatmapset_snapshot(
+        replace(_beatmapset_domain(_beatmap_domain()), beatmaps=())
+    )
+
+    document = _merged_search_document(session)
+    assert document.beatmapset_id == 1_000
+    assert document.is_active is False
+    assert document.difficulty_names == ""
+    assert document.modes == ["unknown"]
+    assert document.status == "ranked"
+
+
+async def test_save_snapshot_disables_direct_search_document_for_graveyard_set() -> None:
+    """Inactiveなmetadata保存が既知tombstoneとしてprojectionを残すことを検証する.
+
+    Returns:
+        None: graveyard setの検索documentがinactiveであることをassertして値を返さない.
+
+    Raises:
+        AssertionError: inactive beatmapsetがactive検索documentとして保存される場合.
+    """
+    session = FakeSession()
+
+    await _repo(session).save_beatmapset_snapshot(
+        replace(
+            _beatmapset_domain(_beatmap_domain()),
+            official_status=BeatmapRankStatus.GRAVEYARD,
+        )
+    )
+
+    document = _merged_search_document(session)
+    assert document.is_active is False
+    assert document.status == "graveyard"
+
+
+async def test_save_snapshot_projection_uses_preserved_local_status_override() -> None:
+    """既存local overrideを保持した保存内容で検索projectionを作ることを検証する.
+
+    Returns:
+        None: 保存modelと検索documentが同じinactive child状態を使うことをassertして値を返さない.
+
+    Raises:
+        AssertionError: projectionが保存済みmetadataと異なるeffective statusを使う場合.
+    """
+    existing = _beatmap_model(local_status_override="graveyard")
+    session = FakeSession(get_results={(BeatmapModel, 2_000): existing})
+
+    await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
+
+    beatmap_models = [model for model in session.merged if isinstance(model, BeatmapModel)]
+    document = _merged_search_document(session)
+    assert beatmap_models[0].local_status_override == "graveyard"
+    assert document.is_active is False
+    assert document.difficulty_names == "Another"
+    assert document.modes == ["osu"]
+
+
+async def test_save_snapshot_fails_when_direct_search_projection_update_fails() -> None:
+    """Projection更新失敗時にmetadata保存をflush成功扱いしないことを検証する.
+
+    Returns:
+        None: projection merge failureの伝播とflush未実行をassertして値を返さない.
+
+    Raises:
+        AssertionError: projection失敗後にmetadata保存が成功扱いされる場合.
+    """
+    session = FakeSession(merge_error_for_type=BeatmapSetSearchDocumentModel)
+
+    with pytest.raises(RuntimeError, match="projection failed"):
+        await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
+
+    assert session.flushes == 0
 
 
 async def test_save_snapshot_rejects_existing_checksum_conflict_before_flush() -> None:

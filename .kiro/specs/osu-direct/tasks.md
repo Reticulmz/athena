@@ -28,7 +28,7 @@
   - _Boundary: SearchIndexDefinition_
 
 - [ ] 2. Core search projection and backend behavior
-- [ ] 2.1 Maintain the search projection during beatmap metadata saves
+- [x] 2.1 Maintain the search projection during beatmap metadata saves
   - Build one active search document per complete usable beatmapset.
   - Disable documents for incomplete, inactive, deleted, not submitted, or childless beatmapsets.
   - Update projection state in the same durable consistency boundary as beatmap metadata saves.

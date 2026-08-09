@@ -10,6 +10,7 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFetchTarget,
     BeatmapFileState,
+    build_beatmapset_search_document,
 )
 from osu_server.repositories.interfaces.commands.beatmaps import BeatmapSubmissionCounts
 from osu_server.repositories.memory.commands.state import now_utc
@@ -163,11 +164,16 @@ class InMemoryBeatmapCommandRepository:
         stored_beatmaps = tuple(
             self._merge_beatmap_snapshot(beatmap) for beatmap in snapshot.beatmaps
         )
+        stored_snapshot = replace(snapshot, beatmaps=stored_beatmaps)
         for beatmap in stored_beatmaps:
             self._store_beatmap(beatmap)
-        self._state.beatmapsets_by_id[snapshot.id] = replace(
-            snapshot,
-            beatmaps=stored_beatmaps,
+        self._state.beatmapsets_by_id[snapshot.id] = stored_snapshot
+        self._state.search_documents_by_beatmapset_id[snapshot.id] = (
+            build_beatmapset_search_document(
+                stored_snapshot,
+                previous=self._state.search_documents_by_beatmapset_id.get(snapshot.id),
+                updated_at=now_utc(),
+            )
         )
 
     async def set_local_status_override(

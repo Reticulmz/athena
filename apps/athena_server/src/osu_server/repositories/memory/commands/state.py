@@ -14,6 +14,7 @@ if TYPE_CHECKING:
         BeatmapFetchTarget,
         BeatmapFileAttachment,
         BeatmapSet,
+        BeatmapSetSearchDocument,
     )
     from osu_server.domain.chat.channels import Channel, ChannelRoleOverride
     from osu_server.domain.identity.roles import Role
@@ -226,6 +227,8 @@ class InMemoryCommandRepositoryState:
         beatmap_id_by_checksum (dict[str, int]): beatmap MD5 checksum の一意 index.
         beatmap_submission_counts_by_id (dict[int, BeatmapSubmissionCounts]):
             beatmap ごとの集計 submission count.
+        search_documents_by_beatmapset_id (dict[int, BeatmapSetSearchDocument]):
+            osu!direct検索projectionの主記録.
         attachments_by_key (dict[tuple[int, str], BeatmapFileAttachment]):
             beatmap file attachment の主記録.
         attachment_keys_by_beatmap_id (dict[int, list[tuple[int, str]]]):
@@ -332,6 +335,9 @@ class InMemoryCommandRepositoryState:
     beatmaps_by_id: dict[int, Beatmap] = field(default_factory=dict)
     beatmap_id_by_checksum: dict[str, int] = field(default_factory=dict)
     beatmap_submission_counts_by_id: dict[int, BeatmapSubmissionCounts] = field(
+        default_factory=dict
+    )
+    search_documents_by_beatmapset_id: dict[int, BeatmapSetSearchDocument] = field(
         default_factory=dict
     )
     attachments_by_key: dict[tuple[int, str], BeatmapFileAttachment] = field(default_factory=dict)

@@ -1,5 +1,9 @@
 """Beatmap contextの公開domain modelとpolicyを再exportするpackage."""
 
+from osu_server.domain.beatmaps.direct import (
+    BeatmapSetSearchDocument,
+    build_beatmapset_search_document,
+)
 from osu_server.domain.beatmaps.eligibility import (
     BeatmapStatus,
     EligibilityResult,
@@ -64,6 +68,7 @@ __all__ = [
     "BeatmapResolveResult",
     "BeatmapSet",
     "BeatmapSetResolveResult",
+    "BeatmapSetSearchDocument",
     "BeatmapSnapshot",
     "BeatmapSourceError",
     "BeatmapSourceErrorCategory",
@@ -73,5 +78,6 @@ __all__ = [
     "EligibilityResult",
     "LocalBeatmapStatus",
     "OsuFileFetchResult",
+    "build_beatmapset_search_document",
     "map_external_status",
 ]

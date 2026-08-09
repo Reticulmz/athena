@@ -191,6 +191,10 @@ class InMemoryUnitOfWorkFactory:
             self._state.beatmap_submission_counts_by_id,
             committed.beatmap_submission_counts_by_id,
         )
+        _replace_mapping(
+            self._state.search_documents_by_beatmapset_id,
+            committed.search_documents_by_beatmapset_id,
+        )
         _replace_mapping(self._state.attachments_by_key, committed.attachments_by_key)
         _replace_mapping(
             self._state.attachment_keys_by_beatmap_id,

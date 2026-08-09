@@ -24,8 +24,10 @@ from osu_server.domain.beatmaps import (
     BeatmapMode,
     BeatmapRankStatus,
     BeatmapSet,
+    BeatmapSetSearchDocument,
     BeatmapSourceVerification,
     LocalBeatmapStatus,
+    build_beatmapset_search_document,
 )
 from osu_server.repositories.interfaces.commands.beatmaps import BeatmapSubmissionCounts
 from osu_server.repositories.sqlalchemy.models.beatmap import (
@@ -33,6 +35,7 @@ from osu_server.repositories.sqlalchemy.models.beatmap import (
     BeatmapFileAttachmentModel,
     BeatmapModel,
     BeatmapSetModel,
+    BeatmapSetSearchDocumentModel,
 )
 
 if TYPE_CHECKING:
@@ -206,6 +209,7 @@ class SQLAlchemyBeatmapCommandRepository:
         """
         await self._check_checksum_conflicts(snapshot)
         _ = await self._session.merge(_beatmapset_to_model(snapshot))
+        stored_beatmaps: list[Beatmap] = []
         try:
             for beatmap in snapshot.beatmaps:
                 existing = await self._session.get(BeatmapModel, beatmap.id)
@@ -240,8 +244,13 @@ class SQLAlchemyBeatmapCommandRepository:
                 )
                 stored_beatmap = replace(
                     beatmap,
+                    local_status_override=(
+                        LocalBeatmapStatus(local_override) if local_override is not None else None
+                    ),
+                    local_status_override_changed_at=local_override_changed_at,
                     official_last_updated_at=official_last_updated_at,
                 )
+                stored_beatmaps.append(stored_beatmap)
                 _ = await self._session.merge(
                     _beatmap_to_model(
                         stored_beatmap,
@@ -251,6 +260,7 @@ class SQLAlchemyBeatmapCommandRepository:
                         pass_count,
                     )
                 )
+            await self._upsert_search_document(replace(snapshot, beatmaps=tuple(stored_beatmaps)))
             await self._session.flush()
         except IntegrityError as exc:
             checksum_md5 = snapshot.beatmaps[0].checksum_md5 if snapshot.beatmaps else ""
@@ -258,6 +268,30 @@ class SQLAlchemyBeatmapCommandRepository:
                 checksum_md5=checksum_md5,
                 existing_beatmap_id=0,
             ) from exc
+
+    async def _upsert_search_document(self, snapshot: BeatmapSet) -> None:
+        """Metadata保存transaction内でosu!direct検索projectionを更新する.
+
+        Args:
+            snapshot (BeatmapSet): 永続化するchild状態を反映したbeatmapset snapshot.
+
+        Returns:
+            None: projection modelを必要に応じてsessionへmergeして完了する.
+        """
+        existing = await self._session.get(BeatmapSetSearchDocumentModel, snapshot.id)
+        previous = (
+            _search_document_to_domain(existing)
+            if isinstance(existing, BeatmapSetSearchDocumentModel)
+            else None
+        )
+        document = build_beatmapset_search_document(
+            snapshot,
+            previous=previous,
+            updated_at=datetime.now(UTC),
+        )
+        if document == previous:
+            return
+        _ = await self._session.merge(_search_document_to_model(document))
 
     async def set_local_status_override(
         self, beatmap_id: int, status: LocalBeatmapStatus | None
@@ -729,6 +763,64 @@ def _beatmap_to_model(
         official_last_updated_at=beatmap.official_last_updated_at,
         last_fetched_at=beatmap.last_fetched_at,
         next_refresh_at=beatmap.next_refresh_at,
+    )
+
+
+def _search_document_to_model(document: BeatmapSetSearchDocument) -> BeatmapSetSearchDocumentModel:
+    """Domain検索projectionをSQLAlchemy保存modelへ変換する.
+
+    Args:
+        document (BeatmapSetSearchDocument): osu!direct検索projectionのdomain値.
+
+    Returns:
+        BeatmapSetSearchDocumentModel: enumとmodeを永続化値へ変換したmodel.
+    """
+    return BeatmapSetSearchDocumentModel(
+        beatmapset_id=document.beatmapset_id,
+        artist=document.artist,
+        title=document.title,
+        creator=document.creator,
+        artist_unicode=document.artist_unicode,
+        title_unicode=document.title_unicode,
+        source=document.source,
+        tags=document.tags,
+        difficulty_names=document.difficulty_names,
+        modes=[mode.value for mode in document.modes],
+        status=document.status.value,
+        last_update_at=document.last_update_at,
+        is_active=document.is_active,
+        document_version=document.document_version,
+        updated_at=document.updated_at,
+    )
+
+
+def _search_document_to_domain(
+    model: BeatmapSetSearchDocumentModel,
+) -> BeatmapSetSearchDocument:
+    """SQLAlchemy検索projection modelをdomain値へ変換する.
+
+    Args:
+        model (BeatmapSetSearchDocumentModel): 保存済みのosu!direct検索projection model.
+
+    Returns:
+        BeatmapSetSearchDocument: version比較に使うdomain projection.
+    """
+    return BeatmapSetSearchDocument(
+        beatmapset_id=model.beatmapset_id,
+        artist=model.artist,
+        title=model.title,
+        creator=model.creator,
+        artist_unicode=model.artist_unicode,
+        title_unicode=model.title_unicode,
+        source=model.source,
+        tags=model.tags,
+        difficulty_names=model.difficulty_names,
+        modes=tuple(BeatmapMode(value) for value in model.modes),
+        status=BeatmapRankStatus(model.status),
+        last_update_at=model.last_update_at,
+        is_active=model.is_active,
+        document_version=model.document_version,
+        updated_at=model.updated_at,
     )
 
 
