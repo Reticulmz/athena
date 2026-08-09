@@ -114,7 +114,7 @@
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 5.1, 5.4, 5.5, 5.6, 6.3, 6.4, 11.2, 12.3, 12.4, 12.5_
   - _Boundary: DirectSearchQuery_
 
-- [ ] 4.3 Implement point lookup with bounded wait
+- [x] 4.3 Implement point lookup with bounded wait
   - Resolve point lookup by beatmapset id, beatmap id, checksum, and normalized beatmap link target.
   - Request metadata fetch when lookup metadata is missing.
   - Wait up to the configured limit, defaulting to five seconds.

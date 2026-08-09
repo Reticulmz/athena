@@ -3,7 +3,7 @@
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Final, Protocol
+from typing import Final, Protocol, Self
 
 from osu_server.domain.beatmaps.models import (
     Beatmap,
@@ -12,6 +12,7 @@ from osu_server.domain.beatmaps.models import (
     BeatmapRankStatus,
     BeatmapSet,
 )
+from osu_server.shared.checksums import MD5_HEX_LENGTH, is_lowercase_md5_hexdigest
 
 _DIRECT_INACTIVE_STATUSES: Final = frozenset(
     {
@@ -37,6 +38,20 @@ class DirectSearchListing(StrEnum):
     NEWEST = "newest"
     TOP_RATED = "top_rated"
     MOST_PLAYED = "most_played"
+
+
+class DirectPointLookupTargetKind(StrEnum):
+    """Stable osu!direct point lookup targetの種別を表す.
+
+    Attributes:
+        BEATMAPSET_ID (DirectPointLookupTargetKind): beatmapset IDによるlookup.
+        BEATMAP_ID (DirectPointLookupTargetKind): child beatmap IDによるlookup.
+        CHECKSUM (DirectPointLookupTargetKind): beatmap file MD5 checksumによるlookup.
+    """
+
+    BEATMAPSET_ID = "beatmapset_id"
+    BEATMAP_ID = "beatmap_id"
+    CHECKSUM = "checksum"
 
 
 class DirectAccessPolicyMode(StrEnum):
@@ -208,6 +223,137 @@ class DirectSearchRequest:
         if self.page_size <= 0:
             msg = "page_size must be positive"
             raise ValueError(msg)
+
+
+@dataclass(slots=True, frozen=True)
+class DirectPointLookupRequest:
+    """Stable direct point lookupの認証済みtargetを表す.
+
+    Attributes:
+        authenticated_user_id (int): stable legacy認証で解決したuser ID.
+        target_kind (DirectPointLookupTargetKind): lookupに使うtarget種別.
+        target_value (int | str): 正のIDまたはlowercase MD5 checksum.
+    """
+
+    authenticated_user_id: int
+    target_kind: DirectPointLookupTargetKind
+    target_value: int | str
+
+    def __post_init__(self) -> None:
+        """Point lookup targetの不変条件を検証する.
+
+        Returns:
+            None: user ID, target kind, target valueを検証して完了する.
+
+        Raises:
+            ValueError: user IDまたはID targetが正でないか, checksumがlowercase MD5でない場合.
+            TypeError: target kindに対応しない型のtarget valueを受け取った場合.
+        """
+        if self.authenticated_user_id <= 0:
+            msg = "authenticated_user_id must be positive"
+            raise ValueError(msg)
+        if self.target_kind is DirectPointLookupTargetKind.CHECKSUM:
+            if not isinstance(self.target_value, str):
+                msg = "checksum target value must be str"
+                raise TypeError(msg)
+            if not is_lowercase_md5_hexdigest(self.target_value):
+                msg = (
+                    f"checksum target value must be a {MD5_HEX_LENGTH}-character "
+                    "lowercase hexadecimal string"
+                )
+                raise ValueError(msg)
+            return
+        if not isinstance(self.target_value, int):
+            msg = "id target value must be int"
+            raise TypeError(msg)
+        if self.target_value <= 0:
+            msg = "id target value must be positive"
+            raise ValueError(msg)
+
+    @classmethod
+    def beatmapset_id(cls, *, authenticated_user_id: int, beatmapset_id: int) -> Self:
+        """Beatmapset ID lookup requestを作る.
+
+        Args:
+            authenticated_user_id (int): stable legacy認証で解決したuser ID.
+            beatmapset_id (int): lookup対象のbeatmapset ID.
+
+        Returns:
+            Self: beatmapset IDをtargetにしたpoint lookup request.
+        """
+        return cls(
+            authenticated_user_id=authenticated_user_id,
+            target_kind=DirectPointLookupTargetKind.BEATMAPSET_ID,
+            target_value=beatmapset_id,
+        )
+
+    @classmethod
+    def beatmap_id(cls, *, authenticated_user_id: int, beatmap_id: int) -> Self:
+        """Beatmap ID lookup requestを作る.
+
+        Args:
+            authenticated_user_id (int): stable legacy認証で解決したuser ID.
+            beatmap_id (int): lookup対象のbeatmap ID.
+
+        Returns:
+            Self: beatmap IDをtargetにしたpoint lookup request.
+        """
+        return cls(
+            authenticated_user_id=authenticated_user_id,
+            target_kind=DirectPointLookupTargetKind.BEATMAP_ID,
+            target_value=beatmap_id,
+        )
+
+    @classmethod
+    def checksum(cls, *, authenticated_user_id: int, checksum_md5: str) -> Self:
+        """Checksum lookup requestを作る.
+
+        Args:
+            authenticated_user_id (int): stable legacy認証で解決したuser ID.
+            checksum_md5 (str): lookup対象のMD5 checksum. 大文字はlowercaseへ正規化する.
+
+        Returns:
+            Self: checksumをtargetにしたpoint lookup request.
+        """
+        return cls(
+            authenticated_user_id=authenticated_user_id,
+            target_kind=DirectPointLookupTargetKind.CHECKSUM,
+            target_value=checksum_md5.lower(),
+        )
+
+    @classmethod
+    def beatmap_link(
+        cls,
+        *,
+        authenticated_user_id: int,
+        beatmapset_id: int | None,
+        beatmap_id: int | None,
+    ) -> Self:
+        """正規化済みbeatmap link targetからpoint lookup requestを作る.
+
+        Args:
+            authenticated_user_id (int): stable legacy認証で解決したuser ID.
+            beatmapset_id (int | None): linkから抽出済みのbeatmapset ID.
+            beatmap_id (int | None): linkから抽出済みのbeatmap ID.
+
+        Returns:
+            Self: beatmap IDを優先し,なければbeatmapset IDを使うpoint lookup request.
+
+        Raises:
+            ValueError: beatmap IDもbeatmapset IDもない場合.
+        """
+        if beatmap_id is not None:
+            return cls.beatmap_id(
+                authenticated_user_id=authenticated_user_id,
+                beatmap_id=beatmap_id,
+            )
+        if beatmapset_id is not None:
+            return cls.beatmapset_id(
+                authenticated_user_id=authenticated_user_id,
+                beatmapset_id=beatmapset_id,
+            )
+        msg = "beatmap link target must contain beatmap_id or beatmapset_id"
+        raise ValueError(msg)
 
 
 @dataclass(slots=True, frozen=True)
@@ -565,6 +711,8 @@ __all__ = [
     "DirectExternalIndexBackend",
     "DirectExternalIndexState",
     "DirectExternalIndexStatus",
+    "DirectPointLookupRequest",
+    "DirectPointLookupTargetKind",
     "DirectSearchBackend",
     "DirectSearchBackendResult",
     "DirectSearchCandidate",
