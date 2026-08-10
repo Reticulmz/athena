@@ -21,6 +21,7 @@ from osu_server.domain.beatmaps import (
     DirectCoverageKind,
     DirectCoverageRecord,
 )
+from osu_server.shared.ports import DirectCatalogWorkKind
 
 if TYPE_CHECKING:
     from osu_server.domain.beatmaps import (
@@ -40,20 +41,6 @@ _logger = cast(
 
 type DirectCatalogWork = Callable[[], Awaitable[None]]
 type TimeFunc = Callable[[], float]
-
-
-class DirectCatalogWorkKind(StrEnum):
-    """共有upstream budgetを使うosu!direct work種別を表す.
-
-    Attributes:
-        POINT_LOOKUP (DirectCatalogWorkKind): stable requestのpoint lookup用work.
-        FEED_SYNC (DirectCatalogWorkKind): background catalog feed同期work.
-        ID_RANGE_CRAWL (DirectCatalogWorkKind): background id range crawl work.
-    """
-
-    POINT_LOOKUP = "point_lookup"
-    FEED_SYNC = "feed_sync"
-    ID_RANGE_CRAWL = "id_range_crawl"
 
 
 class DirectCatalogScheduleOutcome(StrEnum):

@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import TYPE_CHECKING, cast
 
 import pytest
 from tests.factories.config import make_app_config
+from tests.support.beatmaps import InMemoryBeatmapStore
 
-from osu_server.composition.providers.beatmaps_app import enqueue_beatmap_fetch
+from osu_server.composition.providers.beatmaps_app import (
+    BeatmapAppProviderSet,
+    enqueue_beatmap_fetch,
+)
 from osu_server.composition.providers.container import make_app_container
 from osu_server.composition.providers.test import make_in_memory_runtime_provider_set
 from osu_server.domain.beatmaps import (
@@ -15,6 +20,7 @@ from osu_server.domain.beatmaps import (
     BeatmapFileProvider,
     BeatmapFreshnessPolicy,
     BeatmapMetadataProvider,
+    DirectPointLookupRequest,
 )
 from osu_server.infrastructure.beatmaps import BeatmapFileProviderService
 from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
@@ -25,9 +31,12 @@ from osu_server.services.queries.beatmaps.mirror import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from taskiq import AsyncBroker
+
+    from osu_server.services.queries.beatmaps.direct_search import DirectPointLookupQuery
 
 
 class _FakeTask:
@@ -36,12 +45,14 @@ class _FakeTask:
     Attributes:
         calls (list[tuple[str, str]]): target type と key の enqueue 記録.
         force_refresh_calls (list[bool]): force refresh 指定の enqueue 記録.
+        direct_point_lookup_calls (list[bool]): direct point lookup指定のenqueue記録.
     """
 
     def __init__(self) -> None:
         """空の enqueue 記録を持つ fake task を初期化する."""
         self.calls: list[tuple[str, str]] = []
         self.force_refresh_calls: list[bool] = []
+        self.direct_point_lookup_calls: list[bool] = []
 
     async def kiq(
         self,
@@ -49,6 +60,7 @@ class _FakeTask:
         target_key: str,
         *,
         force_refresh: bool = False,
+        direct_point_lookup: bool = False,
     ) -> None:
         """Beatmap fetch job の enqueue 引数を記録する.
 
@@ -56,12 +68,14 @@ class _FakeTask:
             target_type (str): fetch 対象種別を表す queue 値.
             target_key (str): fetch 対象を識別する queue 値.
             force_refresh (bool): cache を使わず更新する指定か.
+            direct_point_lookup (bool): stable direct point lookup由来のmetadata取得か.
 
         Returns:
             None: enqueue 引数を記録し, 呼び出し側へ値を返さない.
         """
         self.calls.append((target_type, target_key))
         self.force_refresh_calls.append(force_refresh)
+        self.direct_point_lookup_calls.append(direct_point_lookup)
 
 
 class _FakeBroker:
@@ -171,6 +185,68 @@ async def test_beatmap_fetch_enqueue_preserves_force_refresh_flag() -> None:
 
     assert broker.metadata.calls == [("metadata:beatmap", "1")]
     assert broker.metadata.force_refresh_calls == [True]
+    assert broker.file.calls == []
+
+
+@pytest.mark.asyncio
+async def test_beatmap_fetch_enqueue_marks_direct_point_lookup_metadata_targets() -> None:
+    """Direct point lookup由来のmetadata enqueueがworker payload flagを保持する.
+
+    Returns:
+        None: metadata taskへdirect_point_lookup=Trueが渡ることを検証して完了する.
+    """
+    broker = _FakeBroker()
+
+    await enqueue_beatmap_fetch(
+        cast("AsyncBroker", cast("object", broker)),
+        BeatmapFetchTarget.metadata_by_beatmapset_id(1),
+        direct_point_lookup=True,
+    )
+
+    assert broker.metadata.calls == [("metadata:beatmapset", "1")]
+    assert broker.metadata.direct_point_lookup_calls == [True]
+    assert broker.file.calls == []
+
+
+@pytest.mark.asyncio
+async def test_direct_point_lookup_query_uses_direct_point_lookup_enqueue() -> None:
+    """DirectPointLookupQueryが専用resolverからdirect lookup metadata fetchをenqueueする.
+
+    Returns:
+        None: lookup miss時にdirect_point_lookup=True付きmetadata taskが
+            enqueueされることを確認する.
+    """
+    repo = InMemoryBeatmapStore()
+    broker = _FakeBroker()
+    config = make_app_config(osu_direct_point_lookup_bounded_wait_seconds=0.01)
+    provider = BeatmapAppProviderSet()
+    build_query = cast(
+        "Callable[..., DirectPointLookupQuery]",
+        provider.direct_point_lookup_query,
+    )
+    query = build_query(
+        repository=repo.query_repository,
+        eligibility_service=BeatmapEligibilityService(),
+        freshness_policy=BeatmapFreshnessPolicy(
+            ranked_refresh_interval=timedelta(days=30),
+            pending_refresh_interval=timedelta(hours=1),
+            graveyard_refresh_interval=timedelta(days=30),
+            mirror_refresh_interval=timedelta(hours=1),
+        ),
+        broker=cast("AsyncBroker", cast("object", broker)),
+        config=config,
+    )
+
+    result = await query.execute(
+        DirectPointLookupRequest.beatmapset_id(
+            authenticated_user_id=1,
+            beatmapset_id=1000,
+        )
+    )
+
+    assert result.beatmapset is None
+    assert broker.metadata.calls == [("metadata:beatmapset", "1000")]
+    assert broker.metadata.direct_point_lookup_calls == [True]
     assert broker.file.calls == []
 
 

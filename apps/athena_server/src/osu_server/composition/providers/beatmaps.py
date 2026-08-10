@@ -6,6 +6,7 @@ from datetime import timedelta
 from typing import final
 
 from dishka import Provider, Scope
+from taskiq import AsyncBroker
 
 from osu_server.composition.providers._dishka import provide
 from osu_server.config import AppConfig
@@ -23,6 +24,7 @@ from osu_server.infrastructure.beatmaps import (
 from osu_server.infrastructure.http.beatmap_http_client import (
     BeatmapHttpClient as ConcreteBeatmapHttpClient,
 )
+from osu_server.jobs.osu_direct import TaskiqDirectExternalIndexUpdateWorkerWake
 from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
 from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.services.commands.beatmaps import (
@@ -39,6 +41,7 @@ from osu_server.services.queries.beatmaps.mirror import (
 )
 from osu_server.shared.ports import (
     BeatmapLeaderboardRebuildWorkerWake,
+    DirectExternalIndexUpdateWorkerWake,
 )
 
 _DISHKA_RUNTIME_HINTS = (
@@ -47,9 +50,12 @@ _DISHKA_RUNTIME_HINTS = (
     BeatmapFreshnessPolicy,
     BeatmapMetadataProvider,
     BeatmapLeaderboardRebuildWorkerWake,
+    DirectExternalIndexUpdateWorkerWake,
     BeatmapQueryRepository,
     BlobStorageService,
+    TaskiqDirectExternalIndexUpdateWorkerWake,
     UnitOfWorkFactory,
+    AsyncBroker,
 )
 
 
@@ -176,6 +182,7 @@ class BeatmapProviderSet(Provider):
         freshness_policy: BeatmapFreshnessPolicy,
         config: AppConfig,
         leaderboard_rebuild_wake: BeatmapLeaderboardRebuildWorkerWake,
+        direct_external_index_update_wake: DirectExternalIndexUpdateWorkerWake,
     ) -> FetchBeatmapMetadataUseCase:
         """Metadata fetch commandをsource policyとworker wake portで構成する.
 
@@ -188,6 +195,8 @@ class BeatmapProviderSet(Provider):
             config (AppConfig): 公式sourceの利用可否を持つ実行時設定.
             leaderboard_rebuild_wake (BeatmapLeaderboardRebuildWorkerWake):
                 metadata更新後にleaderboard rebuild workerを起動するport.
+            direct_external_index_update_wake (DirectExternalIndexUpdateWorkerWake):
+                metadata更新後にexternal index update workerを起動するport.
 
         Returns:
             FetchBeatmapMetadataUseCase: freshness判定,metadata永続化,rebuild wakeを行うcommand.
@@ -198,7 +207,24 @@ class BeatmapProviderSet(Provider):
             freshness_policy=freshness_policy,
             official_sources_available=config.beatmap_official_sources_enabled,
             leaderboard_rebuild_wake=leaderboard_rebuild_wake,
+            direct_external_index_update_wake=direct_external_index_update_wake,
         )
+
+    @provide
+    def direct_external_index_update_worker_wake(
+        self,
+        broker: AsyncBroker,
+    ) -> DirectExternalIndexUpdateWorkerWake:
+        """External index update workerを起動するTaskiq portを構成する.
+
+        Args:
+            broker (AsyncBroker): external index update taskをenqueueするTaskiq broker.
+
+        Returns:
+            DirectExternalIndexUpdateWorkerWake: beatmapset単位のindex updateをworkerへ
+            要求するport.
+        """
+        return TaskiqDirectExternalIndexUpdateWorkerWake(broker)
 
     @provide
     def fetch_beatmap_file_use_case(

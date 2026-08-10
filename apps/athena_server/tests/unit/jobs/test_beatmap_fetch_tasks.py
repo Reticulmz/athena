@@ -19,9 +19,13 @@ from osu_server.jobs.beatmap_fetch import (
     fetch_beatmap_metadata,
     get_beatmap_file_fetch,
     get_beatmap_metadata_fetch,
+    get_osu_direct_catalog_scheduler,
 )
+from osu_server.services.commands.beatmaps.direct_catalog_sync import DirectCatalogWorkKind
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from osu_server.domain.beatmaps import BeatmapFetchTarget
 
 
@@ -51,6 +55,36 @@ class _FakeJob:
             None: 取得対象を履歴へ追加して値を返さずに完了する.
         """
         self.calls.append(target)
+
+
+class _FakeScheduler:
+    """Direct point lookup metadata fetchのscheduler呼び出しを記録する.
+
+    Attributes:
+        calls (list[DirectCatalogWorkKind]): schedulerへ渡されたwork kind履歴.
+    """
+
+    def __init__(self) -> None:
+        """空のscheduler呼び出し履歴を初期化する."""
+        self.calls: list[DirectCatalogWorkKind] = []
+
+    async def run(
+        self,
+        work_kind: DirectCatalogWorkKind,
+        work: Callable[[], Awaitable[None]],
+    ) -> object:
+        """Work kindを記録して渡されたworkを実行する.
+
+        Args:
+            work_kind (DirectCatalogWorkKind): adapterが指定したdirect catalog work種別.
+            work (Callable[[], Awaitable[None]]): metadata fetch実行を包むcallback.
+
+        Returns:
+            object: scheduler結果を検証しないため新規objectを返す.
+        """
+        self.calls.append(work_kind)
+        await work()
+        return object()
 
 
 def _make_context(**services: object) -> Context:
@@ -284,6 +318,31 @@ class TestBeatmapFetchTaskExecution:
         assert len(fake.calls) == 1
         assert fake.calls[0].force_refresh is True
 
+    async def test_metadata_task_direct_point_lookup_uses_osu_direct_scheduler(self) -> None:
+        """Direct point lookup metadata fetchが共有schedulerのPOINT_LOOKUP枠で実行される.
+
+        Returns:
+            None: scheduler種別とuse-caseへ渡されたtargetを検証して完了する.
+        """
+        fake = _FakeJob()
+        scheduler = _FakeScheduler()
+        context = _make_context(
+            beatmap_metadata_fetch=fake,
+            osu_direct_catalog_scheduler=scheduler,
+        )
+
+        await fetch_beatmap_metadata(
+            target_type="metadata:beatmapset",
+            target_key="2000",
+            direct_point_lookup=True,
+            context=context,
+        )
+
+        assert scheduler.calls == [DirectCatalogWorkKind.POINT_LOOKUP]
+        assert len(fake.calls) == 1
+        assert fake.calls[0].kind is BeatmapFetchTargetKind.METADATA_BY_BEATMAPSET_ID
+        assert fake.calls[0].target_key == "2000"
+
     async def test_file_task_constructs_beatmap_fetch_target(self) -> None:
         """file形式payloadをbeatmap file取得対象へ変換することを検証する.
 
@@ -352,4 +411,26 @@ class TestBeatmapFetchStateGetters:
         """
         state = TaskiqState()
         result = get_beatmap_file_fetch(state)
+        assert result is None
+
+    def test_get_osu_direct_catalog_scheduler_returns_service(self) -> None:
+        """osu!direct catalog schedulerが登録済みなら同一instanceを返すことを検証する.
+
+        Returns:
+            None: stateへ登録したtest doubleとgetter結果が同一であることを確認する.
+        """
+        scheduler = _FakeScheduler()
+        state = TaskiqState()
+        object.__setattr__(state, "osu_direct_catalog_scheduler", scheduler)
+        result = get_osu_direct_catalog_scheduler(state)
+        assert result is scheduler
+
+    def test_get_osu_direct_catalog_scheduler_returns_none_when_missing(self) -> None:
+        """osu!direct catalog scheduler未登録時にNoneを返すことを検証する.
+
+        Returns:
+            None: 空のstateからのgetter結果がNoneであることを確認する.
+        """
+        state = TaskiqState()
+        result = get_osu_direct_catalog_scheduler(state)
         assert result is None

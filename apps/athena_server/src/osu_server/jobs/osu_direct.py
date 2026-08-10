@@ -14,6 +14,8 @@ from osu_server.services.commands.beatmaps.direct_catalog_sync import (
     DirectRangeCrawlChunk,
 )
 
+UPDATE_OSU_DIRECT_EXTERNAL_INDEX_TASK = "update_osu_direct_external_index"
+
 if TYPE_CHECKING:
     from taskiq import TaskiqState
 
@@ -88,6 +90,90 @@ class WorkerDirectIndexingCommands(Protocol):
             DirectExternalIndexRebuildResult: external index rebuild結果.
         """
         ...
+
+
+class _EnqueueableTask(Protocol):
+    """primitive payloadをenqueueできるTaskiq taskの最小境界を表す."""
+
+    async def kiq(self, *args: object, **kwargs: object) -> object:
+        """Primitive payload引数を持つtaskをenqueueする.
+
+        Args:
+            *args (object): taskに渡すpositional payload.
+            **kwargs (object): taskに渡すkeyword payload.
+
+        Returns:
+            object: broker実装が返すenqueue結果.
+        """
+        ...
+
+
+class _TaskBroker(Protocol):
+    """stable task nameからTaskiq taskを検索する最小境界を表す."""
+
+    def find_task(self, task_name: str) -> _EnqueueableTask | None:
+        """Stable task nameで登録済みtaskを検索する.
+
+        Args:
+            task_name (str): Taskiq registryに登録されたstable task名.
+
+        Returns:
+            _EnqueueableTask | None: 対応するtaskまたは未登録時のNone.
+        """
+        ...
+
+
+class TaskiqDirectExternalIndexUpdateWorkerWake:
+    """external index updateの起動要求をTaskiq jobへ変換する.
+
+    Attributes:
+        _broker (_TaskBroker): taskの検索とenqueueを担うbroker.
+    """
+
+    _broker: _TaskBroker
+
+    def __init__(self, broker: _TaskBroker) -> None:
+        """Taskiq brokerを起動adapterに設定する.
+
+        Args:
+            broker (_TaskBroker): taskの検索とenqueueを担うbroker.
+        """
+        self._broker = broker
+
+    async def wake_external_index_update(self, *, beatmapset_id: int, reason: str) -> None:
+        """External index update taskをbeatmapset IDだけでenqueueする.
+
+        Args:
+            beatmapset_id (int): 更新対象beatmapset ID.
+            reason (str): 更新を要求した理由. task payloadには含めずlogへ残す.
+
+        Returns:
+            None: `update_osu_direct_external_index` taskのenqueueを完了する.
+
+        Raises:
+            RuntimeError: 対応するtaskがbrokerに未登録の場合.
+        """
+        task = self._broker.find_task(UPDATE_OSU_DIRECT_EXTERNAL_INDEX_TASK)
+        if task is None:
+            logger.error(
+                "osu_direct_external_index_update_task_not_registered",
+                task_name=UPDATE_OSU_DIRECT_EXTERNAL_INDEX_TASK,
+                beatmapset_id=beatmapset_id,
+                reason=reason,
+            )
+            msg = "osu!direct external index update task is not registered"
+            raise RuntimeError(msg)
+
+        try:
+            _ = await task.kiq(beatmapset_id)
+        except Exception:
+            logger.exception(
+                "osu_direct_external_index_update_enqueue_failed",
+                task_name=UPDATE_OSU_DIRECT_EXTERNAL_INDEX_TASK,
+                beatmapset_id=beatmapset_id,
+                reason=reason,
+            )
+            raise
 
 
 def get_osu_direct_feed_sync(state: TaskiqState) -> WorkerDirectFeedSync | None:
@@ -213,7 +299,7 @@ async def crawl_osu_direct_id_range(
     _ = await use_case.execute(chunk)
 
 
-@jobs.register(task_name="update_osu_direct_external_index")
+@jobs.register(task_name=UPDATE_OSU_DIRECT_EXTERNAL_INDEX_TASK)
 async def update_osu_direct_external_index(
     beatmapset_id: object,
     context: Annotated[Context, TaskiqDepends()],
@@ -414,6 +500,8 @@ def _raise_runtime_missing(*, task_name: str, dependency: str) -> Never:
 
 
 __all__ = [
+    "UPDATE_OSU_DIRECT_EXTERNAL_INDEX_TASK",
+    "TaskiqDirectExternalIndexUpdateWorkerWake",
     "WorkerDirectFeedSync",
     "WorkerDirectIndexingCommands",
     "WorkerDirectRangeCrawl",

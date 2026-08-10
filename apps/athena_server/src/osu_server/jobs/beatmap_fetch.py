@@ -9,8 +9,11 @@ from taskiq import Context, TaskiqDepends
 
 from osu_server.domain.beatmaps import BeatmapFetchTarget
 from osu_server.infrastructure.jobs.registry import jobs
+from osu_server.shared.ports import DirectCatalogWorkKind
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from taskiq import TaskiqState
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
@@ -46,6 +49,26 @@ class WorkerBeatmapFileFetch(Protocol):
         ...
 
 
+class WorkerDirectCatalogScheduler(Protocol):
+    """direct catalog workを共有upstream budgetで実行する境界を表す."""
+
+    async def run(
+        self,
+        work_kind: DirectCatalogWorkKind,
+        work: Callable[[], Awaitable[None]],
+    ) -> object:
+        """指定kindのworkをscheduler経由で実行する.
+
+        Args:
+            work_kind (DirectCatalogWorkKind): 実行するdirect catalog work種別.
+            work (Callable[[], Awaitable[None]]): budget取得後に実行する処理.
+
+        Returns:
+            object: scheduler固有の実行結果. job adapterでは結果詳細を扱わない.
+        """
+        ...
+
+
 def get_beatmap_metadata_fetch(state: TaskiqState) -> WorkerBeatmapMetadataFetch | None:
     """Taskiq state から beatmap metadata fetch use-case を返す.
 
@@ -76,6 +99,21 @@ def get_beatmap_file_fetch(state: TaskiqState) -> WorkerBeatmapFileFetch | None:
     )
 
 
+def get_osu_direct_catalog_scheduler(state: TaskiqState) -> WorkerDirectCatalogScheduler | None:
+    """Taskiq stateからosu!direct catalog schedulerを返す.
+
+    Args:
+        state (TaskiqState): worker runtimeが保持するTaskiq state.
+
+    Returns:
+        WorkerDirectCatalogScheduler | None: 登録済みschedulerまたは未登録時のNone.
+    """
+    return cast(
+        "WorkerDirectCatalogScheduler | None",
+        getattr(state, "osu_direct_catalog_scheduler", None),
+    )
+
+
 @jobs.register(task_name="fetch_beatmap_metadata")
 async def fetch_beatmap_metadata(
     target_type: str,
@@ -83,6 +121,7 @@ async def fetch_beatmap_metadata(
     context: Annotated[Context, TaskiqDepends()],
     *,
     force_refresh: bool = False,
+    direct_point_lookup: bool = False,
 ) -> None:
     """Taskiq payload から beatmap metadata fetch command を呼び出す.
 
@@ -91,6 +130,7 @@ async def fetch_beatmap_metadata(
         target_key (str): target 種別に対応する lookup key.
         context (Context): use-case を取得する Taskiq runtime context.
         force_refresh (bool): cache 状態にかかわらず refresh するか.
+        direct_point_lookup (bool): stable direct point lookup由来のmetadata取得か.
 
     Returns:
         None: typed target を use-case へ委譲して完了する.
@@ -114,6 +154,29 @@ async def fetch_beatmap_metadata(
         target_key=target_key,
         force_refresh=force_refresh,
     )
+    if direct_point_lookup:
+        scheduler = get_osu_direct_catalog_scheduler(context.state)
+        if scheduler is None:
+            logger.error(
+                "osu_direct_catalog_scheduler_runtime_unavailable",
+                task_name="fetch_beatmap_metadata",
+                target_type=target_type,
+                target_key=target_key,
+            )
+            msg = "osu!direct catalog scheduler is not registered"
+            raise RuntimeError(msg)
+
+        async def work() -> None:
+            """Metadata fetch use-caseをscheduler内で実行する.
+
+            Returns:
+                None: use-caseへtargetを渡して完了する.
+            """
+            await use_case.execute(target)
+
+        _ = await scheduler.run(DirectCatalogWorkKind.POINT_LOOKUP, work)
+        return
+
     await use_case.execute(target)
 
 
@@ -161,8 +224,10 @@ async def fetch_beatmap_file(
 __all__ = [
     "WorkerBeatmapFileFetch",
     "WorkerBeatmapMetadataFetch",
+    "WorkerDirectCatalogScheduler",
     "fetch_beatmap_file",
     "fetch_beatmap_metadata",
     "get_beatmap_file_fetch",
     "get_beatmap_metadata_fetch",
+    "get_osu_direct_catalog_scheduler",
 ]

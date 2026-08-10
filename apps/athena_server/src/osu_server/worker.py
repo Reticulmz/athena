@@ -27,6 +27,7 @@ from osu_server.services.commands.beatmaps import (
     FetchBeatmapMetadataUseCase,
 )
 from osu_server.services.commands.beatmaps.direct_catalog_sync import (
+    DirectCatalogScheduler,
     DirectFeedSync,
     DirectRangeCrawl,
 )
@@ -92,6 +93,7 @@ def _clear_worker_runtime_state(state: TaskiqState) -> None:
     state.osu_direct_feed_sync = None
     state.osu_direct_range_crawl = None
     state.osu_direct_indexing_commands = None
+    state.osu_direct_catalog_scheduler = None
     state.replay_download_accounting_executor = None
 
 
@@ -137,6 +139,7 @@ async def startup(state: TaskiqState) -> None:
         state.osu_direct_feed_sync = await worker_container.get(DirectFeedSync)
         state.osu_direct_range_crawl = await worker_container.get(DirectRangeCrawl)
         state.osu_direct_indexing_commands = await worker_container.get(DirectIndexingCommands)
+        state.osu_direct_catalog_scheduler = await worker_container.get(DirectCatalogScheduler)
         state.replay_download_accounting_executor = await worker_container.get(
             ReplayDownloadAccountingUseCase
         )

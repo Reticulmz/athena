@@ -32,6 +32,7 @@ _DISHKA_RUNTIME_HINTS = (
     BeatmapFetchTarget,
     BeatmapFreshnessPolicy,
     BeatmapQueryRepository,
+    BeatmapMirrorService,
     DirectPointLookupQuery,
     DirectSearchBackend,
     DirectSearchQuery,
@@ -90,18 +91,38 @@ class BeatmapAppProviderSet(Provider):
     @provide
     def direct_point_lookup_query(
         self,
-        beatmap_resolver: BeatmapMirrorService,
+        repository: BeatmapQueryRepository,
+        eligibility_service: BeatmapEligibilityService,
+        freshness_policy: BeatmapFreshnessPolicy,
+        broker: AsyncBroker,
         config: AppConfig,
     ) -> DirectPointLookupQuery:
         """Direct point lookup query use-caseをBeatmap Mirror resolverで構成する.
 
         Args:
-            beatmap_resolver (BeatmapMirrorService): cache-first metadata resolver.
+            repository (BeatmapQueryRepository): 既存beatmap metadataを読むrepository.
+            eligibility_service (BeatmapEligibilityService):
+                mirrorで返せるbeatmapを判定するservice.
+            freshness_policy (BeatmapFreshnessPolicy): metadataの再取得要否を決めるpolicy.
+            broker (AsyncBroker):
+                direct point lookup metadata fetchをworkerへenqueueするbroker.
             config (AppConfig): point lookup bounded wait秒数を持つ実行時設定.
 
         Returns:
             DirectPointLookupQuery: direct point lookup用のread-only query use-case.
         """
+        beatmap_resolver = BeatmapMirrorService(
+            repository=repository,
+            eligibility_service=eligibility_service,
+            freshness_policy=freshness_policy,
+            mirror_trust_enabled=config.beatmap_mirror_trust_policy == "trusted",
+            official_sources_available=config.beatmap_official_sources_enabled,
+            enqueue_refresh=lambda target: enqueue_beatmap_fetch(
+                broker,
+                target,
+                direct_point_lookup=True,
+            ),
+        )
         return DirectPointLookupQuery(
             beatmap_resolver,
             bounded_wait_seconds=config.osu_direct_point_lookup_bounded_wait_seconds,
@@ -155,19 +176,25 @@ class BeatmapAppProviderSet(Provider):
         return RequestBeatmapFileWarmupUseCase(beatmap_resolver)
 
 
-async def enqueue_beatmap_fetch(broker: AsyncBroker, target: BeatmapFetchTarget) -> None:
+async def enqueue_beatmap_fetch(
+    broker: AsyncBroker,
+    target: BeatmapFetchTarget,
+    *,
+    direct_point_lookup: bool = False,
+) -> None:
     """Fetch targetに対応するworker taskを選択してenqueueする.
 
     Args:
         broker (AsyncBroker): ``fetch_beatmap_file`` と ``fetch_beatmap_metadata`` taskを持つ
             broker.
         target (BeatmapFetchTarget): file fetchかmetadata fetchかと対象keyを表すrequest.
+        direct_point_lookup (bool): stable direct point lookup由来のmetadata取得か.
 
     Returns:
         None: task未登録時はerror logを残して何もenqueueせず,それ以外はenqueue完了後に返す.
 
     Notes:
-        ``force_refresh`` が真の場合だけkeyword argumentとしてworker taskへ渡す.
+        ``force_refresh`` と ``direct_point_lookup`` は真の場合だけkeyword argumentとして渡す.
     """
     task_name = "fetch_beatmap_file" if target.is_file_fetch else "fetch_beatmap_metadata"
     task = broker.find_task(task_name)
@@ -181,11 +208,9 @@ async def enqueue_beatmap_fetch(broker: AsyncBroker, target: BeatmapFetchTarget)
         return
 
     payload = target.queue_payload()
+    kwargs: dict[str, bool] = {}
     if payload.force_refresh:
-        _ = await task.kiq(
-            payload.target_type,
-            payload.target_key,
-            force_refresh=payload.force_refresh,
-        )
-        return
-    _ = await task.kiq(payload.target_type, payload.target_key)
+        kwargs["force_refresh"] = payload.force_refresh
+    if direct_point_lookup and not target.is_file_fetch:
+        kwargs["direct_point_lookup"] = True
+    _ = await task.kiq(payload.target_type, payload.target_key, **kwargs)

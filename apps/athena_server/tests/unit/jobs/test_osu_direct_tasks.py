@@ -16,6 +16,7 @@ from osu_server.domain.beatmaps import (
 from osu_server.infrastructure.jobs.registry import jobs
 from osu_server.jobs import osu_direct, register_all_jobs
 from osu_server.jobs.osu_direct import (
+    TaskiqDirectExternalIndexUpdateWorkerWake,
     crawl_osu_direct_id_range,
     get_osu_direct_feed_sync,
     get_osu_direct_indexing_commands,
@@ -139,6 +140,73 @@ class _FakeIndexingCommands:
         """
         self.external_rebuild_calls += 1
         return DirectExternalIndexRebuildResult(succeeded_count=0, failed_count=0)
+
+
+class _FakeEnqueueableTask:
+    """worker wakeがenqueueするpayloadと失敗を再現するtask double.
+
+    Attributes:
+        _error (Exception | None): kiqで送出する例外. Noneならenqueue成功を返す.
+        calls (list[tuple[tuple[object, ...], dict[str, object]]]): kiqへ渡されたpayload履歴.
+    """
+
+    _error: Exception | None
+
+    def __init__(self, *, error: Exception | None = None) -> None:
+        """enqueue失敗の有無と空のpayload履歴を設定する.
+
+        Args:
+            error (Exception | None): kiqで送出する例外. Noneなら正常に完了する.
+        """
+        self._error = error
+        self.calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    async def kiq(self, *args: object, **kwargs: object) -> object:
+        """payloadを記録して成功objectを返すか,設定済み例外を送出する.
+
+        Args:
+            *args (object): taskへ渡される位置引数payload.
+            **kwargs (object): taskへ渡される名前付きpayload.
+
+        Returns:
+            object: enqueue成功を表す新しいobject.
+        """
+        self.calls.append((args, kwargs))
+        if self._error is not None:
+            raise self._error
+        return object()
+
+
+class _FakeBroker:
+    """指定taskを返し,worker wakeのtask lookupを記録するbroker double.
+
+    Attributes:
+        _task (_FakeEnqueueableTask | None): lookup時に返すtask. Noneは未登録を表す.
+        task_names (list[str]): find_taskへ渡されたtask名の履歴.
+    """
+
+    _task: _FakeEnqueueableTask | None
+
+    def __init__(self, task: _FakeEnqueueableTask | None) -> None:
+        """lookup結果に使うtask doubleを初期化する.
+
+        Args:
+            task (_FakeEnqueueableTask | None): 返すtask. Noneなら未登録状態を再現する.
+        """
+        self._task = task
+        self.task_names: list[str] = []
+
+    def find_task(self, task_name: str) -> _FakeEnqueueableTask | None:
+        """task名を記録して設定済みtaskを返す.
+
+        Args:
+            task_name (str): worker wakeが解決を試みるtask名.
+
+        Returns:
+            _FakeEnqueueableTask | None: 設定済みtask,または未登録を表すNone.
+        """
+        self.task_names.append(task_name)
+        return self._task
 
 
 def _make_context(**services: object) -> Context:
@@ -367,6 +435,61 @@ async def test_rebuild_tasks_delegate_to_indexing_commands() -> None:
 
     assert fake.projection_rebuild_calls == 1
     assert fake.external_rebuild_calls == 1
+
+
+async def test_direct_external_index_update_worker_wake_enqueues_primitive_payload() -> None:
+    """External index update wakeがbeatmapset IDだけをtaskへenqueueすることを検証する.
+
+    Returns:
+        None: task lookupとpayload履歴が期待値と一致することを確認する.
+    """
+    task = _FakeEnqueueableTask()
+    broker = _FakeBroker(task)
+    wake = TaskiqDirectExternalIndexUpdateWorkerWake(broker)
+
+    await wake.wake_external_index_update(
+        beatmapset_id=1000,
+        reason="beatmap_metadata_saved",
+    )
+
+    assert broker.task_names == ["update_osu_direct_external_index"]
+    assert task.calls == [((1000,), {})]
+
+
+async def test_direct_external_index_update_worker_wake_raises_when_task_missing() -> None:
+    """External index update task未登録時にworker wakeがRuntimeErrorを送出する.
+
+    Returns:
+        None: 未登録taskを示すRuntimeErrorが送出されることを確認して完了する.
+    """
+    broker = _FakeBroker(None)
+    wake = TaskiqDirectExternalIndexUpdateWorkerWake(broker)
+
+    with pytest.raises(
+        RuntimeError,
+        match="osu!direct external index update task is not registered",
+    ):
+        await wake.wake_external_index_update(
+            beatmapset_id=1000,
+            reason="beatmap_metadata_saved",
+        )
+
+
+async def test_direct_external_index_update_worker_wake_surfaces_enqueue_failure() -> None:
+    """External index update taskのenqueue失敗をworker wakeが伝播することを検証する.
+
+    Returns:
+        None: broker由来のRuntimeErrorが送出されることを確認して完了する.
+    """
+    task = _FakeEnqueueableTask(error=RuntimeError("broker unavailable"))
+    broker = _FakeBroker(task)
+    wake = TaskiqDirectExternalIndexUpdateWorkerWake(broker)
+
+    with pytest.raises(RuntimeError, match="broker unavailable"):
+        await wake.wake_external_index_update(
+            beatmapset_id=1000,
+            reason="beatmap_metadata_saved",
+        )
 
 
 def test_state_helpers_return_registered_dependencies() -> None:

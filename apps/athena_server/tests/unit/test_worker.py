@@ -33,6 +33,7 @@ from osu_server.services.commands.beatmaps import (
     FetchBeatmapMetadataUseCase,
 )
 from osu_server.services.commands.beatmaps.direct_catalog_sync import (
+    DirectCatalogScheduler,
     DirectFeedSync,
     DirectRangeCrawl,
 )
@@ -446,6 +447,18 @@ def _state_osu_direct_indexing_commands(state: TaskiqState) -> object | None:
     return cast("object | None", getattr(state, "osu_direct_indexing_commands", None))
 
 
+def _state_osu_direct_catalog_scheduler(state: TaskiqState) -> object | None:
+    """Taskiq stateからosu!direct catalog schedulerを取得する.
+
+    Args:
+        state (TaskiqState): lifecycle dependencyを保持するbroker state.
+
+    Returns:
+        object | None: 解決済みcatalog scheduler. 未設定時はNone.
+    """
+    return cast("object | None", getattr(state, "osu_direct_catalog_scheduler", None))
+
+
 async def _run_startup(state: TaskiqState) -> None:
     """型付きstartup hookをTaskiq stateで実行する.
 
@@ -589,6 +602,7 @@ async def test_worker_startup_sets_task_use_cases_from_dishka_container(
         assert isinstance(_state_osu_direct_feed_sync(state), DirectFeedSync)
         assert isinstance(_state_osu_direct_range_crawl(state), DirectRangeCrawl)
         assert isinstance(_state_osu_direct_indexing_commands(state), DirectIndexingCommands)
+        assert isinstance(_state_osu_direct_catalog_scheduler(state), DirectCatalogScheduler)
     finally:
         await _run_shutdown(state)
 
@@ -648,6 +662,7 @@ async def test_worker_startup_failure_closes_dishka_container(
     assert _state_osu_direct_feed_sync(state) is None
     assert _state_osu_direct_range_crawl(state) is None
     assert _state_osu_direct_indexing_commands(state) is None
+    assert _state_osu_direct_catalog_scheduler(state) is None
     assert _state_replay_download_accounting_executor(state) is None
     assert failing_container.close_calls == 1
 
@@ -807,6 +822,7 @@ async def test_worker_shutdown_clears_runtime_state() -> None:
     state.osu_direct_feed_sync = object()
     state.osu_direct_range_crawl = object()
     state.osu_direct_indexing_commands = object()
+    state.osu_direct_catalog_scheduler = object()
     state.replay_download_accounting_executor = object()
 
     await _run_shutdown(state)
@@ -823,5 +839,6 @@ async def test_worker_shutdown_clears_runtime_state() -> None:
     assert _state_osu_direct_feed_sync(state) is None
     assert _state_osu_direct_range_crawl(state) is None
     assert _state_osu_direct_indexing_commands(state) is None
+    assert _state_osu_direct_catalog_scheduler(state) is None
     assert _state_replay_download_accounting_executor(state) is None
     assert dishka_container.close_calls == 1

@@ -24,7 +24,9 @@ from osu_server.domain.beatmaps import (
 )
 from osu_server.shared.ports import (
     BeatmapLeaderboardRebuildWorkerWake,
+    DirectExternalIndexUpdateWorkerWake,
     NoopBeatmapLeaderboardRebuildWorkerWake,
+    NoopDirectExternalIndexUpdateWorkerWake,
 )
 
 if TYPE_CHECKING:
@@ -82,6 +84,8 @@ class FetchBeatmapMetadataUseCase:
         _official_sources_available (bool): official source を利用できる運用状態かを示す値.
         _leaderboard_rebuild_wake (BeatmapLeaderboardRebuildWorkerWake):
             status または checksum の変更を通知する port.
+        _direct_external_index_update_wake (DirectExternalIndexUpdateWorkerWake):
+            metadata保存後にexternal index updateを要求するport.
     """
 
     def __init__(
@@ -92,6 +96,7 @@ class FetchBeatmapMetadataUseCase:
         freshness_policy: BeatmapFreshnessPolicy,
         official_sources_available: bool = True,
         leaderboard_rebuild_wake: BeatmapLeaderboardRebuildWorkerWake | None = None,
+        direct_external_index_update_wake: DirectExternalIndexUpdateWorkerWake | None = None,
     ) -> None:
         """Metadata fetch workflow に必要な依存関係と cache 判定条件を設定する.
 
@@ -105,6 +110,8 @@ class FetchBeatmapMetadataUseCase:
             official_sources_available (bool): official source が現在利用可能か. 既定値はTrue.
             leaderboard_rebuild_wake (BeatmapLeaderboardRebuildWorkerWake | None):
                 leaderboard rebuild を起床する port. None の場合は no-op 実装を使う.
+            direct_external_index_update_wake (DirectExternalIndexUpdateWorkerWake | None):
+                external index update を起床する port. None の場合は no-op 実装を使う.
 
         """
         self._uow_factory: UnitOfWorkFactory = uow_factory
@@ -113,6 +120,9 @@ class FetchBeatmapMetadataUseCase:
         self._official_sources_available: bool = official_sources_available
         self._leaderboard_rebuild_wake: BeatmapLeaderboardRebuildWorkerWake = (
             leaderboard_rebuild_wake or NoopBeatmapLeaderboardRebuildWorkerWake()
+        )
+        self._direct_external_index_update_wake: DirectExternalIndexUpdateWorkerWake = (
+            direct_external_index_update_wake or NoopDirectExternalIndexUpdateWorkerWake()
         )
 
     async def execute(self, target: BeatmapFetchTarget) -> None:
@@ -219,6 +229,22 @@ class FetchBeatmapMetadataUseCase:
                     error=str(exc),
                     exc_info=True,
                 )
+
+        try:
+            await self._direct_external_index_update_wake.wake_external_index_update(
+                beatmapset_id=beatmapset.id,
+                reason="beatmap_metadata_saved",
+            )
+        except Exception as exc:
+            logger.error(
+                "osu_direct_external_index_update_enqueue_failed",
+                target_type=target.kind.value,
+                target_key=target.target_key,
+                beatmapset_id=beatmapset.id,
+                reason="beatmap_metadata_saved",
+                error=str(exc),
+                exc_info=True,
+            )
 
         logger.info(
             "beatmap_metadata_fetch_succeeded",
