@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from http import HTTPStatus
 from typing import TYPE_CHECKING, cast
 
@@ -16,6 +17,7 @@ from taskiq import AsyncBroker
 
 import osu_server.config as config_module
 from osu_server.app import app, create_app
+from osu_server.composition import lifespan as lifespan_module
 from osu_server.composition.providers.container import make_app_container
 from osu_server.composition.providers.test import (
     TestProviderSet,
@@ -23,6 +25,7 @@ from osu_server.composition.providers.test import (
     replace_value,
 )
 from osu_server.config import AppConfig, load_routing_config
+from osu_server.domain.beatmaps import DirectSearchBackend, DirectSearchBackendResult
 from osu_server.domain.compatibility.stable import (
     ReplayDownloadBranch,
     ReplayDownloadResponseBody,
@@ -269,6 +272,40 @@ class _InjectedDirectSearchQuery:
         """
         self.inputs.append(request)
         return DirectSearchQueryResult(beatmapsets=(), stable_result_count=0)
+
+
+class _InjectedDirectSearchBackend:
+    """Startup検証でvalidate呼出だけを記録するdirect search backend fakeを提供する.
+
+    Attributes:
+        validate_calls (int): startup validationがbackendを検証した回数.
+    """
+
+    validate_calls: int
+
+    def __init__(self) -> None:
+        """Validate呼出回数を0で初期化する."""
+        self.validate_calls = 0
+
+    async def search(self, request: DirectSearchRequest) -> DirectSearchBackendResult:
+        """検索traffic用の空候補を返す.
+
+        Args:
+            request (DirectSearchRequest): direct search use-caseから渡された検索条件.
+
+        Returns:
+            DirectSearchBackendResult: 候補なしの検索結果.
+        """
+        _ = request
+        return DirectSearchBackendResult(candidates=(), has_more=False)
+
+    async def validate(self) -> None:
+        """Startup時のrequired SQL backend検証を記録する.
+
+        Returns:
+            None: backendが利用可能であることを示し, 呼び出し回数だけを更新する.
+        """
+        self.validate_calls += 1
 
 
 class _InjectedDirectPointLookupQuery:
@@ -887,3 +924,57 @@ def test_in_memory_app_direct_routes_reach_di_resolved_handlers(
     assert lookup_response.content == b""
     assert len(point_lookup_query.inputs) == 1
     assert point_lookup_query.inputs[0].target_value == 123
+
+
+def test_in_memory_app_startup_validates_direct_sql_search_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Application startupがrequired direct SQL backendを検証する契約を検証する.
+
+    In-memory provider graphへdirect search backend fakeを注入してstartupを実行する.
+    検索trafficを受ける前にbackend validateが1回だけ呼ばれることを確認する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): app startup用の必須environmentを隔離するfixture.
+        tmp_path (Path): isolated blob storage rootを作るtemporary directory.
+
+    Returns:
+        None: startup validation呼出を検証して完了する.
+    """
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/athena")
+    monkeypatch.setenv("VALKEY_URL", "redis://localhost:6379/0")
+    backend = _InjectedDirectSearchBackend()
+    created = create_app(
+        provider_overrides=(
+            make_in_memory_runtime_provider_set(blob_root=tmp_path / "blobs"),
+            TestProviderSet(
+                replace_value(
+                    DirectSearchBackend,
+                    cast("DirectSearchBackend", cast("object", backend)),
+                ),
+            ),
+        )
+    )
+
+    with TestClient(created, raise_server_exceptions=False) as client:
+        response = client.get("/")
+
+    assert response.status_code == HTTPStatus.OK
+    assert backend.validate_calls == 1
+
+
+def test_app_startup_does_not_run_direct_rebuild_commands() -> None:
+    """Application startupがdirect rebuildをoperator taskに残す契約を検証する.
+
+    Startup初期化関数の依存解決範囲を確認し, projection/external index rebuild methodを
+    呼び出さないことを固定する.
+
+    Returns:
+        None: startup code pathにdirect rebuild実行がないことを検証して完了する.
+    """
+    source = inspect.getsource(lifespan_module)
+
+    assert "DirectIndexingCommands" not in source
+    assert "rebuild_search_projection" not in source
+    assert "rebuild_external_index" not in source

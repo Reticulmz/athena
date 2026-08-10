@@ -16,6 +16,7 @@ from taskiq import AsyncBroker
 from osu_server.composition.health import check_infrastructure, get_version_info
 from osu_server.composition.providers.container import make_app_container
 from osu_server.config import AppConfig, load_config
+from osu_server.domain.beatmaps import DirectSearchBackend
 from osu_server.infrastructure.logging import setup_logging
 from osu_server.transports.stable.bancho.endpoint import BanchoEndpoint
 from osu_server.transports.stable.web_legacy.direct import (
@@ -43,10 +44,13 @@ async def _initialize_dishka_app_container(container: AsyncContainer) -> None:
     Returns:
         None: configuration,infrastructure,HTTP handlerを一度ずつ解決したことを示す.
     """
-    _ = await container.get(AppConfig)
+    config = await container.get(AppConfig)
     _ = await container.get(AsyncEngine)
     _ = await container.get(AsyncBroker)
     _ = await container.get(httpx.AsyncClient)
+    if config.osu_direct_validate_sql_search_backend_on_startup:
+        backend = await container.get(DirectSearchBackend)
+        await backend.validate()
     _ = await container.get(BanchoEndpoint)
     _ = await container.get(RegistrationHandler)
     _ = await container.get(GetscoresHandler)

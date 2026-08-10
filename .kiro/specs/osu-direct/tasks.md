@@ -180,7 +180,7 @@
   - _Requirements: 1.1, 1.2, 1.4, 4.1, 4.2, 5.1, 5.2, 5.6, 10.1, 10.2, 10.3, 10.5, 10.6, 11.3, 12.1, 12.2_
   - _Boundary: StableDirectContractTests_
 
-- [ ] 6.4 Add recovery and scheduling validation
+- [x] 6.4 Add recovery and scheduling validation
   - Verify point lookup work is prioritized over feed and range crawl under shared budget pressure.
   - Verify free-text search miss does not call upstream metadata providers.
   - Verify projection and external index rebuilds are idempotent and operator-triggered.
