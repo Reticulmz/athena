@@ -154,7 +154,7 @@
   - _Boundary: OsuDirectJobs_
 
 - [ ] 6. Validation and compatibility coverage
-- [ ] 6.1 Add unit coverage for domain, projection, query, and formatter behavior
+- [x] 6.1 Add unit coverage for domain, projection, query, and formatter behavior
   - Verify access policy, special query parsing, field declarations, delimiter sanitation, count sentinel, and fallback ordering.
   - Verify projection activation and disabling for usable, childless, inactive, deleted, and not submitted beatmapsets.
   - Verify point lookup target normalization and timeout-to-empty behavior.
