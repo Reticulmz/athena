@@ -171,7 +171,7 @@
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 3.4, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 8.1, 8.4, 8.5, 9.1, 9.2, 9.3, 9.4, 9.5_
   - _Boundary: OsuDirectIntegrationTests_
 
-- [ ] 6.3 Add stable endpoint contract coverage
+- [x] 6.3 Add stable endpoint contract coverage
   - Verify `/web/osu-search.php` returns count plus stable rows for authenticated users.
   - Verify `/web/osu-search-set.php` resolves by `s`, `b`, and `c`.
   - Verify unauthenticated or denied requests do not expose catalog data.
