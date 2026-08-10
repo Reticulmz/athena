@@ -162,7 +162,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.5, 4.3, 4.4, 4.5, 5.3, 5.4, 5.5, 7.1, 7.2, 7.3, 7.4, 8.2, 8.3, 10.4, 10.6, 10.7, 11.1, 11.2, 11.3, 12.3, 12.4, 12.5_
   - _Boundary: OsuDirectUnitTests_
 
-- [ ] 6.2 Add repository and backend integration coverage
+- [x] 6.2 Add repository and backend integration coverage
   - Verify metadata save and projection update share one durable consistency boundary.
   - Verify the SQL search backend returns candidate ids and scores and final hydration reads metadata.
   - Verify coverage records distinguish completed, failed, feed-observed, and id-range crawled records.
