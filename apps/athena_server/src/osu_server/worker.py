@@ -26,6 +26,11 @@ from osu_server.services.commands.beatmaps import (
     FetchBeatmapFileUseCase,
     FetchBeatmapMetadataUseCase,
 )
+from osu_server.services.commands.beatmaps.direct_catalog_sync import (
+    DirectFeedSync,
+    DirectRangeCrawl,
+)
+from osu_server.services.commands.beatmaps.direct_indexing import DirectIndexingCommands
 from osu_server.services.commands.chat import (
     PersistChannelMessageUseCase,
     PersistPrivateMessageUseCase,
@@ -84,6 +89,9 @@ def _clear_worker_runtime_state(state: TaskiqState) -> None:
     state.performance_recalculation_batch_processor = None
     state.beatmap_leaderboard_user_rebuild_use_case = None
     state.beatmap_leaderboard_beatmapset_rebuild_use_case = None
+    state.osu_direct_feed_sync = None
+    state.osu_direct_range_crawl = None
+    state.osu_direct_indexing_commands = None
     state.replay_download_accounting_executor = None
 
 
@@ -126,6 +134,9 @@ async def startup(state: TaskiqState) -> None:
         state.beatmap_leaderboard_beatmapset_rebuild_use_case = await worker_container.get(
             RebuildBeatmapLeaderboardsForBeatmapsetUseCase
         )
+        state.osu_direct_feed_sync = await worker_container.get(DirectFeedSync)
+        state.osu_direct_range_crawl = await worker_container.get(DirectRangeCrawl)
+        state.osu_direct_indexing_commands = await worker_container.get(DirectIndexingCommands)
         state.replay_download_accounting_executor = await worker_container.get(
             ReplayDownloadAccountingUseCase
         )

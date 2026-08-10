@@ -1,0 +1,428 @@
+"""osu!direct catalog/index command use-caseを呼び出すTaskiq adapterを定義する."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Annotated, Never, Protocol, cast
+
+import structlog
+from taskiq import Context, TaskiqDepends
+
+from osu_server.domain.beatmaps import BeatmapMetadataSource, DirectCoverageStatusScope
+from osu_server.infrastructure.jobs.registry import jobs
+from osu_server.services.commands.beatmaps.direct_catalog_sync import (
+    DirectFeedWindow,
+    DirectRangeCrawlChunk,
+)
+
+if TYPE_CHECKING:
+    from taskiq import TaskiqState
+
+    from osu_server.services.commands.beatmaps.direct_indexing import (
+        DirectExternalIndexRebuildResult,
+        DirectExternalIndexUpdateResult,
+        DirectSearchProjectionRebuildResult,
+    )
+
+logger = cast("structlog.stdlib.BoundLogger", structlog.get_logger(__name__))
+
+
+class WorkerDirectFeedSync(Protocol):
+    """feed window同期jobが要求するuse-case境界を表す."""
+
+    async def execute(self, window: DirectFeedWindow) -> object:
+        """Feed window同期を実行する.
+
+        Args:
+            window (DirectFeedWindow): primitive payloadから構築したfeed window.
+
+        Returns:
+            object: scheduler結果. job adapterではpayload境界だけを扱う.
+        """
+        ...
+
+
+class WorkerDirectRangeCrawl(Protocol):
+    """id range crawl jobが要求するuse-case境界を表す."""
+
+    async def execute(self, chunk: DirectRangeCrawlChunk) -> object:
+        """ID range crawlを実行する.
+
+        Args:
+            chunk (DirectRangeCrawlChunk): primitive payloadから構築したcrawl chunk.
+
+        Returns:
+            object: scheduler結果. job adapterではpayload境界だけを扱う.
+        """
+        ...
+
+
+class WorkerDirectIndexingCommands(Protocol):
+    """index同期とrebuild jobが要求するcommand境界を表す."""
+
+    async def update_external_index(
+        self,
+        beatmapset_id: int,
+    ) -> DirectExternalIndexUpdateResult:
+        """Projection documentをexternal indexへ同期する.
+
+        Args:
+            beatmapset_id (int): 同期対象beatmapset ID.
+
+        Returns:
+            DirectExternalIndexUpdateResult: document単位の同期結果.
+        """
+        ...
+
+    async def rebuild_search_projection(self) -> DirectSearchProjectionRebuildResult:
+        """保存済みmetadataからsearch projectionを再構築する.
+
+        Returns:
+            DirectSearchProjectionRebuildResult: projection rebuild結果.
+        """
+        ...
+
+    async def rebuild_external_index(self) -> DirectExternalIndexRebuildResult:
+        """Projection document群からexternal index stateを再構築する.
+
+        Returns:
+            DirectExternalIndexRebuildResult: external index rebuild結果.
+        """
+        ...
+
+
+def get_osu_direct_feed_sync(state: TaskiqState) -> WorkerDirectFeedSync | None:
+    """Taskiq stateからosu!direct feed sync use-caseを返す.
+
+    Args:
+        state (TaskiqState): worker runtimeが保持するTaskiq state.
+
+    Returns:
+        WorkerDirectFeedSync | None: 登録済みuse-caseまたは未登録時のNone.
+    """
+    return cast("WorkerDirectFeedSync | None", getattr(state, "osu_direct_feed_sync", None))
+
+
+def get_osu_direct_range_crawl(state: TaskiqState) -> WorkerDirectRangeCrawl | None:
+    """Taskiq stateからosu!direct range crawl use-caseを返す.
+
+    Args:
+        state (TaskiqState): worker runtimeが保持するTaskiq state.
+
+    Returns:
+        WorkerDirectRangeCrawl | None: 登録済みuse-caseまたは未登録時のNone.
+    """
+    return cast("WorkerDirectRangeCrawl | None", getattr(state, "osu_direct_range_crawl", None))
+
+
+def get_osu_direct_indexing_commands(state: TaskiqState) -> WorkerDirectIndexingCommands | None:
+    """Taskiq stateからosu!direct indexing commandを返す.
+
+    Args:
+        state (TaskiqState): worker runtimeが保持するTaskiq state.
+
+    Returns:
+        WorkerDirectIndexingCommands | None: 登録済みcommandまたは未登録時のNone.
+    """
+    return cast(
+        "WorkerDirectIndexingCommands | None",
+        getattr(state, "osu_direct_indexing_commands", None),
+    )
+
+
+@jobs.register(task_name="sync_osu_direct_feed_window")
+async def sync_osu_direct_feed_window(
+    source: object,
+    status_scope: object,
+    sort_key: object,
+    window_key: object,
+    context: Annotated[Context, TaskiqDepends()],
+) -> None:
+    """Feed window payloadを検証してcatalog sync use-caseへ委譲する.
+
+    Args:
+        source (object): `BeatmapMetadataSource`のwire値.
+        status_scope (object): `DirectCoverageStatusScope`のwire値.
+        sort_key (object): feed sortの識別子.
+        window_key (object): page, cursor,またはwindowの識別子.
+        context (Context): use-caseを取得するTaskiq runtime context.
+
+    Returns:
+        None: feed sync use-caseへ委譲して完了する.
+
+    Raises:
+        RuntimeError: feed sync use-caseがworker stateに未登録の場合.
+        ValueError: payloadがfeed windowの制約を満たさない場合.
+    """
+    window = DirectFeedWindow(
+        source=_validate_metadata_source(source),
+        status_scope=_validate_status_scope(status_scope),
+        sort_key=_validate_non_empty_str(sort_key, "sort_key"),
+        window_key=_validate_non_empty_str(window_key, "window_key"),
+    )
+    use_case = get_osu_direct_feed_sync(context.state)
+    if use_case is None:
+        _raise_runtime_missing(
+            task_name="sync_osu_direct_feed_window",
+            dependency="osu_direct_feed_sync",
+        )
+    _ = await use_case.execute(window)
+
+
+@jobs.register(task_name="crawl_osu_direct_id_range")
+async def crawl_osu_direct_id_range(
+    source: object,
+    status_scope: object,
+    from_beatmapset_id: object,
+    to_beatmapset_id: object,
+    context: Annotated[Context, TaskiqDepends()],
+) -> None:
+    """ID range payloadを検証してcatalog crawl use-caseへ委譲する.
+
+    Args:
+        source (object): `BeatmapMetadataSource`のwire値.
+        status_scope (object): `DirectCoverageStatusScope`のwire値.
+        from_beatmapset_id (object): crawl対象rangeの開始ID.
+        to_beatmapset_id (object): crawl対象rangeの終了ID.
+        context (Context): use-caseを取得するTaskiq runtime context.
+
+    Returns:
+        None: range crawl use-caseへ委譲して完了する.
+
+    Raises:
+        RuntimeError: range crawl use-caseがworker stateに未登録の場合.
+        ValueError: payloadがrange chunkの制約を満たさない場合.
+    """
+    chunk = DirectRangeCrawlChunk(
+        source=_validate_metadata_source(source),
+        status_scope=_validate_status_scope(status_scope),
+        from_beatmapset_id=_validate_non_negative_int(
+            from_beatmapset_id,
+            "from_beatmapset_id",
+        ),
+        to_beatmapset_id=_validate_non_negative_int(
+            to_beatmapset_id,
+            "to_beatmapset_id",
+        ),
+    )
+    use_case = get_osu_direct_range_crawl(context.state)
+    if use_case is None:
+        _raise_runtime_missing(
+            task_name="crawl_osu_direct_id_range",
+            dependency="osu_direct_range_crawl",
+        )
+    _ = await use_case.execute(chunk)
+
+
+@jobs.register(task_name="update_osu_direct_external_index")
+async def update_osu_direct_external_index(
+    beatmapset_id: object,
+    context: Annotated[Context, TaskiqDepends()],
+) -> None:
+    """External index update payloadを検証してindexing commandへ委譲する.
+
+    Args:
+        beatmapset_id (object): external indexへ同期するbeatmapset ID.
+        context (Context): commandを取得するTaskiq runtime context.
+
+    Returns:
+        None: indexing commandへ委譲して完了する.
+
+    Raises:
+        RuntimeError: indexing commandがworker stateに未登録の場合.
+        ValueError: beatmapset_idが正の整数でない場合.
+    """
+    validated_beatmapset_id = _validate_positive_int(beatmapset_id, "beatmapset_id")
+    use_case = get_osu_direct_indexing_commands(context.state)
+    if use_case is None:
+        _raise_runtime_missing(
+            task_name="update_osu_direct_external_index",
+            dependency="osu_direct_indexing_commands",
+        )
+    _ = await use_case.update_external_index(validated_beatmapset_id)
+
+
+@jobs.register(task_name="rebuild_osu_direct_search_projection")
+async def rebuild_osu_direct_search_projection(
+    context: Annotated[Context, TaskiqDepends()],
+) -> None:
+    """Search projection rebuildをindexing commandへ委譲する.
+
+    Args:
+        context (Context): commandを取得するTaskiq runtime context.
+
+    Returns:
+        None: projection rebuild commandへ委譲して完了する.
+
+    Raises:
+        RuntimeError: indexing commandがworker stateに未登録の場合.
+    """
+    use_case = get_osu_direct_indexing_commands(context.state)
+    if use_case is None:
+        _raise_runtime_missing(
+            task_name="rebuild_osu_direct_search_projection",
+            dependency="osu_direct_indexing_commands",
+        )
+    _ = await use_case.rebuild_search_projection()
+
+
+@jobs.register(task_name="rebuild_osu_direct_external_index")
+async def rebuild_osu_direct_external_index(
+    context: Annotated[Context, TaskiqDepends()],
+) -> None:
+    """External index rebuildをindexing commandへ委譲する.
+
+    Args:
+        context (Context): commandを取得するTaskiq runtime context.
+
+    Returns:
+        None: external index rebuild commandへ委譲して完了する.
+
+    Raises:
+        RuntimeError: indexing commandがworker stateに未登録の場合.
+    """
+    use_case = get_osu_direct_indexing_commands(context.state)
+    if use_case is None:
+        _raise_runtime_missing(
+            task_name="rebuild_osu_direct_external_index",
+            dependency="osu_direct_indexing_commands",
+        )
+    _ = await use_case.rebuild_external_index()
+
+
+def _validate_metadata_source(value: object) -> BeatmapMetadataSource:
+    """Payload値をBeatmapMetadataSourceへ変換する.
+
+    Args:
+        value (object): task payloadのmetadata source値.
+
+    Returns:
+        BeatmapMetadataSource: 検証済みsource.
+
+    Raises:
+        ValueError: valueが既知のmetadata sourceでない場合.
+    """
+    if not isinstance(value, str):
+        msg = "source must be a valid beatmap metadata source"
+        raise TypeError(msg)
+    try:
+        return BeatmapMetadataSource(value)
+    except ValueError as exc:
+        msg = "source must be a valid beatmap metadata source"
+        raise ValueError(msg) from exc
+
+
+def _validate_status_scope(value: object) -> DirectCoverageStatusScope:
+    """Payload値をDirectCoverageStatusScopeへ変換する.
+
+    Args:
+        value (object): task payloadのcoverage status scope値.
+
+    Returns:
+        DirectCoverageStatusScope: 検証済みstatus scope.
+
+    Raises:
+        ValueError: valueが既知のstatus scopeでない場合.
+    """
+    if not isinstance(value, str):
+        msg = "status_scope must be a valid direct coverage status scope"
+        raise TypeError(msg)
+    try:
+        return DirectCoverageStatusScope(value)
+    except ValueError as exc:
+        msg = "status_scope must be a valid direct coverage status scope"
+        raise ValueError(msg) from exc
+
+
+def _validate_non_empty_str(value: object, field_name: str) -> str:
+    """Payload値が空でない文字列か検証する.
+
+    Args:
+        value (object): 検証するpayload値.
+        field_name (str): error messageへ入れるfield名.
+
+    Returns:
+        str: 検証済み文字列.
+
+    Raises:
+        ValueError: valueが文字列でないか空の場合.
+    """
+    if not isinstance(value, str) or not value:
+        msg = f"{field_name} must be a non-empty string"
+        raise ValueError(msg)
+    return value
+
+
+def _validate_positive_int(value: object, field_name: str) -> int:
+    """Payload値がboolでない正の整数か検証する.
+
+    Args:
+        value (object): 検証するpayload値.
+        field_name (str): error messageへ入れるfield名.
+
+    Returns:
+        int: 検証済みの正の整数.
+
+    Raises:
+        ValueError: valueが正の整数でない場合.
+    """
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        msg = f"{field_name} must be a positive integer"
+        raise ValueError(msg)
+    return value
+
+
+def _validate_non_negative_int(value: object, field_name: str) -> int:
+    """Payload値がboolでない0以上の整数か検証する.
+
+    Args:
+        value (object): 検証するpayload値.
+        field_name (str): error messageへ入れるfield名.
+
+    Returns:
+        int: 検証済みの0以上の整数.
+
+    Raises:
+        ValueError: valueが0以上の整数でない場合.
+    """
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        msg = f"{field_name} must be a non-negative integer"
+        raise ValueError(msg)
+    return value
+
+
+def _raise_runtime_missing(*, task_name: str, dependency: str) -> Never:
+    """未登録runtime dependencyを構造化logへ出してRuntimeErrorにする.
+
+    Args:
+        task_name (str): 失敗したTaskiq task名.
+        dependency (str): Taskiq stateで期待したdependency名.
+
+    Returns:
+        None: 常にRuntimeErrorを送出するため返らない.
+
+    Raises:
+        RuntimeError: 指定dependencyがworker stateに未登録の場合.
+    """
+    logger.error(
+        "osu_direct_job_runtime_missing",
+        task_name=task_name,
+        dependency=dependency,
+    )
+    dependency_name = dependency.replace("osu_direct", "osu!direct").replace("_", " ")
+    msg = f"{dependency_name} use-case is not registered"
+    raise RuntimeError(msg)
+
+
+__all__ = [
+    "WorkerDirectFeedSync",
+    "WorkerDirectIndexingCommands",
+    "WorkerDirectRangeCrawl",
+    "crawl_osu_direct_id_range",
+    "get_osu_direct_feed_sync",
+    "get_osu_direct_indexing_commands",
+    "get_osu_direct_range_crawl",
+    "rebuild_osu_direct_external_index",
+    "rebuild_osu_direct_search_projection",
+    "sync_osu_direct_feed_window",
+    "update_osu_direct_external_index",
+]

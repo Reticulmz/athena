@@ -43,6 +43,22 @@ def _load_baseline_document() -> dict[str, object]:
     return _mapping_value(decoded, "baseline")
 
 
+def _recorded_migration_head() -> str:
+    """Checked-in baselineが記録するAlembic headを返す.
+
+    Returns:
+        str: baselineのmigration head revision.
+
+    Raises:
+        TypeError: baselineのmigrationsまたはheadが期待するJSON型でない場合.
+    """
+    migrations = _nested_mapping(_load_baseline_document(), "migrations")
+    head = migrations["head"]
+    if not isinstance(head, str):
+        raise TypeError("migrations.head must be a string")
+    return head
+
+
 def _mapping_value(value: object, context: str) -> dict[str, object]:
     """JSON objectを独立して変更できるstring key mappingへ変換する.
 
@@ -133,7 +149,7 @@ def _successful_alembic_current(_: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess(
         args=["uv", "run", "alembic", "current"],
         returncode=0,
-        stdout="20260713_0700 (head)\n",
+        stdout=f"{_recorded_migration_head()} (head)\n",
         stderr="",
     )
 
@@ -233,6 +249,52 @@ def _recorded_pre_cutover_source_revision() -> str:
             "verification.pre_cutover_source_revision must be a full lowercase SHA-1 object ID"
         )
     return revision
+
+
+def _write_recorded_pre_cutover_baseline(tmp_path: Path) -> Path:
+    """記録済みpre-cutover revisionのruntime snapshotを一時baselineへ書き出す.
+
+    Args:
+        tmp_path (Path): baseline fileを作成する一時directory.
+
+    Returns:
+        Path: current checker schemaにhistorical runtime snapshotを反映したbaseline file path.
+
+    Raises:
+        AssertionError: Gitからhistorical baselineを取得できない場合.
+    """
+    revision = _recorded_pre_cutover_source_revision()
+    baseline_process = subprocess.run(
+        [
+            "git",
+            "show",
+            f"{revision}:.kiro/specs/monorepo-migration/preflight-baseline.json",
+        ],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        env=_git_environment_without_parent_repository(),
+        text=True,
+    )
+    assert baseline_process.returncode == 0, baseline_process.stderr
+    recorded = _mapping_value(
+        cast("object", json.loads(baseline_process.stdout)),
+        "recorded baseline",
+    )
+    document = _load_baseline_document()
+
+    runtime = _nested_mapping(document, "runtime")
+    worker = _nested_mapping(runtime, "worker")
+    recorded_runtime = _nested_mapping(recorded, "runtime")
+    recorded_worker = _nested_mapping(recorded_runtime, "worker")
+    worker["task_names"] = _string_list_value(recorded_worker, "task_names")
+    runtime["worker"] = worker
+    document["runtime"] = runtime
+    document["migrations"] = _nested_mapping(recorded, "migrations")
+
+    baseline_path = tmp_path / "recorded-preflight-baseline.json"
+    _ = baseline_path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    return baseline_path
 
 
 def _make_immutable_pre_cutover_repository(tmp_path: Path) -> Path:
@@ -602,9 +664,10 @@ def test_pre_cutover_mode_accepts_recorded_revision_inventory(tmp_path: Path) ->
         None: pre-cutover checkerが差分なしで完了することを検証して完了する.
     """
     repository_root = _make_immutable_pre_cutover_repository(tmp_path)
+    baseline_path = _write_recorded_pre_cutover_baseline(tmp_path)
 
     result = _run_checker(
-        BASELINE_PATH,
+        baseline_path,
         mode="pre-cutover",
         repository_root=repository_root,
     )
@@ -627,9 +690,10 @@ def test_crypto_cutover_mode_accepts_relocated_crypto_with_legacy_server_layout(
         None: crypto-only semantic preflightが差分なしで完了することを検証する.
     """
     repository_root = _make_crypto_cutover_repository(tmp_path)
+    baseline_path = _write_recorded_pre_cutover_baseline(tmp_path)
 
     result = _run_checker(
-        BASELINE_PATH,
+        baseline_path,
         mode="crypto-cutover",
         repository_root=repository_root,
     )
@@ -1269,7 +1333,7 @@ def test_preflight_baseline_uses_recorded_migration_head_for_alembic_current() -
 
     expected_difference = "Alembic current differs from recorded head {!r}: {!r}".format(
         "incompatible-current-revision",
-        "20260713_0700",
+        _recorded_migration_head(),
     )
     assert differences == [expected_difference]
 
@@ -1364,7 +1428,8 @@ def test_preflight_baseline_rejects_ambiguous_or_partial_alembic_current_output(
         )
     else:
         expected_difference = (
-            "Alembic current differs from recorded head '20260713_0700': " + repr(actual_current)
+            f"Alembic current differs from recorded head {_recorded_migration_head()!r}: "
+            + repr(actual_current)
         )
 
     assert differences == [expected_difference]

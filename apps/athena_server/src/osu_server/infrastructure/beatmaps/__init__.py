@@ -4,6 +4,7 @@ from osu_server.infrastructure.beatmaps.file_sources import BeatmapFileProviderS
 from osu_server.infrastructure.beatmaps.metadata_source_adapters import (
     InMemoryBeatmapMetadataProvider,
     MirrorMetadataProviderService,
+    OsuApiBeatmapsetSearchResult,
     OsuApiMetadataProviderService,
 )
 from osu_server.infrastructure.beatmaps.metadata_sources import (
@@ -15,5 +16,6 @@ __all__ = [
     "CompositeBeatmapMetadataProvider",
     "InMemoryBeatmapMetadataProvider",
     "MirrorMetadataProviderService",
+    "OsuApiBeatmapsetSearchResult",
     "OsuApiMetadataProviderService",
 ]

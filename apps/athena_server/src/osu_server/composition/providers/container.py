@@ -9,6 +9,7 @@ from dishka import make_async_container
 from osu_server.composition.providers.app import AppProviderSet
 from osu_server.composition.providers.beatmaps import BeatmapProviderSet
 from osu_server.composition.providers.beatmaps_app import BeatmapAppProviderSet
+from osu_server.composition.providers.beatmaps_worker import BeatmapWorkerProviderSet
 from osu_server.composition.providers.chat import ChatProviderSet
 from osu_server.composition.providers.chat_app import ChatAppProviderSet
 from osu_server.composition.providers.identity import IdentityProviderSet
@@ -86,6 +87,7 @@ def make_worker_container(
         RepositoryProviderSet(),
         StorageProviderSet(),
         BeatmapProviderSet(),
+        BeatmapWorkerProviderSet(),
         ChatProviderSet(),
         ScoreProviderSet(),
         PerformanceProviderSet(),

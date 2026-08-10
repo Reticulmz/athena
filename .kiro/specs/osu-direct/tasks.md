@@ -144,7 +144,7 @@
   - _Requirements: 1.1, 1.4, 4.1, 5.1, 5.2, 10.1, 10.2, 10.3_
   - _Boundary: StableWebLegacyIntegration_
 
-- [ ] 5.2 Wire catalog, index, and rebuild worker jobs
+- [x] 5.2 Wire catalog, index, and rebuild worker jobs
   - Register task payload adapters for feed sync, id range crawl, external index update, and rebuild.
   - Validate primitive job payloads before invoking command use-cases.
   - Report missing worker runtime dependencies as observable job failures.
