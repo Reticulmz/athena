@@ -239,6 +239,7 @@ dependencies = [
     { name = "python-multipart" },
     { name = "rosu-pp-py" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "sqlalchemy-paradedb" },
     { name = "starlette" },
     { name = "starlette-dishka" },
     { name = "structlog" },
@@ -263,6 +264,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.29" },
     { name = "rosu-pp-py", specifier = "==4.0.2" },
     { name = "sqlalchemy", extras = ["asyncio"] },
+    { name = "sqlalchemy-paradedb", specifier = "==0.10.0" },
     { name = "starlette" },
     { name = "starlette-dishka" },
     { name = "structlog", specifier = ">=25.5.0" },
@@ -1183,6 +1185,18 @@ wheels = [
 [package.optional-dependencies]
 asyncio = [
     { name = "greenlet" },
+]
+
+[[package]]
+name = "sqlalchemy-paradedb"
+version = "0.10.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "sqlalchemy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/08/25/085c462dc8b9957a76c860435ddcfeffbcbadb4e7a05051e82628cac5536/sqlalchemy_paradedb-0.10.0.tar.gz", hash = "sha256:796ed1fe508e9fac571a486e595d929469f7ab97147bd6344e69c0643069baa5", size = 69125, upload-time = "2026-08-05T02:41:42.439Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/12/cc/9803fcc9b88aaa1716650b5bd7f517ea4e8607d46499890639cceb8e993b/sqlalchemy_paradedb-0.10.0-py3-none-any.whl", hash = "sha256:9bb5cb9c4907fa6d1f29fcae57572da83abe351e7fcb8cdbe7777355e8337e12", size = 32619, upload-time = "2026-08-05T02:41:41.187Z" },
 ]
 
 [[package]]

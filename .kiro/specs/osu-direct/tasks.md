@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Foundation: configuration, schema, and shared search contract
+- [x] 1. Foundation: configuration, schema, and shared search contract
 - [x] 1.1 Add osu!direct runtime policy and backend configuration
   - Add access policy settings for authenticated default, disabled mode, and reserved supporter-entitlement mode.
   - Add search backend settings for required SQL search and optional external index.
@@ -27,7 +27,7 @@
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
   - _Boundary: SearchIndexDefinition_
 
-- [ ] 2. Core search projection and backend behavior
+- [x] 2. Core search projection and backend behavior
 - [x] 2.1 Maintain the search projection during beatmap metadata saves
   - Build one active search document per complete usable beatmapset.
   - Disable documents for incomplete, inactive, deleted, not submitted, or childless beatmapsets.
@@ -66,7 +66,7 @@
   - _Requirements: 7.5, 8.1, 9.2, 9.3, 9.5_
   - _Boundary: DirectIndexingCommands_
 
-- [ ] 3. Catalog synchronization and upstream priority
+- [x] 3. Catalog synchronization and upstream priority
 - [x] 3.1 Implement shared upstream budget and priority scheduling
   - Apply one request budget across point lookup, feed sync, and id range crawl work.
   - Give point lookup higher priority than background catalog crawl.
@@ -94,7 +94,7 @@
   - _Requirements: 2.3, 2.5, 2.6, 3.1, 3.2, 3.4, 3.6_
   - _Boundary: DirectRangeCrawl_
 
-- [ ] 4. Stable search and point lookup use-cases
+- [x] 4. Stable search and point lookup use-cases
 - [x] 4.1 Implement direct search access policy and request parsing
   - Authenticate stable users before search or point lookup work begins.
   - Apply authenticated default, disabled, and reserved supporter-entitlement policy decisions.
@@ -134,7 +134,7 @@
   - _Requirements: 4.5, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 10.6, 11.3, 12.1, 12.2_
   - _Boundary: StableDirectFormatter_
 
-- [ ] 5. Runtime integration
+- [x] 5. Runtime integration
 - [x] 5.1 Wire stable web legacy routes and providers
   - Register `/web/osu-search.php` and `/web/osu-search-set.php` on the stable web legacy host route.
   - Add endpoint adapters, lifespan state, and provider graph wiring for direct handlers.
@@ -153,7 +153,7 @@
   - _Requirements: 3.3, 3.4, 3.5, 3.6, 9.1, 9.3, 9.5_
   - _Boundary: OsuDirectJobs_
 
-- [ ] 6. Validation and compatibility coverage
+- [x] 6. Validation and compatibility coverage
 - [x] 6.1 Add unit coverage for domain, projection, query, and formatter behavior
   - Verify access policy, special query parsing, field declarations, delimiter sanitation, count sentinel, and fallback ordering.
   - Verify projection activation and disabling for usable, childless, inactive, deleted, and not submitted beatmapsets.

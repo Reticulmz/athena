@@ -5,7 +5,8 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Final, cast
 
-from sqlalchemy import String, Text, column, func, literal, or_, select, table
+from paradedb.sqlalchemy import pdb, search
+from sqlalchemy import String, Text, column, literal, or_, select, table
 
 from osu_server.domain.beatmaps.direct import (
     DirectSearchBackendResult,
@@ -17,7 +18,7 @@ from osu_server.infrastructure.search import DIRECT_SEARCH_INDEX_DEFINITION
 from osu_server.repositories.sqlalchemy.models.beatmap import BeatmapSetSearchDocumentModel
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from sqlalchemy.sql.base import Executable
     from sqlalchemy.sql.elements import ColumnElement
@@ -32,6 +33,11 @@ _PG_INDEXES = table(
     "pg_indexes",
     column("indexname", String),
     column("indexdef", Text),
+)
+_PARADEDB_SCORE = cast("Callable[[ColumnElement[object]], ColumnElement[float]]", pdb.score)
+_PARADEDB_MATCH_ANY = cast(
+    "Callable[[ColumnElement[object], str], ColumnElement[bool]]",
+    search.match_any,
 )
 _REQUIRED_BM25_FIELDS: Final = tuple(
     dict.fromkeys(
@@ -217,9 +223,11 @@ def _score_expression(uses_text_search: bool) -> ColumnElement[float]:
         ColumnElement[float]: BM25 scoreまたはfallback scoreのSQL expression.
     """
     if uses_text_search:
-        return cast(
-            "ColumnElement[float]",
-            func.pdb.score(BeatmapSetSearchDocumentModel.beatmapset_id),
+        return _PARADEDB_SCORE(
+            cast(
+                "ColumnElement[object]",
+                cast("object", BeatmapSetSearchDocumentModel.beatmapset_id),
+            )
         )
     return literal(_FALLBACK_SCORE)
 
@@ -235,7 +243,7 @@ def _text_search_filter(query_text: str) -> ColumnElement[bool]:
     """
     return or_(
         *(
-            _searchable_column(field).op("|||")(query_text)
+            _PARADEDB_MATCH_ANY(_searchable_column(field), query_text)
             for field in DIRECT_SEARCH_INDEX_DEFINITION.searchable_fields
         )
     )

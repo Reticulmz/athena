@@ -157,8 +157,10 @@ def test_osu_direct_search_migration_creates_tables_indexes_and_rollback() -> No
     assert "op.create_table(\n        _COVERAGE_TABLE" in migration
     assert "op.create_table(\n        _EXTERNAL_INDEX_STATE_TABLE" in migration
     assert "idx_beatmapset_search_documents_bm25" in migration
-    assert "USING bm25" in migration
-    assert "key_field = 'beatmapset_id'" in migration
+    assert "CREATE EXTENSION IF NOT EXISTS vector" in migration
+    assert "CREATE EXTENSION IF NOT EXISTS pg_search" in migration
+    assert 'postgresql_using="paradedb"' in migration
+    assert 'postgresql_with={"key_field": "beatmapset_id"}' in migration
     for indexed_column in (
         "artist",
         "title",
@@ -174,7 +176,7 @@ def test_osu_direct_search_migration_creates_tables_indexes_and_rollback() -> No
         "beatmapset_id",
     ):
         assert indexed_column in migration
-    assert "DROP INDEX IF EXISTS idx_beatmapset_search_documents_bm25" in migration
+    assert "op.drop_index(_SEARCH_DOCUMENT_BM25_INDEX" in migration
     assert "op.drop_table(_EXTERNAL_INDEX_STATE_TABLE)" in migration
     assert "op.drop_table(_COVERAGE_TABLE)" in migration
     assert "op.drop_table(_SEARCH_DOCUMENT_TABLE)" in migration
@@ -222,7 +224,11 @@ def test_osu_direct_search_models_compile_for_postgresql() -> None:
         cast("Table", BeatmapDirectExternalIndexStateModel.__table__),
     )
     for table in tables:
-        _ = str(CreateTable(table).compile(dialect=dialect))
+        ddl = str(CreateTable(table).compile(dialect=dialect))
+        if table.name == "beatmapset_search_documents":
+            assert (
+                "CAST(ARRAY['osu', 'taiko', 'fruits', 'mania', 'unknown'] AS VARCHAR(16)[])" in ddl
+            )
         for index in table.indexes:
             _ = str(CreateIndex(index).compile(dialect=dialect))
 

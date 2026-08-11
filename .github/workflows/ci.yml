@@ -78,7 +78,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        image: paradedb/paradedb:0.25.1-pg18
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -179,7 +179,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        image: paradedb/paradedb:0.25.1-pg18
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

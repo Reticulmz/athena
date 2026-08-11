@@ -21,6 +21,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    cast,
     column,
     func,
     or_,
@@ -332,7 +333,10 @@ class BeatmapSetSearchDocumentModel(Base):
         ),
         CheckConstraint(
             _SEARCH_DOCUMENT_MODES_COLUMN.op("<@")(
-                postgresql.array(_BEATMAP_MODE_VALUES, type_=String(length=16))
+                cast(
+                    postgresql.array(_BEATMAP_MODE_VALUES),
+                    postgresql.ARRAY(String(length=16)),
+                )
             ),
             name="ck_beatmapset_search_documents_modes_known",
         ),

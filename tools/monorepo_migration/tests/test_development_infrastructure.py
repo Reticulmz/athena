@@ -19,6 +19,7 @@ from urllib.parse import quote
 import pytest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+FLAKE_PATH = REPOSITORY_ROOT / "flake.nix"
 PROCESS_COMPOSE_PATH = REPOSITORY_ROOT / "process-compose.yml"
 NGINX_TEMPLATE_PATH = REPOSITORY_ROOT / "infra" / "development" / "nginx" / "nginx.conf.template"
 CLOUDFLARED_TEMPLATE_PATH = (
@@ -1527,6 +1528,24 @@ def test_generated_ingress_state_is_ignored_and_not_copied_between_worktrees() -
     }
 
 
+def test_development_postgres_includes_current_paradedb_and_pgvector() -> None:
+    """Development PostgreSQLがParadeDBとpgvectorを同じNix環境に含むことを検証する.
+
+    osu!direct検索で使うpg_searchをParadeDB公式flake由来の0.25.1に固定し、後続のvector検索で
+    使うpgvectorも同じPostgreSQL 18 package setへ含める契約を確認する.
+
+    Returns:
+        None: flakeのPostgreSQL extension構成を検証して完了する.
+    """
+    flake = FLAKE_PATH.read_text(encoding="utf-8")
+
+    assert 'url = "github:paradedb/paradedb/v0.25.1"' in flake
+    assert "pkgs.postgresql_18.withPackages" in flake
+    assert 'pkgs.callPackage "${paradedb}/nix/pg_search.nix"' in flake
+    assert 'version = "0.19.0";' in flake
+    assert "ps.pgvector" in flake
+
+
 def test_process_graph_preserves_core_readiness_dependency_and_shutdown() -> None:
     """Core graphのreadiness、dependency、ordered shutdown contractを検証する.
 
@@ -1551,6 +1570,7 @@ def test_process_graph_preserves_core_readiness_dependency_and_shutdown() -> Non
     }
 
     postgres = _require_mapping(processes, "postgres")
+    assert "shared_preload_libraries = 'pg_search'" in _require_string(postgres, "command")
     postgres_readiness = _require_mapping(postgres, "readiness_probe")
     assert "pg_isready" in _require_string(
         _require_mapping(postgres_readiness, "exec"),

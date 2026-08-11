@@ -16,6 +16,9 @@ processes:
         printf "unix_socket_directories = '%s'\n" "$PGDATA" >> "$PGDATA/postgresql.conf"
         printf "port = %s\n" "$PGPORT" >> "$PGDATA/postgresql.conf"
       fi
+      if ! grep -Eq "^[[:space:]]*shared_preload_libraries[[:space:]]*=.*pg_search" "$PGDATA/postgresql.conf"; then
+        printf "shared_preload_libraries = 'pg_search'\n" >> "$PGDATA/postgresql.conf"
+      fi
       exec postgres -D "$PGDATA"
     readiness_probe:
       exec:

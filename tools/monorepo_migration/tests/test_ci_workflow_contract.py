@@ -97,7 +97,7 @@ def test_test_job_applies_migration_before_the_full_root_test_gate() -> None:
     test_job = _job_blocks(CI_WORKFLOW_PATH.read_text(encoding="utf-8"))["test"]
 
     assert test_job.index("run: just db-migrate") < test_job.index("run: just test")
-    assert "image: postgres:16" in test_job
+    assert "image: paradedb/paradedb:0.25.1-pg18" in test_job
     assert "image: redis:7" in test_job
     assert "fetch-depth: 0" in test_job
 
@@ -116,7 +116,7 @@ def test_native_jobs_share_locked_setup_without_local_development_mutations() ->
         assert "uses: extractions/setup-just@v3" in job_source
         assert "uv sync --locked --reinstall-package athena-crypto" in job_source
 
-    assert "image: postgres:16" in jobs["migration"]
+    assert "image: paradedb/paradedb:0.25.1-pg18" in jobs["migration"]
     for forbidden_command in (
         "just setup",
         "just tunnel-setup",

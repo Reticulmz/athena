@@ -36,6 +36,7 @@ RUNTIME_DEPENDENCIES = [
     "dishka",
     "starlette-dishka",
     "rosu-pp-py==4.0.2",
+    "sqlalchemy-paradedb==0.10.0",
 ]
 
 

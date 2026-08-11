@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from alembic import op
+from paradedb.sqlalchemy import indexing
 from sqlalchemy.dialects import postgresql
 
 if TYPE_CHECKING:
@@ -30,6 +31,20 @@ _SEARCH_DOCUMENT_ACTIVE_STATUS_INDEX = "idx_beatmapset_search_documents_active_s
 _COVERAGE_SCOPE_INDEX = "idx_beatmap_direct_coverage_scope_lookup"
 _COVERAGE_FAILURE_INDEX = "idx_beatmap_direct_coverage_failure_lookup"
 _EXTERNAL_INDEX_STATE_STATUS_INDEX = "idx_beatmap_direct_external_index_state_status_lookup"
+_SEARCH_DOCUMENT_PARADEDB_FIELDS = (
+    "beatmapset_id",
+    "artist",
+    "title",
+    "creator",
+    "source",
+    "tags",
+    "difficulty_names",
+    "artist_unicode",
+    "title_unicode",
+    "status",
+    "modes",
+    "last_update_at",
+)
 _SEARCH_DOCUMENT_MODES_COLUMN = sa.column(
     "modes",
     postgresql.ARRAY(sa.String(length=16)),
@@ -167,7 +182,10 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             _SEARCH_DOCUMENT_MODES_COLUMN.op("<@")(
-                postgresql.array(_BEATMAP_MODE_VALUES, type_=sa.String(length=16))
+                sa.cast(
+                    postgresql.array(_BEATMAP_MODE_VALUES),
+                    postgresql.ARRAY(sa.String(length=16)),
+                )
             ),
             name="ck_beatmapset_search_documents_modes_known",
         ),
@@ -293,49 +311,29 @@ def downgrade() -> None:
 
 
 def _create_search_document_bm25_index() -> None:
-    """ParadeDB BM25 indexをsearch document tableへ作成する.
+    """ParadeDB indexをsearch document tableへ作成する.
 
     Returns:
-        None: search/filter/sort columnを含むBM25 indexを作成したことを示す.
-
-    Notes:
-        SQLAlchemy/Alembicは`USING bm25`と`WITH (key_field = ...)`を構造化APIで
-        表現できないため, このDDLだけtextual SQLで実行する.
+        None: search/filter/sort columnを含むParadeDB indexを作成したことを示す.
     """
+    op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
     op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS pg_search"))
-    op.execute(
-        sa.text(
-            """
-            CREATE INDEX idx_beatmapset_search_documents_bm25
-            ON beatmapset_search_documents
-            USING bm25 (
-                beatmapset_id,
-                artist,
-                title,
-                creator,
-                source,
-                tags,
-                difficulty_names,
-                artist_unicode,
-                title_unicode,
-                status,
-                modes,
-                last_update_at
-            )
-            WITH (key_field = 'beatmapset_id')
-            """
-        )
+    op.create_index(
+        _SEARCH_DOCUMENT_BM25_INDEX,
+        _SEARCH_DOCUMENT_TABLE,
+        [
+            indexing.ParadeDBField(sa.column(field_name))
+            for field_name in _SEARCH_DOCUMENT_PARADEDB_FIELDS
+        ],
+        postgresql_using="paradedb",
+        postgresql_with={"key_field": "beatmapset_id"},
     )
 
 
 def _drop_search_document_bm25_index() -> None:
-    """ParadeDB BM25 indexを存在時だけ削除する.
+    """ParadeDB indexを存在時だけ削除する.
 
     Returns:
-        None: search document BM25 indexを削除または不在のまま確認したことを示す.
-
-    Notes:
-        SQLAlchemy/AlembicはBM25 indexのdialect optionを表現できないため,
-        作成側と同じくtextual SQLで削除する.
+        None: search document ParadeDB indexを削除または不在のまま確認したことを示す.
     """
-    op.execute(sa.text("DROP INDEX IF EXISTS idx_beatmapset_search_documents_bm25"))
+    op.drop_index(_SEARCH_DOCUMENT_BM25_INDEX, table_name=_SEARCH_DOCUMENT_TABLE, if_exists=True)
