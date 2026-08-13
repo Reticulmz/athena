@@ -111,13 +111,14 @@ class SQLAlchemyBeatmapQueryRepository:
                 session,
                 beatmapset_id=beatmapset_id,
             )
+            attachment_models_by_beatmap_id = await self._get_current_file_attachment_models(
+                session,
+                beatmap_ids=tuple(beatmap.id for beatmap in beatmap_models),
+            )
             beatmaps = [
                 beatmap_to_domain(
                     beatmap_model,
-                    await self._get_current_file_attachment_model(
-                        session,
-                        beatmap_id=beatmap_model.id,
-                    ),
+                    attachment_models_by_beatmap_id.get(beatmap_model.id),
                 )
                 for beatmap_model in beatmap_models
             ]

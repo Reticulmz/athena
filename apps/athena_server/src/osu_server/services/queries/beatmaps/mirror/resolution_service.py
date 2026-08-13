@@ -216,6 +216,28 @@ class BeatmapMirrorService:
             now=now,
         )
 
+    async def resolve_known_beatmap(
+        self,
+        beatmap: Beatmap,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapResolveResult:
+        """解決済みbeatmapのfreshnessとfile要件を再読込なしで評価する.
+
+        Args:
+            beatmap (Beatmap): 呼び出し側がすでに取得済みのbeatmap.
+            options (BeatmapResolveOptions | None): file要件とrefresh要件を持つoption.
+
+        Returns:
+            BeatmapResolveResult: 必要なmetadata refreshとfile fetchをenqueueした解決結果.
+        """
+        opts = options or BeatmapResolveOptions()
+        return await self._known_beatmap_result(
+            beatmap,
+            opts,
+            datetime.now(UTC),
+            include_beatmapset=False,
+        )
+
     # ------------------------------------------------------------------
     # Known beatmap result builder
     # ------------------------------------------------------------------
@@ -225,6 +247,8 @@ class BeatmapMirrorService:
         beatmap: Beatmap,
         opts: BeatmapResolveOptions,
         now: datetime,
+        *,
+        include_beatmapset: bool = True,
     ) -> BeatmapResolveResult:
         """Cached beatmapからfreshnessとfile stateを反映した解決結果を作る.
 
@@ -232,6 +256,7 @@ class BeatmapMirrorService:
             beatmap (Beatmap): repositoryから取得したcached beatmap.
             opts (BeatmapResolveOptions): fileとrefreshの解決要件.
             now (datetime): freshness判定に使うUTC現在時刻.
+            include_beatmapset (bool): Trueなら関連beatmapsetをrepositoryから読む.
 
         Returns:
             BeatmapResolveResult: eligibilityとfetch statusを含むknown beatmap結果.
@@ -254,7 +279,11 @@ class BeatmapMirrorService:
         if opts.require_osu_file and beatmap.file_state is not BeatmapFileState.AVAILABLE:
             await self._try_enqueue(BeatmapFetchTarget.file_by_beatmap_id(beatmap.id))
 
-        beatmapset = await self._repository.get_beatmapset(beatmap.beatmapset_id)
+        beatmapset = (
+            await self._repository.get_beatmapset(beatmap.beatmapset_id)
+            if include_beatmapset
+            else None
+        )
         eligibility = self._eligibility.evaluate(
             beatmap, mirror_trust_enabled=self._mirror_trust_enabled
         )

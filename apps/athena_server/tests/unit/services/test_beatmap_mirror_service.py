@@ -1192,6 +1192,44 @@ async def test_unknown_beatmap_with_require_osu_enqueues_both(
         assert t.target_key == "999"
 
 
+@pytest.mark.asyncio
+async def test_resolve_known_beatmap_enqueues_refresh_and_file_without_beatmapset_read(
+    service_with_enqueue: BeatmapMirrorService,
+    enqueue_spy: list[BeatmapFetchTarget],
+) -> None:
+    """解決済みbeatmapのrefresh評価がrepository再読込なしでfetchを要求する契約を検証する.
+
+    期限切れかつfile missingのbeatmapを直接渡し,metadata refreshとfile fetchをenqueueしつつ,
+    resultのbeatmapsetは再読込されずNoneになることを確認する.
+
+    Args:
+        service_with_enqueue (BeatmapMirrorService): enqueue callback付きservice fixture.
+        enqueue_spy (list[BeatmapFetchTarget]): callbackが受け取ったtargetを観測する列.
+
+    Returns:
+        None: 解決済みbeatmap用のmetadata/file fetch要求を検証して完了する.
+    """
+    beatmap = _make_beatmap(
+        last_fetched_at=_NOW - _THIRTY_DAYS - _ONE_HOUR,
+        next_refresh_at=_NOW - _ONE_HOUR,
+        file_state=BeatmapFileState.MISSING,
+    )
+
+    result = await service_with_enqueue.resolve_known_beatmap(
+        beatmap,
+        BeatmapResolveOptions(require_osu_file=True),
+    )
+
+    assert result.beatmap is beatmap
+    assert result.beatmapset is None
+    assert result.metadata_status is BeatmapFetchState.STALE
+    assert result.file_status is BeatmapFileState.MISSING
+    assert [(target.kind, target.target_key) for target in enqueue_spy] == [
+        (BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID, str(_BEATMAP_ID)),
+        (BeatmapFetchTargetKind.FILE_BY_BEATMAP_ID, str(_BEATMAP_ID)),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Tests: bounded wait
 # ---------------------------------------------------------------------------

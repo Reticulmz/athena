@@ -316,6 +316,7 @@ def _beatmap_model(
     *,
     id: int = 2_000,  # noqa: A002
     checksum_md5: str = _CHECKSUM,
+    version: str = "Another",
     official_status: str = "ranked",
     local_status_override: str | None = None,
     local_status_override_changed_at: datetime | None = None,
@@ -328,6 +329,7 @@ def _beatmap_model(
     Args:
         id (int): beatmap永続化識別子.
         checksum_md5 (str): beatmapのMD5 checksum.
+        version (str): difficulty名として保存するversion.
         official_status (str): upstreamから取得したrank status値.
         local_status_override (str | None): 管理者によるlocal status上書き. 未設定時はNone.
         local_status_override_changed_at (datetime | None): local上書きの更新時刻. 未設定時はNone.
@@ -343,7 +345,7 @@ def _beatmap_model(
         beatmapset_id=1_000,
         checksum_md5=checksum_md5,
         mode="osu",
-        version="Another",
+        version=version,
         total_length=240,
         hit_length=220,
         max_combo=1_234,
@@ -402,18 +404,28 @@ def _beatmapset_model(
     )
 
 
-def _attachment_model() -> BeatmapFileAttachmentModel:
+def _attachment_model(
+    *,
+    attachment_id: int = 1,
+    beatmap_id: int = 2_000,
+    checksum_md5: str = _CHECKSUM,
+) -> BeatmapFileAttachmentModel:
     """利用可能なosu file attachment modelを作成する.
+
+    Args:
+        attachment_id (int): attachmentのprimary key.
+        beatmap_id (int): attachmentが属するbeatmapのprimary key.
+        checksum_md5 (str): attachmentとverified fileのMD5 checksum.
 
     Returns:
         BeatmapFileAttachmentModel: checksum検証済みblob attachmentを表すmodel.
     """
     return BeatmapFileAttachmentModel(
-        id=1,
-        beatmap_id=2_000,
+        id=attachment_id,
+        beatmap_id=beatmap_id,
         blob_id=55,
-        checksum_md5=_CHECKSUM,
-        verified_md5=_CHECKSUM,
+        checksum_md5=checksum_md5,
+        verified_md5=checksum_md5,
         source="official",
         original_filename="2000.osu",
         fetched_at=_NOW,
@@ -648,6 +660,50 @@ async def test_get_beatmapset_loads_child_beatmaps() -> None:
     assert result.id == 1_000
     assert len(result.beatmaps) == 1
     assert result.beatmaps[0].checksum_md5 == _CHECKSUM
+
+
+async def test_get_beatmapset_loads_current_attachments_in_bulk() -> None:
+    """Command repositoryのBeatmapset取得でattachment lookupがchild数へ増えないことを検証する.
+
+    複数child beatmapを持つbeatmapsetを取得し、current file attachment queryが1回だけ
+    実行されることを確認する.
+
+    Returns:
+        None: 取得したattachmentとquery回数をassertして値を返さない.
+    """
+    session = FakeSession(
+        get_results={(BeatmapSetModel, 1_000): _beatmapset_model()},
+        execute_results=[
+            FakeResult(
+                values=[
+                    _beatmap_model(id=2_000, checksum_md5="a" * 32, version="Another"),
+                    _beatmap_model(id=2_001, checksum_md5="b" * 32, version="Extra"),
+                ]
+            ),
+            FakeResult(
+                values=[
+                    _attachment_model(
+                        attachment_id=10,
+                        beatmap_id=2_000,
+                        checksum_md5="a" * 32,
+                    ),
+                    _attachment_model(
+                        attachment_id=11,
+                        beatmap_id=2_001,
+                        checksum_md5="b" * 32,
+                    ),
+                ]
+            ),
+        ],
+    )
+
+    result = await _repo(session).get_beatmapset(1_000)
+
+    assert result is not None
+    attachments = [beatmap.file_attachment for beatmap in result.beatmaps]
+    assert all(attachment is not None for attachment in attachments)
+    assert [attachment.id for attachment in attachments if attachment is not None] == [10, 11]
+    assert len(session.executed) == 2
 
 
 async def test_save_snapshot_preserves_existing_local_override() -> None:

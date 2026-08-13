@@ -143,10 +143,13 @@ class SQLAlchemyBeatmapCommandRepository:
             return None
 
         beatmap_models = await self._get_beatmap_models_for_set(beatmapset_id=beatmapset_id)
+        attachment_models_by_beatmap_id = await self._get_current_file_attachment_models(
+            beatmap_ids=tuple(beatmap.id for beatmap in beatmap_models),
+        )
         beatmaps = [
             _beatmap_to_domain(
                 beatmap_model,
-                await self._get_current_file_attachment_model(beatmap_id=beatmap_model.id),
+                attachment_models_by_beatmap_id.get(beatmap_model.id),
             )
             for beatmap_model in beatmap_models
         ]
@@ -732,6 +735,39 @@ class SQLAlchemyBeatmapCommandRepository:
             )
         ).scalar_one_or_none()
         return model if isinstance(model, BeatmapFileAttachmentModel) else None
+
+    async def _get_current_file_attachment_models(
+        self, *, beatmap_ids: tuple[int, ...]
+    ) -> dict[int, BeatmapFileAttachmentModel]:
+        """複数 Beatmap の最大 ID を持つ file attachment model をまとめて返す.
+
+        Args:
+            beatmap_ids (tuple[int, ...]): attachment を検索する beatmap ID列.
+
+        Returns:
+            dict[int, BeatmapFileAttachmentModel]: beatmap ID別のcurrent attachment model.
+        """
+        if not beatmap_ids:
+            return {}
+        rows = (
+            (
+                await self._session.execute(
+                    select(BeatmapFileAttachmentModel)
+                    .where(BeatmapFileAttachmentModel.beatmap_id.in_(beatmap_ids))
+                    .order_by(
+                        BeatmapFileAttachmentModel.beatmap_id.asc(),
+                        BeatmapFileAttachmentModel.id.desc(),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        attachments: dict[int, BeatmapFileAttachmentModel] = {}
+        for model in rows:
+            if model.beatmap_id not in attachments:
+                attachments[model.beatmap_id] = model
+        return attachments
 
     async def _get_file_attachment_by_key(
         self, attachment: BeatmapFileAttachment
