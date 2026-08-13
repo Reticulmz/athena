@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import cast, final
 
+import httpx
 import structlog
 from dishka import Provider, Scope
+from meilisearch_python_sdk import AsyncClient as MeilisearchAsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from taskiq import AsyncBroker
 
@@ -15,9 +17,23 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchTarget,
     BeatmapFreshnessPolicy,
     DirectSearchBackend,
+    DirectSearchUpstreamProvider,
 )
+from osu_server.infrastructure.beatmaps import (
+    CheeseGullDirectSearchUpstreamProvider,
+    NerinyanDirectSearchUpstreamProvider,
+    SequentialDirectSearchUpstreamProvider,
+)
+from osu_server.infrastructure.http.beatmap_http_client import (
+    BeatmapHttpClient as ConcreteBeatmapHttpClient,
+)
+from osu_server.infrastructure.search.meilisearch_direct import MeilisearchDirectSearchBackend
 from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
-from osu_server.repositories.sqlalchemy.queries.direct_search import ParadeDBSearchBackend
+from osu_server.repositories.sqlalchemy.queries.direct_search import (
+    AutoDirectSearchBackend,
+    ParadeDBSearchBackend,
+    TsvectorSearchBackend,
+)
 from osu_server.services.commands.beatmaps import RequestBeatmapFileWarmupUseCase
 from osu_server.services.queries.beatmaps import DirectPointLookupQuery, DirectSearchQuery
 from osu_server.services.queries.beatmaps.mirror import (
@@ -36,6 +52,9 @@ _DISHKA_RUNTIME_HINTS = (
     DirectPointLookupQuery,
     DirectSearchBackend,
     DirectSearchQuery,
+    DirectSearchUpstreamProvider,
+    httpx.AsyncClient,
+    MeilisearchAsyncClient,
     RequestBeatmapFileWarmupUseCase,
     async_sessionmaker,
 )
@@ -44,6 +63,7 @@ logger: structlog.stdlib.BoundLogger = cast(
     "structlog.stdlib.BoundLogger",
     structlog.get_logger(__name__),
 )
+_OSU_DIRECT_UPSTREAM_HEADERS = {"User-Agent": "Athena osu!direct search"}
 
 
 @final
@@ -60,33 +80,106 @@ class BeatmapAppProviderSet(Provider):
     def direct_search_backend(
         self,
         session_factory: async_sessionmaker[AsyncSession],
+        config: AppConfig,
+        meilisearch_client: MeilisearchAsyncClient | None,
     ) -> DirectSearchBackend:
-        """設定済みSQL search backendを構成する.
+        """設定済みsearch backendを構成する.
 
         Args:
             session_factory (async_sessionmaker[AsyncSession]): read query用sessionを作るfactory.
+            config (AppConfig): search backend選択を持つruntime設定.
+            meilisearch_client (MeilisearchAsyncClient | None): Meilisearch SDK client.
 
         Returns:
-            DirectSearchBackend: candidate IDとscoreだけを返すSQL search backend.
+            DirectSearchBackend: candidate IDとscoreだけを返すsearch backend.
         """
-        return ParadeDBSearchBackend(session_factory)
+        if config.osu_direct_search_backend == "paradedb":
+            return ParadeDBSearchBackend(session_factory)
+        if config.osu_direct_search_backend == "meilisearch":
+            return _make_meilisearch_search_backend(config, meilisearch_client)
+        if config.osu_direct_search_backend == "tsvector":
+            return TsvectorSearchBackend(session_factory)
+        backends: list[tuple[str, DirectSearchBackend]] = [
+            ("paradedb", ParadeDBSearchBackend(session_factory))
+        ]
+        if (
+            config.osu_direct_external_index_backend == "meilisearch"
+            and meilisearch_client is not None
+        ):
+            backends.append(
+                ("meilisearch", _make_meilisearch_search_backend(config, meilisearch_client))
+            )
+        backends.append(("tsvector", TsvectorSearchBackend(session_factory)))
+        return AutoDirectSearchBackend(backends=backends)
 
     @provide
     def direct_search_query(
         self,
         repository: BeatmapQueryRepository,
         backend: DirectSearchBackend,
+        upstream_provider: DirectSearchUpstreamProvider | None,
+        broker: AsyncBroker,
+        config: AppConfig,
     ) -> DirectSearchQuery:
-        """Direct search query use-caseをmetadata repositoryとbackendで構成する.
+        """Direct search query use-caseをlocal backendと外部補完で構成する.
 
         Args:
             repository (BeatmapQueryRepository): stable response用metadata source of truth.
             backend (DirectSearchBackend): hydration前候補を返す検索backend.
+            upstream_provider (DirectSearchUpstreamProvider | None):
+                local catalog不足時に照会する外部検索provider.
+            broker (AsyncBroker): external候補のmetadata fetchをenqueueするbroker.
+            config (AppConfig): 外部検索のbounded wait秒数を持つ設定.
 
         Returns:
             DirectSearchQuery: direct search用のread-only query use-case.
         """
-        return DirectSearchQuery(repository, backend)
+
+        async def wake_metadata(beatmapset_id: int) -> None:
+            """External候補のmetadata fetchをworkerへ要求する.
+
+            Args:
+                beatmapset_id (int): fetch対象のbeatmapset ID.
+
+            Returns:
+                None: enqueue完了後に値を返さず終了する.
+            """
+            await enqueue_beatmap_fetch(
+                broker,
+                BeatmapFetchTarget.metadata_by_beatmapset_id(
+                    beatmapset_id,
+                    force_refresh=True,
+                ),
+            )
+
+        return DirectSearchQuery(
+            repository,
+            backend,
+            upstream_provider=upstream_provider,
+            coverage_reader=repository,
+            upstream_wait_seconds=config.osu_direct_upstream_search_wait_seconds,
+            first_page_refresh_seconds=(
+                config.osu_direct_upstream_search_first_page_refresh_seconds
+            ),
+            metadata_wake=wake_metadata,
+        )
+
+    @provide
+    def direct_search_upstream_provider(
+        self,
+        config: AppConfig,
+        http_client: httpx.AsyncClient,
+    ) -> DirectSearchUpstreamProvider | None:
+        """設定済みのosu!direct外部検索providerを構成する.
+
+        Args:
+            config (AppConfig): 外部検索provider順とendpoint URLを持つ設定.
+            http_client (httpx.AsyncClient): APP scopeで共有するHTTP client.
+
+        Returns:
+            DirectSearchUpstreamProvider | None: 有効時は順次fallback provider. 無効時はNone.
+        """
+        return _make_direct_search_upstream_provider(config, http_client)
 
     @provide
     def direct_point_lookup_query(
@@ -174,6 +267,76 @@ class BeatmapAppProviderSet(Provider):
             RequestBeatmapFileWarmupUseCase: 必要な ``.osu`` file取得を要求するcommand.
         """
         return RequestBeatmapFileWarmupUseCase(beatmap_resolver)
+
+
+def _make_meilisearch_search_backend(
+    config: AppConfig,
+    meilisearch_client: MeilisearchAsyncClient | None,
+) -> MeilisearchDirectSearchBackend:
+    """Meilisearch search backendを設定済みclientから構成する.
+
+    Args:
+        config (AppConfig): Meilisearch index名を持つruntime設定.
+        meilisearch_client (MeilisearchAsyncClient | None): Meilisearch SDK client.
+
+    Returns:
+        MeilisearchDirectSearchBackend: candidate IDとscoreだけを返すsearch backend.
+
+    Raises:
+        RuntimeError: Meilisearch backend指定時にclientが構成されていない場合.
+    """
+    if meilisearch_client is None:
+        msg = "Meilisearch search backend requires osu_direct_meilisearch_url"
+        raise RuntimeError(msg)
+    return MeilisearchDirectSearchBackend(
+        client=meilisearch_client,
+        index_name=config.osu_direct_meilisearch_index_name,
+    )
+
+
+def _make_direct_search_upstream_provider(
+    config: AppConfig,
+    http_client: httpx.AsyncClient,
+) -> DirectSearchUpstreamProvider | None:
+    """AppConfigからosu!direct外部検索provider chainを構成する.
+
+    Args:
+        config (AppConfig): 外部検索の有効状態, provider順, endpoint URLを持つ設定.
+        http_client (httpx.AsyncClient): APP scopeで共有するHTTP client.
+
+    Returns:
+        DirectSearchUpstreamProvider | None: 有効なprovider chain. 無効または空ならNone.
+    """
+    if not config.osu_direct_upstream_search_enabled:
+        return None
+
+    beatmap_http_client = ConcreteBeatmapHttpClient(http_client)
+    providers: list[DirectSearchUpstreamProvider] = []
+    for provider_name in config.osu_direct_upstream_search_providers:
+        match provider_name:
+            case "hinamizawa":
+                providers.append(
+                    CheeseGullDirectSearchUpstreamProvider(
+                        http_client=beatmap_http_client,
+                        search_url=config.osu_direct_hinamizawa_search_url,
+                        source_label="hinamizawa",
+                        headers=_OSU_DIRECT_UPSTREAM_HEADERS,
+                    )
+                )
+            case "nerinyan":
+                providers.append(
+                    NerinyanDirectSearchUpstreamProvider(
+                        http_client=beatmap_http_client,
+                        search_url=config.osu_direct_nerinyan_search_url,
+                        headers=_OSU_DIRECT_UPSTREAM_HEADERS,
+                    )
+                )
+
+    if not providers:
+        return None
+    if len(providers) == 1:
+        return providers[0]
+    return SequentialDirectSearchUpstreamProvider(providers)
 
 
 async def enqueue_beatmap_fetch(

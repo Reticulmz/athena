@@ -11,6 +11,8 @@ if TYPE_CHECKING:
         BeatmapFetchTarget,
         BeatmapFileAttachment,
         BeatmapSet,
+        DirectCoverageRecord,
+        DirectCoverageStatusScope,
     )
 
 
@@ -41,6 +43,20 @@ class BeatmapQueryRepository(Protocol):
 
         Returns:
             BeatmapSet | None: 対応する BeatmapSet. 見つからない場合は `None`.
+        """
+        ...
+
+    async def list_beatmapsets_by_ids(
+        self,
+        beatmapset_ids: tuple[int, ...],
+    ) -> tuple[BeatmapSet, ...]:
+        """Identifier列に対応するBeatmapSet列をまとめて返す.
+
+        Args:
+            beatmapset_ids (tuple[int, ...]): 取得するBeatmapSet ID列.
+
+        Returns:
+            tuple[BeatmapSet, ...]: 入力順に対応するBeatmapSet列. 見つからないIDは省く.
         """
         ...
 
@@ -91,5 +107,25 @@ class BeatmapQueryRepository(Protocol):
 
         Notes:
             この operation は fetch state を作成または更新しない.
+        """
+        ...
+
+    async def list_completed_direct_search_coverages(
+        self,
+        status_scopes: tuple[DirectCoverageStatusScope, ...],
+        *,
+        feed_sort_key: str,
+        feed_window_key: str,
+    ) -> tuple[DirectCoverageRecord, ...]:
+        """完了済みのosu!direct検索用coverageを返す.
+
+        Args:
+            status_scopes (tuple[DirectCoverageStatusScope, ...]): 対象にするstatus scope列.
+            feed_sort_key (str): 検索request由来feed coverageのsort key.
+            feed_window_key (str): 検索request由来feed coverageのwindow key.
+
+        Returns:
+            tuple[DirectCoverageRecord, ...]: 完了済みID range coverageと一致feed coverage.
+            該当しない場合は空tuple.
         """
         ...

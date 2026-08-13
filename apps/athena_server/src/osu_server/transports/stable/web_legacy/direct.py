@@ -4,19 +4,20 @@ from __future__ import annotations
 
 from datetime import UTC
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, Protocol, cast
 
+import structlog
 from starlette.responses import Response
 
 from osu_server.domain.beatmaps import (
     BeatmapMode,
     BeatmapRankStatus,
     DirectAccessDecision,
+    DirectCoverageRecord,
     is_direct_searchable_beatmapset,
 )
 from osu_server.domain.compatibility.stable.direct import (
     STABLE_DIRECT_MORE_RESULTS_SENTINEL,
-    STABLE_DIRECT_PAGE_SIZE,
 )
 from osu_server.domain.compatibility.stable.mode import StableMode
 
@@ -58,6 +59,23 @@ _MODE_TO_WIRE: Final[dict[BeatmapMode, int]] = {
     BeatmapMode.MANIA: StableMode.Mania.value,
 }
 
+logger = cast("structlog.stdlib.BoundLogger", structlog.get_logger(__name__))
+
+
+class StableDirectSearchCoverageRecorder(Protocol):
+    """Stable direct searchが観測したcoverageを保存するcommand境界を表す."""
+
+    async def execute(self, record: DirectCoverageRecord) -> None:
+        """Coverage recordを保存する.
+
+        Args:
+            record (DirectCoverageRecord): query use-caseが返したcoverage record.
+
+        Returns:
+            None: coverage保存を完了する.
+        """
+        ...
+
 
 class StableDirectSearchHandler:
     """`GET /web/osu-search.php`を認証済みdirect search responseへ変換する.
@@ -68,11 +86,13 @@ class StableDirectSearchHandler:
         _search_parser (StableDirectSearchQueryParser): query parameterをsearch requestへ変換する
             parser.
         _search_query (DirectSearchQuery): catalog候補をmetadataへhydrateするquery use-case.
+        _coverage_recorder (StableDirectSearchCoverageRecorder): upstream検索coverage保存command.
     """
 
     _access_gate: StableDirectAccessGate
     _search_parser: StableDirectSearchQueryParser
     _search_query: DirectSearchQuery
+    _coverage_recorder: StableDirectSearchCoverageRecorder
 
     def __init__(
         self,
@@ -80,6 +100,7 @@ class StableDirectSearchHandler:
         access_gate: StableDirectAccessGate,
         search_parser: StableDirectSearchQueryParser,
         search_query: DirectSearchQuery,
+        coverage_recorder: StableDirectSearchCoverageRecorder,
     ) -> None:
         """Direct search handlerの依存を保持する.
 
@@ -87,10 +108,13 @@ class StableDirectSearchHandler:
             access_gate (StableDirectAccessGate): direct work前の認証とaccess policy.
             search_parser (StableDirectSearchQueryParser): stable search query parser.
             search_query (DirectSearchQuery): direct search query use-case.
+            coverage_recorder (StableDirectSearchCoverageRecorder):
+                upstream検索coverage保存command.
         """
         self._access_gate = access_gate
         self._search_parser = search_parser
         self._search_query = search_query
+        self._coverage_recorder = coverage_recorder
 
     async def __call__(self, request: Request) -> Response:
         """Starlette requestのquery parameterをstable direct search responseへ変換する.
@@ -126,7 +150,27 @@ class StableDirectSearchHandler:
             return _text_response(b"0")
 
         result = await self._search_query.execute(parse_result.request)
+        await self._record_coverage(result)
         return format_direct_search_response(result)
+
+    async def _record_coverage(self, result: DirectSearchQueryResult) -> None:
+        """検索結果が持つcoverage recordをbest-effortで保存する.
+
+        Args:
+            result (DirectSearchQueryResult): direct search query use-caseの結果.
+
+        Returns:
+            None: coverageがないか保存完了または失敗log後に返る.
+        """
+        if result.coverage_record is None:
+            return
+        try:
+            await self._coverage_recorder.execute(result.coverage_record)
+        except Exception as exc:
+            logger.warning(
+                "osu_direct_search_coverage_record_failed",
+                exception_type=type(exc).__name__,
+            )
 
 
 class StableDirectPointLookupHandler:
@@ -216,7 +260,6 @@ def format_direct_search_response(result: DirectSearchQueryResult) -> Response:
     count = (
         STABLE_DIRECT_MORE_RESULTS_SENTINEL
         if result.stable_result_count == STABLE_DIRECT_MORE_RESULTS_SENTINEL
-        and len(rows) == STABLE_DIRECT_PAGE_SIZE
         else len(rows)
     )
     body = "\n".join((str(count), *rows)).encode()

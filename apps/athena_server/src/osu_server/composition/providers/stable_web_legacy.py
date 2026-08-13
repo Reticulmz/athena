@@ -19,7 +19,10 @@ from osu_server.repositories.interfaces.queries.beatmap_score_listing import (
     BeatmapScoreListingQueryRepository,
 )
 from osu_server.repositories.interfaces.queries.users import UserQueryRepository
-from osu_server.services.commands.beatmaps import RequestBeatmapFileWarmupUseCase
+from osu_server.services.commands.beatmaps import (
+    RecordDirectSearchCoverageUseCase,
+    RequestBeatmapFileWarmupUseCase,
+)
 from osu_server.services.commands.identity import RegisterUserCommandUseCase
 from osu_server.services.commands.scores import (
     ProcessScoreSubmissionUseCase,
@@ -75,6 +78,7 @@ _DISHKA_RUNTIME_HINTS = (
     LocalEventBus,
     RegisterUserCommandUseCase,
     RequestBeatmapFileWarmupUseCase,
+    RecordDirectSearchCoverageUseCase,
     ReplayDownloadAccountingPublisher,
     ReplayDownloadQuery,
     ReplayDownloadQueryParser,
@@ -203,6 +207,7 @@ class StableWebLegacyProviderSet(Provider):
         access_gate: StableDirectAccessGate,
         search_parser: StableDirectSearchQueryParser,
         search_query: DirectSearchQuery,
+        coverage_recorder: RecordDirectSearchCoverageUseCase,
     ) -> StableDirectSearchHandler:
         """Stable direct search handlerをaccess gate,parser,queryで構成する.
 
@@ -210,6 +215,8 @@ class StableWebLegacyProviderSet(Provider):
             access_gate (StableDirectAccessGate): direct search前の認証とaccess policy.
             search_parser (StableDirectSearchQueryParser): stable query parameter parser.
             search_query (DirectSearchQuery): direct search query use-case.
+            coverage_recorder (RecordDirectSearchCoverageUseCase):
+                upstream検索coverage保存command.
 
         Returns:
             StableDirectSearchHandler: `/web/osu-search.php`互換requestを処理するhandler.
@@ -218,6 +225,7 @@ class StableWebLegacyProviderSet(Provider):
             access_gate=access_gate,
             search_parser=search_parser,
             search_query=search_query,
+            coverage_recorder=coverage_recorder,
         )
 
     @provide

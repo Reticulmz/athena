@@ -14,6 +14,7 @@ from osu_server.domain.beatmaps import (
     BeatmapSnapshot,
     BeatmapSourceVerification,
     DirectCoverageKind,
+    DirectCoverageRecord,
     DirectCoverageStatusScope,
 )
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
@@ -28,6 +29,7 @@ from osu_server.services.commands.beatmaps.direct_catalog_sync import (
     DirectRangeCrawl,
     DirectRangeCrawlChunk,
     DirectRangeCrawlFetchResult,
+    RecordDirectSearchCoverageUseCase,
 )
 
 _NOW = datetime(2026, 6, 4, tzinfo=UTC)
@@ -459,6 +461,47 @@ async def test_range_crawl_failure_records_failed_chunk_without_metadata() -> No
     assert "upstream body" not in repr(result)
     assert "secret-token" not in repr(coverage)
     assert "upstream body" not in repr(coverage)
+
+
+async def test_record_direct_search_coverage_saves_record() -> None:
+    """検索時に観測したcoverage recordをcommand境界で保存する契約を検証する.
+
+    Returns:
+        None: coverage recordがUnit of Workへcommitされることを確認して完了する.
+    """
+    factory = InMemoryUnitOfWorkFactory(InMemoryCommandRepositoryState())
+    record = DirectCoverageRecord(
+        coverage_kind=DirectCoverageKind.FEED_WINDOW,
+        source=BeatmapMetadataSource.MIRROR,
+        status_scope=DirectCoverageStatusScope.ALL,
+        sort_key="upstream-search",
+        window_key="search:0123456789abcdef0123456789abcdef",
+        from_beatmapset_id=1_000,
+        to_beatmapset_id=1_010,
+        cursor=None,
+        completed_at=datetime.now(UTC),
+        failed_at=None,
+        failure_reason=None,
+    )
+    command = RecordDirectSearchCoverageUseCase(factory)
+
+    await command.execute(record)
+
+    snapshot = factory.snapshot()
+    assert (
+        snapshot.direct_coverage_records_by_scope[
+            (
+                DirectCoverageKind.FEED_WINDOW.value,
+                BeatmapMetadataSource.MIRROR.value,
+                DirectCoverageStatusScope.ALL.value,
+                "upstream-search",
+                "search:0123456789abcdef0123456789abcdef",
+                1_000,
+                1_010,
+            )
+        ]
+        == record
+    )
 
 
 def _make_feed_window(*, window_key: str) -> DirectFeedWindow:

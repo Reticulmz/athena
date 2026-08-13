@@ -869,14 +869,14 @@ def enqueue_spy() -> list[BeatmapFetchTarget]:
 
 @pytest.fixture
 def service_with_enqueue(
-    repo: InMemoryBeatmapCommandRepository,
+    command_state: InMemoryCommandRepositoryState,
     freshness_policy: BeatmapFreshnessPolicy,
     enqueue_spy: list[BeatmapFetchTarget],
 ) -> BeatmapMirrorService:
     """enqueue要求を記録するcallback付きmirror serviceを提供する.
 
     Args:
-        repo (InMemoryBeatmapCommandRepository): queryとfetch stateを共有するmemory repository.
+        command_state (InMemoryCommandRepositoryState): query repositoryと共有する状態.
         freshness_policy (BeatmapFreshnessPolicy): cached metadataのfreshnessを評価するpolicy.
         enqueue_spy (list[BeatmapFetchTarget]): callbackが要求targetをappendする観測用列.
 
@@ -896,7 +896,7 @@ def service_with_enqueue(
         enqueue_spy.append(target)
 
     return BeatmapMirrorService(
-        repository=repo,
+        repository=InMemoryBeatmapQueryRepository(InMemoryUnitOfWorkFactory(command_state)),
         eligibility_service=BeatmapEligibilityService(),
         freshness_policy=freshness_policy,
         enqueue_refresh=_spy,

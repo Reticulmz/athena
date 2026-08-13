@@ -11,8 +11,11 @@ from osu_server.repositories.sqlalchemy.queries.blobs import SQLAlchemyBlobQuery
 from osu_server.repositories.sqlalchemy.queries.channels import SQLAlchemyChannelQueryRepository
 from osu_server.repositories.sqlalchemy.queries.chat import SQLAlchemyChatHistoryQueryRepository
 from osu_server.repositories.sqlalchemy.queries.direct_search import (
+    AutoDirectSearchBackend,
     ParadeDBSearchBackend,
     ParadeDBSearchBackendUnavailableError,
+    TsvectorSearchBackend,
+    TsvectorSearchBackendUnavailableError,
 )
 from osu_server.repositories.sqlalchemy.queries.friends import (
     SQLAlchemyFriendRelationshipQueryRepository,
@@ -34,6 +37,7 @@ from osu_server.repositories.sqlalchemy.queries.user_stats import (
 from osu_server.repositories.sqlalchemy.queries.users import SQLAlchemyUserQueryRepository
 
 __all__ = [
+    "AutoDirectSearchBackend",
     "ParadeDBSearchBackend",
     "ParadeDBSearchBackendUnavailableError",
     "SQLAlchemyBeatmapLeaderboardQueryRepository",
@@ -50,4 +54,6 @@ __all__ = [
     "SQLAlchemyScoreQueryRepository",
     "SQLAlchemyUserQueryRepository",
     "SQLAlchemyUserStatsQueryRepository",
+    "TsvectorSearchBackend",
+    "TsvectorSearchBackendUnavailableError",
 ]

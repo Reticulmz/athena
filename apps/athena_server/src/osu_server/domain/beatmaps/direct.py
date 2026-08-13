@@ -382,6 +382,19 @@ class DirectSearchBackendResult:
     has_more: bool
 
 
+@dataclass(slots=True, frozen=True)
+class DirectSearchUpstreamResult:
+    """外部metadata検索から返すstable-ready候補を表す.
+
+    Attributes:
+        beatmapsets (tuple[BeatmapSet, ...]): 外部検索で得たbeatmapset metadata候補.
+        has_more (bool): 外部検索に次page相当の候補が残る場合はTrue.
+    """
+
+    beatmapsets: tuple[BeatmapSet, ...]
+    has_more: bool = False
+
+
 class DirectSearchBackend(Protocol):
     """osu!direct検索backendのservice-facing contractを表す."""
 
@@ -403,6 +416,25 @@ class DirectSearchBackend(Protocol):
             None: backend capabilityが揃っていることを示す.
         """
         ...
+
+
+class DirectSearchUpstreamProvider(Protocol):
+    """Local catalogを補完する外部osu!direct検索providerを定義する."""
+
+    async def search(self, request: DirectSearchRequest) -> DirectSearchUpstreamResult:
+        """検索条件に対応する外部metadata候補を返す.
+
+        Args:
+            request (DirectSearchRequest): stable inputから導出された検索条件.
+
+        Returns:
+            DirectSearchUpstreamResult: external source由来のmetadata候補.
+        """
+        ...
+
+
+class DirectSearchBackendUnavailableError(RuntimeError):
+    """検索backendが起動時検証を満たせないことを表す基底例外."""
 
 
 @dataclass(slots=True, frozen=True)
@@ -552,8 +584,6 @@ def build_beatmapset_search_document(
     Returns:
         BeatmapSetSearchDocument: activeまたはinactiveな検索projection.
 
-    Notes:
-        `source`と`tags`はdomain metadataへまだ存在しないため空文字列を保存する.
     """
     now = updated_at or datetime.now(UTC)
     document = BeatmapSetSearchDocument(
@@ -563,8 +593,8 @@ def build_beatmapset_search_document(
         creator=beatmapset.creator,
         artist_unicode=beatmapset.artist_unicode,
         title_unicode=beatmapset.title_unicode,
-        source="",
-        tags="",
+        source=beatmapset.source_text,
+        tags=beatmapset.tags,
         difficulty_names=_difficulty_names(beatmapset.beatmaps),
         modes=_document_modes(beatmapset.beatmaps),
         status=beatmapset.official_status,
@@ -715,9 +745,12 @@ __all__ = [
     "DirectPointLookupTargetKind",
     "DirectSearchBackend",
     "DirectSearchBackendResult",
+    "DirectSearchBackendUnavailableError",
     "DirectSearchCandidate",
     "DirectSearchListing",
     "DirectSearchRequest",
+    "DirectSearchUpstreamProvider",
+    "DirectSearchUpstreamResult",
     "build_beatmapset_search_document",
     "is_direct_searchable_beatmapset",
 ]

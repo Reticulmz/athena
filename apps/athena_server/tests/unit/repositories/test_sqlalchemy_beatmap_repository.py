@@ -12,7 +12,9 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast, override
 
 import pytest
+import structlog.testing
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.sql.elements import ClauseElement
 
 from osu_server.domain.beatmaps import (
@@ -39,6 +41,7 @@ from osu_server.domain.beatmaps import (
 from osu_server.repositories.interfaces.commands.beatmaps import BeatmapCommandRepository
 from osu_server.repositories.sqlalchemy.commands.beatmaps import (
     BeatmapNotFoundError,
+    BeatmapSnapshotPersistenceError,
     DuplicateBeatmapChecksumError,
     SQLAlchemyBeatmapCommandRepository,
 )
@@ -49,13 +52,11 @@ from osu_server.repositories.sqlalchemy.models.beatmap import (
     BeatmapFileAttachmentModel,
     BeatmapModel,
     BeatmapSetModel,
-    BeatmapSetSearchDocumentModel,
 )
 
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from sqlalchemy.exc import IntegrityError
     from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.sql.base import Executable
 
@@ -365,24 +366,39 @@ def _beatmap_model(
     )
 
 
-def _beatmapset_model() -> BeatmapSetModel:
+def _beatmapset_model(
+    *,
+    beatmapset_id: int = 1_000,
+    search_document_version: int = 1,
+    search_document_updated_at: datetime = _NOW,
+) -> BeatmapSetModel:
     """固定metadataを持つ永続化済みbeatmapset modelを作成する.
+
+    Args:
+        beatmapset_id (int): beatmapset永続化識別子.
+        search_document_version (int): 保存済み検索document version.
+        search_document_updated_at (datetime): 保存済み検索document更新時刻.
 
     Returns:
         BeatmapSetModel: beatmapset取得とsnapshot保存に使うmodel.
     """
     return BeatmapSetModel(
-        id=1_000,
+        id=beatmapset_id,
         artist="Camellia",
         title="Exit This Earth's Atomosphere",
         creator="Realazy",
         artist_unicode=None,
         title_unicode=None,
+        source_text="",
+        tags="",
+        direct_search_text="Camellia Exit This Earth's Atomosphere Realazy Another",
         official_status="ranked",
         official_status_source="official",
         official_status_verified=True,
         last_fetched_at=_NOW,
         next_refresh_at=_NEXT_REFRESH,
+        search_document_version=search_document_version,
+        search_document_updated_at=search_document_updated_at,
     )
 
 
@@ -428,54 +444,19 @@ def _fetch_state_model(status: str = "pending_fetch") -> BeatmapFetchStateModel:
     )
 
 
-def _search_document_model(
-    *,
-    beatmapset_id: int = 1_000,
-    document_version: int = 1,
-) -> BeatmapSetSearchDocumentModel:
-    """保存済みosu!direct検索projection model fixtureを作成する.
-
-    Args:
-        beatmapset_id (int): projection対象のbeatmapset ID.
-        document_version (int): 保存済みprojection version.
-
-    Returns:
-        BeatmapSetSearchDocumentModel: SQLAlchemy repositoryの読込変換に使うmodel.
-    """
-    return BeatmapSetSearchDocumentModel(
-        beatmapset_id=beatmapset_id,
-        artist="Camellia",
-        title="Exit This Earth's Atomosphere",
-        creator="Realazy",
-        artist_unicode=None,
-        title_unicode=None,
-        source="",
-        tags="",
-        difficulty_names="Another",
-        modes=["osu"],
-        status="ranked",
-        last_update_at=_NOW,
-        is_active=True,
-        document_version=document_version,
-        updated_at=_NOW,
-    )
-
-
-def _merged_search_document(session: FakeSession) -> BeatmapSetSearchDocumentModel:
-    """Session fakeがmergeしたosu!direct検索documentを1件返す.
+def _merged_beatmapset_model(session: FakeSession) -> BeatmapSetModel:
+    """Session fakeがmergeしたbeatmapset modelを1件返す.
 
     Args:
         session (FakeSession): snapshot保存に使ったSQLAlchemy session fake.
 
     Returns:
-        BeatmapSetSearchDocumentModel: 保存pathがmergeした検索projection model.
+        BeatmapSetModel: 保存pathがmergeした検索入力付きbeatmapset model.
 
     Raises:
-        AssertionError: projection modelが1件だけmergeされていない場合.
+        AssertionError: beatmapset modelが1件だけmergeされていない場合.
     """
-    documents = [
-        model for model in session.merged if isinstance(model, BeatmapSetSearchDocumentModel)
-    ]
+    documents = [model for model in session.merged if isinstance(model, BeatmapSetModel)]
     assert len(documents) == 1
     return documents[0]
 
@@ -737,14 +718,14 @@ async def test_save_snapshot_preserves_existing_submission_counts() -> None:
     assert beatmap_models[0].pass_count == 7
 
 
-async def test_save_snapshot_upserts_active_direct_search_document() -> None:
-    """Usableなmetadata保存が同じflush内でactive検索projectionを作ることを検証する.
+async def test_save_snapshot_updates_direct_search_input() -> None:
+    """Usableなmetadata保存が同じflush内で検索入力を更新することを検証する.
 
     Returns:
-        None: merged search documentの検索fieldとflush回数をassertして値を返さない.
+        None: merged beatmapset modelの検索fieldとflush回数をassertして値を返さない.
 
     Raises:
-        AssertionError: active projectionがmetadata保存pathへ連動しない場合.
+        AssertionError: 検索入力がmetadata保存pathへ連動しない場合.
     """
     official_last_updated_at = datetime(2026, 6, 29, 12, 34, 56, tzinfo=UTC)
     session = FakeSession()
@@ -753,30 +734,27 @@ async def test_save_snapshot_upserts_active_direct_search_document() -> None:
         _beatmapset_domain(_beatmap_domain(official_last_updated_at=official_last_updated_at))
     )
 
-    document = _merged_search_document(session)
-    assert document.beatmapset_id == 1_000
+    document = _merged_beatmapset_model(session)
+    assert document.id == 1_000
     assert document.artist == "Camellia"
     assert document.title == "Exit This Earth's Atomosphere"
     assert document.creator == "Realazy"
-    assert document.source == ""
+    assert document.source_text == ""
     assert document.tags == ""
-    assert document.difficulty_names == "Another"
-    assert document.modes == ["osu"]
-    assert document.status == "ranked"
-    assert document.last_update_at == official_last_updated_at
-    assert document.is_active is True
-    assert document.document_version == 1
+    assert document.direct_search_text == "Camellia Exit This Earth's Atomosphere Realazy Another"
+    assert document.official_status == "ranked"
+    assert document.search_document_version == 1
     assert session.flushes == 1
 
 
-async def test_save_snapshot_disables_direct_search_document_for_childless_set() -> None:
-    """Child beatmapを持たないmetadata保存が検索projectionをinactiveにすることを検証する.
+async def test_save_snapshot_keeps_childless_set_without_difficulty_search_text() -> None:
+    """Child beatmapを持たないmetadata保存がdifficulty検索文字列を持たないことを検証する.
 
     Returns:
-        None: inactive documentのtombstone fieldをassertして値を返さない.
+        None: materialized検索入力とstatusをassertして値を返さない.
 
     Raises:
-        AssertionError: childless beatmapsetが検索対象として保存される場合.
+        AssertionError: childless beatmapsetへchild由来の検索文字列が入る場合.
     """
     session = FakeSession()
 
@@ -784,12 +762,10 @@ async def test_save_snapshot_disables_direct_search_document_for_childless_set()
         replace(_beatmapset_domain(_beatmap_domain()), beatmaps=())
     )
 
-    document = _merged_search_document(session)
-    assert document.beatmapset_id == 1_000
-    assert document.is_active is False
-    assert document.difficulty_names == ""
-    assert document.modes == ["unknown"]
-    assert document.status == "ranked"
+    document = _merged_beatmapset_model(session)
+    assert document.id == 1_000
+    assert document.direct_search_text == "Camellia Exit This Earth's Atomosphere Realazy"
+    assert document.official_status == "ranked"
 
 
 async def test_save_snapshot_disables_direct_search_document_for_graveyard_set() -> None:
@@ -810,9 +786,8 @@ async def test_save_snapshot_disables_direct_search_document_for_graveyard_set()
         )
     )
 
-    document = _merged_search_document(session)
-    assert document.is_active is False
-    assert document.status == "graveyard"
+    document = _merged_beatmapset_model(session)
+    assert document.official_status == "graveyard"
 
 
 async def test_save_snapshot_projection_uses_preserved_local_status_override() -> None:
@@ -830,11 +805,74 @@ async def test_save_snapshot_projection_uses_preserved_local_status_override() -
     await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
 
     beatmap_models = [model for model in session.merged if isinstance(model, BeatmapModel)]
-    document = _merged_search_document(session)
+    document = _merged_beatmapset_model(session)
     assert beatmap_models[0].local_status_override == "graveyard"
-    assert document.is_active is False
-    assert document.difficulty_names == "Another"
-    assert document.modes == ["osu"]
+    assert document.direct_search_text == "Camellia Exit This Earth's Atomosphere Realazy Another"
+
+
+async def test_save_new_beatmapset_snapshot_merges_set_before_child_beatmaps() -> None:
+    """新規metadata保存がchildより先にbeatmapsetをsessionへ入れる契約を検証する.
+
+    Returns:
+        None: merge順序をassertして値を返さない.
+
+    Raises:
+        AssertionError: child beatmapが親beatmapsetより先にmergeされる場合.
+    """
+    session = FakeSession()
+
+    await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
+
+    assert isinstance(session.merged[0], BeatmapSetModel)
+    assert isinstance(session.merged[1], BeatmapModel)
+
+
+async def test_save_snapshot_locks_beatmapset_scope_before_reads() -> None:
+    """Snapshot保存が同一beatmapsetの並行fetchを直列化することを検証する.
+
+    Returns:
+        None: 最初にtransaction advisory lockが発行されることをassertして値を返さない.
+
+    Raises:
+        AssertionError: checksum確認や既存document読込より前にlockされない場合.
+    """
+    session = FakeSession()
+
+    await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
+
+    statement = session.executed[0]
+    assert isinstance(statement, ClauseElement)
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+    assert "pg_advisory_xact_lock" in sql
+
+
+async def test_save_snapshot_preserves_flush_integrity_error_details() -> None:
+    """FlushのDB整合性違反をchecksum衝突へ偽装しないことを検証する.
+
+    Returns:
+        None: 永続化errorの型と構造化logをassertして値を返さない.
+
+    Raises:
+        AssertionError: 任意のIntegrityErrorがDuplicateBeatmapChecksumErrorへ変換された場合.
+    """
+    error = IntegrityError(
+        "INSERT INTO beatmaps",
+        {},
+        Exception("violates foreign key constraint"),
+    )
+    session = FakeSession(flush_error=error)
+
+    with (
+        structlog.testing.capture_logs() as logs,
+        pytest.raises(BeatmapSnapshotPersistenceError) as exc_info,
+    ):
+        await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
+
+    assert exc_info.value.__cause__ is error
+    assert "beatmap 0" not in str(exc_info.value)
+    assert logs[-1]["event"] == "beatmapset_snapshot_persistence_failed"
+    assert logs[-1]["beatmapset_id"] == 1_000
+    assert logs[-1]["original_error_message"] == "violates foreign key constraint"
 
 
 async def test_save_snapshot_fails_when_direct_search_projection_update_fails() -> None:
@@ -846,7 +884,7 @@ async def test_save_snapshot_fails_when_direct_search_projection_update_fails() 
     Raises:
         AssertionError: projection失敗後にmetadata保存が成功扱いされる場合.
     """
-    session = FakeSession(merge_error_for_type=BeatmapSetSearchDocumentModel)
+    session = FakeSession(merge_error_for_type=BeatmapSetModel)
 
     with pytest.raises(RuntimeError, match="projection failed"):
         await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
@@ -864,7 +902,8 @@ async def test_get_search_document_returns_direct_projection_domain() -> None:
         AssertionError: projection modelがdomain値へ復元されない場合.
     """
     session = FakeSession(
-        get_results={(BeatmapSetSearchDocumentModel, 1_000): _search_document_model()}
+        get_results={(BeatmapSetModel, 1_000): _beatmapset_model()},
+        execute_results=[FakeResult(values=[_beatmap_model(official_last_updated_at=_NOW)])],
     )
 
     document = await _repo(session).get_search_document(1_000)
@@ -873,6 +912,7 @@ async def test_get_search_document_returns_direct_projection_domain() -> None:
     assert document.beatmapset_id == 1_000
     assert document.status is BeatmapRankStatus.RANKED
     assert document.modes == (BeatmapMode.OSU,)
+    assert document.difficulty_names == "Another"
     assert document.document_version == 1
 
 
@@ -889,10 +929,19 @@ async def test_list_search_documents_returns_direct_projection_domains() -> None
         execute_results=[
             FakeResult(
                 values=[
-                    _search_document_model(beatmapset_id=1_000),
-                    _search_document_model(beatmapset_id=2_000),
+                    _beatmapset_model(beatmapset_id=1_000),
+                    _beatmapset_model(beatmapset_id=2_000),
                 ]
-            )
+            ),
+            FakeResult(values=[_beatmap_model(official_last_updated_at=_NOW)]),
+            FakeResult(
+                values=[
+                    _beatmap_model(
+                        id=3_000,
+                        official_last_updated_at=_NOW,
+                    )
+                ]
+            ),
         ]
     )
 
@@ -902,31 +951,31 @@ async def test_list_search_documents_returns_direct_projection_domains() -> None
     assert documents[0].status is BeatmapRankStatus.RANKED
 
 
-async def test_rebuild_search_projection_merges_documents_from_stored_metadata() -> None:
-    """保存済みmetadataから検索projectionを再構築できることを検証する.
+async def test_rebuild_search_projection_updates_search_input_from_stored_metadata() -> None:
+    """保存済みmetadataから検索入力を再構築できることを検証する.
 
     Returns:
-        None: beatmapsetとchild beatmapからprojection modelがmergeされることをassertする.
+        None: beatmapsetとchild beatmapからmaterialized検索入力が更新されることをassertする.
 
     Raises:
-        AssertionError: rebuildがprojectionを復元しない場合.
+        AssertionError: rebuildが検索入力を復元しない場合.
     """
+    beatmapset_model = _beatmapset_model()
+    beatmapset_model.direct_search_text = ""
     session = FakeSession(
         execute_results=[
-            FakeResult(values=[_beatmapset_model()]),
+            FakeResult(values=[beatmapset_model]),
             FakeResult(values=[_beatmap_model(official_last_updated_at=_NOW)]),
-            FakeResult(values=[]),
         ]
     )
 
     rebuilt_count = await _repo(session).rebuild_search_projection(now=_NOW)
 
-    document = _merged_search_document(session)
     assert rebuilt_count == 1
-    assert document.beatmapset_id == 1_000
-    assert document.difficulty_names == "Another"
-    assert document.modes == ["osu"]
-    assert document.is_active is True
+    assert beatmapset_model.direct_search_text == (
+        "Camellia Exit This Earth's Atomosphere Realazy Another"
+    )
+    assert beatmapset_model.search_document_version == 1
     assert session.flushes == 1
 
 
@@ -943,7 +992,6 @@ async def test_rebuild_search_projection_orders_child_beatmaps_for_idempotency()
         execute_results=[
             FakeResult(values=[_beatmapset_model()]),
             FakeResult(values=[_beatmap_model(official_last_updated_at=_NOW)]),
-            FakeResult(values=[]),
         ]
     )
 
@@ -1044,7 +1092,7 @@ async def test_save_snapshot_rejects_existing_checksum_conflict_before_flush() -
     """
     conflicting_model = _beatmap_model(id=999, checksum_md5=_CHECKSUM)
     session = FakeSession(
-        execute_results=[FakeResult(conflicting_model)],
+        execute_results=[FakeResult(), FakeResult(conflicting_model)],
     )
 
     with pytest.raises(DuplicateBeatmapChecksumError) as exc_info:

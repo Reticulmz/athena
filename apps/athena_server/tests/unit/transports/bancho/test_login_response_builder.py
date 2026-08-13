@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, cast, final
 
 from osu_server.domain.chat.channels import Channel, ChannelType
 from osu_server.domain.compatibility.stable import StableUserStatus
+from osu_server.domain.compatibility.stable.permissions import BanchoClientPermission
 from osu_server.domain.identity.authentication import LoginResponse
 from osu_server.domain.identity.authorization import Privileges
 from osu_server.domain.identity.sessions import SessionData
@@ -459,6 +460,7 @@ def _make_builder(
     active_sessions: tuple[OnlineSessionSnapshot, ...] = (),
     current_stats_query: _FakeCurrentUserStatsQuery | None = None,
     stable_user_status_store: _FakeStableUserStatusStore | None = None,
+    grant_stable_supporter_feature_bit: bool = False,
 ) -> LoginResponseBuilder:
     """Typed query fakeを注入したLoginResponseBuilderを構築する.
 
@@ -470,6 +472,8 @@ def _make_builder(
         current_stats_query (_FakeCurrentUserStatsQuery | None): optional stats query fake.
         stable_user_status_store (_FakeStableUserStatusStore | None): optional stable status
             store fake.
+        grant_stable_supporter_feature_bit (bool): stable supporter機能表示のためlogin
+            permissionへSUPPORTER bitを追加するか.
 
     Returns:
         LoginResponseBuilder: initial S2C packet streamを構築するbuilder.
@@ -500,6 +504,7 @@ def _make_builder(
             "StableUserStatusStore | None",
             stable_user_status_store,
         ),
+        grant_stable_supporter_feature_bit=grant_stable_supporter_feature_bit,
     )
 
 
@@ -978,6 +983,41 @@ class TestLoginResponseBuilder:
             ]
         )
         assert result.startswith(expected_self_prefix)
+
+    async def test_stable_supporter_feature_flag_adds_login_supporter_bit_only(
+        self,
+    ) -> None:
+        """Stable supporter feature flagがlogin permissionへSUPPORTER bitを足す契約を検証する.
+
+        Returns:
+            None: LOGIN_PERMISSIONSにはSUPPORTERが含まれ,self USER_PRESENCEは通常権限のまま
+                であることを確認して完了する.
+        """
+        login_response = _login_response(privileges=Privileges.NORMAL)
+        builder = _make_builder(grant_stable_supporter_feature_bit=True)
+
+        result = await builder.build(login_response)
+
+        assert (
+            login_permissions(
+                int(BanchoClientPermission.NORMAL | BanchoClientPermission.SUPPORTER)
+            )
+            in result
+        )
+        assert (
+            user_presence(
+                user_id=login_response.user.id,
+                username=login_response.user.username,
+                timezone=login_response.session_data.utc_offset + 24,
+                country_id=country_code_to_id(login_response.country),
+                permissions=int(BanchoClientPermission.NORMAL),
+                mode=0,
+                longitude=0.0,
+                latitude=0.0,
+                rank=0,
+            )
+            in result
+        )
 
     async def test_packet_order_without_channels(self) -> None:
         """channelがない場合にinitialとcompletion packetをexact orderで並べる契約を検証する.

@@ -1,25 +1,60 @@
-"""Meilisearch向けosu!direct external index adapterを提供するmodule."""
+"""Meilisearch向けosu!direct index/search adapterを提供するmodule."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
-from urllib.parse import quote
+from typing import TYPE_CHECKING, Final, cast
 
-import httpx
+from meilisearch_python_sdk.errors import MeilisearchError
+from meilisearch_python_sdk.models.settings import MeilisearchSettings
 
+from osu_server.domain.beatmaps.direct import (
+    DirectSearchBackendResult,
+    DirectSearchBackendUnavailableError,
+    DirectSearchCandidate,
+    DirectSearchListing,
+    DirectSearchRequest,
+)
 from osu_server.infrastructure.search.direct_index_definition import (
     DIRECT_SEARCH_INDEX_DEFINITION,
     SearchIndexDefinition,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from datetime import datetime
+    from typing import Protocol
+
+    from meilisearch_python_sdk import AsyncClient as MeilisearchAsyncClient
+    from meilisearch_python_sdk.index import AsyncIndex
+    from meilisearch_python_sdk.models.search import SearchResults
 
     from osu_server.domain.beatmaps.direct import BeatmapSetSearchDocument
 
+    class _MeilisearchSearchIndex(Protocol):
+        """Meilisearch search()のhit型だけを固定するtyping用Protocol."""
+
+        async def search(
+            self,
+            query: str | None = None,
+            **options: object,
+        ) -> SearchResults[dict[str, object]]:
+            """Search result hitをdictとして返す.
+
+            Args:
+                query (str | None): 検索query text.
+                **options (object): Meilisearch SDKへ渡す検索option.
+
+            Returns:
+                SearchResults[dict[str, object]]: dict hitを含む検索結果.
+            """
+            ...
+
+
 _BACKEND_NAME: Final = "meilisearch"
-_HTTP_SUCCESS_MIN: Final = 200
-_HTTP_SUCCESS_MAX: Final = 300
+_ACTIVE_FIELD: Final = "is_active"
+_PRIMARY_KEY_FIELD: Final = "beatmapset_id"
+_RANKING_SCORE_FIELD: Final = "_rankingScore"
+_FALLBACK_SCORE: Final = 0.0
 
 
 class MeilisearchDirectIndexError(RuntimeError):
@@ -52,54 +87,45 @@ class MeilisearchDirectIndexError(RuntimeError):
         self.document_version = document_version
 
 
+class MeilisearchDirectSearchBackendUnavailableError(DirectSearchBackendUnavailableError):
+    """Meilisearch search backendの必須capability不足を表す例外."""
+
+
 class MeilisearchDirectIndexBackend:
     """Meilisearchへosu!direct projection documentを同期するadapter.
 
     Attributes:
-        _http_client (httpx.AsyncClient): lifecycleを呼び出し側が所有するHTTP client.
-        _base_url (str): Meilisearch serverのbase URL.
+        _client (MeilisearchAsyncClient): lifecycleを呼び出し側が所有するSDK client.
         _index_name (str): Meilisearch index UID.
-        _access_key (str | None): Authorization headerへ設定するaccess key.
         _index_definition (SearchIndexDefinition): settingsとdocument fieldの共有宣言.
     """
 
-    _http_client: httpx.AsyncClient
-    _base_url: str
+    _client: MeilisearchAsyncClient
     _index_name: str
-    _access_key: str | None
     _index_definition: SearchIndexDefinition
 
     def __init__(
         self,
         *,
-        http_client: httpx.AsyncClient,
-        base_url: str,
+        client: MeilisearchAsyncClient,
         index_name: str,
-        access_key: str | None = None,
         index_definition: SearchIndexDefinition = DIRECT_SEARCH_INDEX_DEFINITION,
     ) -> None:
-        """HTTP clientとMeilisearch index設定を保持する.
+        """SDK clientとMeilisearch index設定を保持する.
 
         Args:
-            http_client (httpx.AsyncClient): Meilisearch requestを送るasync HTTP client.
-            base_url (str): Meilisearch serverのbase URL.
+            client (MeilisearchAsyncClient): Meilisearch SDK async client.
             index_name (str): osu!direct用Meilisearch index UID.
-            access_key (str | None): Meilisearch access key. 未設定ならheaderを送らない.
             index_definition (SearchIndexDefinition): 共有field宣言.
 
         Raises:
-            ValueError: base_urlまたはindex_nameが空の場合.
+            ValueError: index_nameが空の場合.
         """
-        if not base_url.strip():
-            msg = "base_url must not be empty"
-            raise ValueError(msg)
         if not index_name.strip():
             msg = "index_name must not be empty"
             raise ValueError(msg)
-        self._http_client = http_client
-        self._base_url = base_url.rstrip("/")
-        self._index_name = quote(index_name.strip(), safe="")
-        self._access_key = access_key
+        self._client = client
+        self._index_name = index_name.strip()
         self._index_definition = index_definition
 
     async def apply_settings(self) -> None:
@@ -111,18 +137,11 @@ class MeilisearchDirectIndexBackend:
         Raises:
             MeilisearchDirectIndexError: Meilisearch requestが失敗した場合.
         """
-        response = await self._request(
-            "PATCH",
-            self._settings_url(),
-            json={
-                "searchableAttributes": list(self._index_definition.searchable_fields),
-                "filterableAttributes": list(self._index_definition.filterable_fields),
-                "sortableAttributes": list(self._index_definition.sortable_fields),
-                "displayedAttributes": list(self._index_definition.displayed_fields),
-            },
-            failure_context="settings update",
-        )
-        _ = response
+        try:
+            _ = await self._index().update_settings(_settings_payload(self._index_definition))
+        except MeilisearchError as exc:
+            msg = f"{_BACKEND_NAME} settings update failed"
+            raise MeilisearchDirectIndexError(msg) from exc
 
     async def index_document(self, document: BeatmapSetSearchDocument) -> None:
         """Committed projection documentをMeilisearchへ同期する.
@@ -136,90 +155,181 @@ class MeilisearchDirectIndexBackend:
         Raises:
             MeilisearchDirectIndexError: Meilisearch requestが失敗した場合.
         """
-        response = await self._request(
-            "PUT",
-            self._documents_url(),
-            json=[_document_payload(document, self._index_definition)],
-            failure_context="document indexing",
-            beatmapset_id=document.beatmapset_id,
-            document_version=document.document_version,
-        )
-        _ = response
+        try:
+            _ = await self._index().add_documents(
+                [_document_payload(document, self._index_definition)],
+                primary_key=_PRIMARY_KEY_FIELD,
+            )
+        except MeilisearchError as exc:
+            msg = f"{_BACKEND_NAME} document indexing failed"
+            raise MeilisearchDirectIndexError(
+                msg,
+                beatmapset_id=document.beatmapset_id,
+                document_version=document.document_version,
+            ) from exc
 
-    async def _request(
+    def _index(self) -> AsyncIndex:
+        """設定済みindex UIDのSDK index handleを返す.
+
+        Returns:
+            AsyncIndex: Meilisearch SDKが生成するlocal index handle.
+        """
+        return self._client.index(self._index_name)
+
+
+class MeilisearchDirectSearchBackend:
+    """Meilisearch indexからosu!direct候補IDとscoreを取得するbackend.
+
+    Attributes:
+        _client (MeilisearchAsyncClient): lifecycleを呼び出し側が所有するSDK client.
+        _index_name (str): Meilisearch index UID.
+        _index_definition (SearchIndexDefinition): settingsとdocument fieldの共有宣言.
+    """
+
+    _client: MeilisearchAsyncClient
+    _index_name: str
+    _index_definition: SearchIndexDefinition
+
+    def __init__(
         self,
-        method: str,
-        url: str,
         *,
-        json: object,
-        failure_context: str,
-        beatmapset_id: int | None = None,
-        document_version: int | None = None,
-    ) -> httpx.Response:
-        """Meilisearch HTTP requestを送信して失敗をsanitized errorへ変換する.
+        client: MeilisearchAsyncClient,
+        index_name: str,
+        index_definition: SearchIndexDefinition = DIRECT_SEARCH_INDEX_DEFINITION,
+    ) -> None:
+        """SDK clientとMeilisearch index設定を保持する.
 
         Args:
-            method (str): HTTP method.
-            url (str): request送信先URL.
-            json (object): JSON bodyへserializeするpayload.
-            failure_context (str): sanitized messageに入れる操作名.
-            beatmapset_id (int | None): document更新時のbeatmapset ID.
-            document_version (int | None): document更新時のprojection version.
-
-        Returns:
-            httpx.Response: 2xxとして受理されたresponse.
+            client (MeilisearchAsyncClient): Meilisearch SDK async client.
+            index_name (str): osu!direct用Meilisearch index UID.
+            index_definition (SearchIndexDefinition): 共有field宣言.
 
         Raises:
-            MeilisearchDirectIndexError: HTTP statusまたは通信が失敗した場合.
+            ValueError: index_nameが空の場合.
+        """
+        if not index_name.strip():
+            msg = "index_name must not be empty"
+            raise ValueError(msg)
+        self._client = client
+        self._index_name = index_name.strip()
+        self._index_definition = index_definition
+
+    async def search(self, request: DirectSearchRequest) -> DirectSearchBackendResult:
+        """Meilisearchから検索候補IDとscoreだけを返す.
+
+        Args:
+            request (DirectSearchRequest): stable inputから導出された検索条件.
+
+        Returns:
+            DirectSearchBackendResult: page内候補と次page有無.
+
+        Raises:
+            MeilisearchDirectSearchBackendUnavailableError: Meilisearch search APIに失敗した場合.
+            KeyError: hitに必須fieldがない場合.
+            TypeError: hitの必須field型が期待値と異なる場合.
         """
         try:
-            response = await self._http_client.request(
-                method,
-                url,
-                headers=self._headers(),
-                json=json,
+            search_index = cast("_MeilisearchSearchIndex", cast("object", self._index()))
+            result = await search_index.search(
+                _query_text(request),
+                offset=request.page * request.page_size,
+                limit=request.page_size + 1,
+                filter=_filter_expression(request),
+                sort=_sort_fields(request),
+                attributes_to_retrieve=[_PRIMARY_KEY_FIELD],
+                show_ranking_score=True,
             )
-        except httpx.HTTPError as exc:
-            msg = f"{_BACKEND_NAME} {failure_context} request failed"
-            raise MeilisearchDirectIndexError(
-                msg,
-                beatmapset_id=beatmapset_id,
-                document_version=document_version,
-            ) from exc
-        if response.status_code < _HTTP_SUCCESS_MIN or response.status_code >= _HTTP_SUCCESS_MAX:
-            msg = f"{_BACKEND_NAME} {failure_context} failed with HTTP {response.status_code}"
-            raise MeilisearchDirectIndexError(
-                msg,
-                beatmapset_id=beatmapset_id,
-                document_version=document_version,
+        except MeilisearchError as exc:
+            msg = f"{_BACKEND_NAME} search request failed"
+            raise MeilisearchDirectSearchBackendUnavailableError(msg) from exc
+
+        hits = cast("Sequence[dict[str, object]]", result.hits)
+        candidate_rows = hits[: request.page_size]
+        return DirectSearchBackendResult(
+            candidates=tuple(_candidate_from_hit(hit) for hit in candidate_rows),
+            has_more=len(hits) > request.page_size,
+        )
+
+    async def validate(self) -> None:
+        """Meilisearch serverとindex settingsが検索可能か検証する.
+
+        Returns:
+            None: server, index, settingsが検索trafficを受けられることを示す.
+
+        Raises:
+            MeilisearchDirectSearchBackendUnavailableError: server, index, settingsが不足する場合.
+        """
+        try:
+            health = await self._client.health()
+            settings = await self._index().get_settings()
+        except MeilisearchError as exc:
+            msg = f"{_BACKEND_NAME} search backend is unavailable"
+            raise MeilisearchDirectSearchBackendUnavailableError(msg) from exc
+
+        if health.status != "available":
+            msg = f"{_BACKEND_NAME} search backend health is {health.status}"
+            raise MeilisearchDirectSearchBackendUnavailableError(msg)
+
+        missing_fields = _missing_settings_fields(settings, self._index_definition)
+        if missing_fields:
+            msg = (
+                f"{_BACKEND_NAME} search index is missing settings fields: "
+                f"{', '.join(missing_fields)}"
             )
-        return response
+            raise MeilisearchDirectSearchBackendUnavailableError(msg)
 
-    def _headers(self) -> dict[str, str]:
-        """Meilisearch requestへ付けるheaderを返す.
-
-        Returns:
-            dict[str, str]: access keyがある場合だけAuthorizationを含むheader.
-        """
-        if self._access_key:
-            return {"Authorization": f"Bearer {self._access_key}"}
-        return {}
-
-    def _settings_url(self) -> str:
-        """Settings endpointのURLを返す.
+    def _index(self) -> AsyncIndex:
+        """設定済みindex UIDのSDK index handleを返す.
 
         Returns:
-            str: Meilisearch settings endpoint URL.
+            AsyncIndex: Meilisearch SDKが生成するlocal index handle.
         """
-        return f"{self._base_url}/indexes/{self._index_name}/settings"
+        return self._client.index(self._index_name)
 
-    def _documents_url(self) -> str:
-        """Documents endpointのURLを返す.
 
-        Returns:
-            str: primaryKey query付きMeilisearch documents endpoint URL.
-        """
-        return f"{self._base_url}/indexes/{self._index_name}/documents?primaryKey=beatmapset_id"
+def _settings_payload(index_definition: SearchIndexDefinition) -> MeilisearchSettings:
+    """共有field宣言をMeilisearch SDK settings modelへ変換する.
+
+    Args:
+        index_definition (SearchIndexDefinition): external indexへ公開するfield宣言.
+
+    Returns:
+        MeilisearchSettings: SDKに渡すsettings payload.
+    """
+    return MeilisearchSettings(
+        searchable_attributes=list(index_definition.searchable_fields),
+        filterable_attributes=list(_meilisearch_filterable_fields(index_definition)),
+        sortable_attributes=list(index_definition.sortable_fields),
+        displayed_attributes=list(_meilisearch_displayed_fields(index_definition)),
+    )
+
+
+def _meilisearch_filterable_fields(
+    index_definition: SearchIndexDefinition,
+) -> tuple[str, ...]:
+    """Meilisearch検索に必要なfilterable fieldを返す.
+
+    Args:
+        index_definition (SearchIndexDefinition): external indexへ公開するfield宣言.
+
+    Returns:
+        tuple[str, ...]: shared filterable fieldにactive判定fieldを加えたfield列.
+    """
+    return tuple(dict.fromkeys((*index_definition.filterable_fields, _ACTIVE_FIELD)))
+
+
+def _meilisearch_displayed_fields(
+    index_definition: SearchIndexDefinition,
+) -> tuple[str, ...]:
+    """Meilisearch documentへ同期するdisplayed fieldを返す.
+
+    Args:
+        index_definition (SearchIndexDefinition): external indexへ公開するfield宣言.
+
+    Returns:
+        tuple[str, ...]: shared displayed fieldにactive判定fieldを加えたfield列.
+    """
+    return tuple(dict.fromkeys((*index_definition.displayed_fields, _ACTIVE_FIELD)))
 
 
 def _document_payload(
@@ -246,6 +356,7 @@ def _document_payload(
         "title_unicode": document.title_unicode,
         "status": document.status.value,
         "modes": [mode.value for mode in document.modes],
+        "is_active": document.is_active,
         "beatmapset_id": document.beatmapset_id,
         "last_update_at": _optional_datetime(document.last_update_at),
         "document_version": document.document_version,
@@ -269,12 +380,185 @@ def _document_fields(index_definition: SearchIndexDefinition) -> tuple[str, ...]
         dict.fromkeys(
             (
                 *index_definition.searchable_fields,
-                *index_definition.filterable_fields,
+                *_meilisearch_filterable_fields(index_definition),
                 *index_definition.sortable_fields,
-                *index_definition.displayed_fields,
+                *_meilisearch_displayed_fields(index_definition),
             )
         )
     )
+
+
+def _query_text(request: DirectSearchRequest) -> str:
+    """Meilisearchへ渡すquery textを検索種別から決定する.
+
+    Args:
+        request (DirectSearchRequest): backendへ渡された検索条件.
+
+    Returns:
+        str: 通常text検索なら空白除去済みquery, special listingなら空文字列.
+    """
+    if request.listing is DirectSearchListing.SEARCH:
+        return request.query_text.strip()
+    return ""
+
+
+def _filter_expression(request: DirectSearchRequest) -> str:
+    """Direct search requestをMeilisearch filter expressionへ変換する.
+
+    Args:
+        request (DirectSearchRequest): backendへ渡された検索条件.
+
+    Returns:
+        str: active判定とstatus/mode条件を含むfilter expression.
+    """
+    filters = [f"{_ACTIVE_FIELD} = true"]
+    if request.statuses:
+        filters.append(
+            "(" + " OR ".join(f"status = {status.value}" for status in request.statuses) + ")"
+        )
+    if request.mode is not None:
+        filters.append(f"modes = {request.mode.value}")
+    return " AND ".join(filters)
+
+
+def _sort_fields(request: DirectSearchRequest) -> list[str] | None:
+    """Direct search request用のMeilisearch sort fieldを返す.
+
+    Args:
+        request (DirectSearchRequest): backendへ渡された検索条件.
+
+    Returns:
+        list[str] | None: text検索ではMeilisearch rankingを優先し, listingではfallback順を返す.
+    """
+    if request.listing is DirectSearchListing.SEARCH and request.query_text.strip():
+        return None
+    return ["last_update_at:desc", "beatmapset_id:desc"]
+
+
+def _candidate_from_hit(hit: dict[str, object]) -> DirectSearchCandidate:
+    """Meilisearch hitを検索候補valueへ変換する.
+
+    Args:
+        hit (dict[str, object]): `beatmapset_id`と任意の`_rankingScore`を含むsearch hit.
+
+    Returns:
+        DirectSearchCandidate: hydration前の候補IDとscore.
+
+    Raises:
+        KeyError: 必須fieldがhitにない場合.
+        TypeError: 必須field型が期待値と異なる場合.
+    """
+    score = hit.get(_RANKING_SCORE_FIELD, _FALLBACK_SCORE)
+    return DirectSearchCandidate(
+        beatmapset_id=_int_field(hit, _PRIMARY_KEY_FIELD),
+        score=_numeric_value(score, _RANKING_SCORE_FIELD),
+    )
+
+
+def _missing_settings_fields(
+    settings: MeilisearchSettings,
+    index_definition: SearchIndexDefinition,
+) -> tuple[str, ...]:
+    """Meilisearch settingsから検索に必要な不足fieldを返す.
+
+    Args:
+        settings (MeilisearchSettings): Meilisearch indexから取得したsettings.
+        index_definition (SearchIndexDefinition): external indexへ公開するfield宣言.
+
+    Returns:
+        tuple[str, ...]: 不足しているsettings fieldの説明列.
+    """
+    missing: list[str] = []
+    missing.extend(
+        f"searchableAttributes.{field}"
+        for field in _missing_fields(
+            index_definition.searchable_fields,
+            settings.searchable_attributes,
+        )
+    )
+    missing.extend(
+        f"filterableAttributes.{field}"
+        for field in _missing_fields(
+            _meilisearch_filterable_fields(index_definition),
+            settings.filterable_attributes,
+        )
+    )
+    missing.extend(
+        f"sortableAttributes.{field}"
+        for field in _missing_fields(
+            index_definition.sortable_fields,
+            settings.sortable_attributes,
+        )
+    )
+    missing.extend(
+        f"displayedAttributes.{field}"
+        for field in _missing_fields(
+            _meilisearch_displayed_fields(index_definition),
+            settings.displayed_attributes,
+        )
+    )
+    return tuple(missing)
+
+
+def _missing_fields(
+    required_fields: Sequence[str],
+    actual_fields: Sequence[object] | None,
+) -> tuple[str, ...]:
+    """Required field列のうちMeilisearch settingsにないfieldを返す.
+
+    Args:
+        required_fields (Sequence[str]): 検索に必要なfield列.
+        actual_fields (Sequence[object] | None): Meilisearch settings上のfield列.
+
+    Returns:
+        tuple[str, ...]: 不足field列. `*` がある場合は空tuple.
+    """
+    if actual_fields is None:
+        return tuple(required_fields)
+    actual_names = {field for field in actual_fields if isinstance(field, str)}
+    if "*" in actual_names:
+        return ()
+    return tuple(field for field in required_fields if field not in actual_names)
+
+
+def _int_field(row: dict[str, object], field: str) -> int:
+    """Mapping rowからboolではないint fieldを取り出す.
+
+    Args:
+        row (dict[str, object]): Meilisearch search hit.
+        field (str): 取得するfield名.
+
+    Returns:
+        int: hit内のint値.
+
+    Raises:
+        KeyError: fieldがhitにない場合.
+        TypeError: field値がintでない場合.
+    """
+    value = row[field]
+    if isinstance(value, bool) or not isinstance(value, int):
+        msg = f"{field} must be int"
+        raise TypeError(msg)
+    return value
+
+
+def _numeric_value(value: object, field: str) -> float:
+    """Meilisearch hitからfloat化できる数値を取り出す.
+
+    Args:
+        value (object): hit内のscore値.
+        field (str): 取得元field名.
+
+    Returns:
+        float: hit内のscore値.
+
+    Raises:
+        TypeError: field値が数値でない場合.
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        msg = f"{field} must be numeric"
+        raise TypeError(msg)
+    return float(value)
 
 
 def _optional_datetime(value: datetime | None) -> str | None:
@@ -294,4 +578,6 @@ def _optional_datetime(value: datetime | None) -> str | None:
 __all__ = [
     "MeilisearchDirectIndexBackend",
     "MeilisearchDirectIndexError",
+    "MeilisearchDirectSearchBackend",
+    "MeilisearchDirectSearchBackendUnavailableError",
 ]

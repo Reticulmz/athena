@@ -12,6 +12,7 @@ from osu_server.infrastructure.jobs.registry import jobs
 from osu_server.shared.ports import DirectCatalogWorkKind
 
 if TYPE_CHECKING:
+    import asyncio
     from collections.abc import Awaitable, Callable
 
     from taskiq import TaskiqState
@@ -99,6 +100,21 @@ def get_beatmap_file_fetch(state: TaskiqState) -> WorkerBeatmapFileFetch | None:
     )
 
 
+def get_beatmap_metadata_fetch_semaphore(state: TaskiqState) -> asyncio.Semaphore | None:
+    """Taskiq stateからmetadata fetch同時実行制限semaphoreを返す.
+
+    Args:
+        state (TaskiqState): worker runtimeが保持するTaskiq state.
+
+    Returns:
+        asyncio.Semaphore | None: 登録済みsemaphoreまたは未登録時のNone.
+    """
+    return cast(
+        "asyncio.Semaphore | None",
+        getattr(state, "beatmap_metadata_fetch_semaphore", None),
+    )
+
+
 def get_osu_direct_catalog_scheduler(state: TaskiqState) -> WorkerDirectCatalogScheduler | None:
     """Taskiq stateからosu!direct catalog schedulerを返す.
 
@@ -112,6 +128,28 @@ def get_osu_direct_catalog_scheduler(state: TaskiqState) -> WorkerDirectCatalogS
         "WorkerDirectCatalogScheduler | None",
         getattr(state, "osu_direct_catalog_scheduler", None),
     )
+
+
+async def _run_metadata_fetch(
+    use_case: WorkerBeatmapMetadataFetch,
+    target: BeatmapFetchTarget,
+    semaphore: asyncio.Semaphore | None,
+) -> None:
+    """Configured semaphoreがあればmetadata fetch同時実行数を制限する.
+
+    Args:
+        use_case (WorkerBeatmapMetadataFetch): 実行するmetadata fetch use-case.
+        target (BeatmapFetchTarget): metadata fetch対象.
+        semaphore (asyncio.Semaphore | None): 同時実行数制限. 未設定なら制限しない.
+
+    Returns:
+        None: use-case実行を完了する.
+    """
+    if semaphore is None:
+        await use_case.execute(target)
+        return
+    async with semaphore:
+        await use_case.execute(target)
 
 
 @jobs.register(task_name="fetch_beatmap_metadata")
@@ -154,6 +192,7 @@ async def fetch_beatmap_metadata(
         target_key=target_key,
         force_refresh=force_refresh,
     )
+    semaphore = get_beatmap_metadata_fetch_semaphore(context.state)
     if direct_point_lookup:
         scheduler = get_osu_direct_catalog_scheduler(context.state)
         if scheduler is None:
@@ -172,12 +211,12 @@ async def fetch_beatmap_metadata(
             Returns:
                 None: use-caseへtargetを渡して完了する.
             """
-            await use_case.execute(target)
+            await _run_metadata_fetch(use_case, target, semaphore)
 
         _ = await scheduler.run(DirectCatalogWorkKind.POINT_LOOKUP, work)
         return
 
-    await use_case.execute(target)
+    await _run_metadata_fetch(use_case, target, semaphore)
 
 
 @jobs.register(task_name="fetch_beatmap_file")
@@ -229,5 +268,6 @@ __all__ = [
     "fetch_beatmap_metadata",
     "get_beatmap_file_fetch",
     "get_beatmap_metadata_fetch",
+    "get_beatmap_metadata_fetch_semaphore",
     "get_osu_direct_catalog_scheduler",
 ]

@@ -268,6 +268,24 @@ class TestSetupLogging:
         assert parsed["event"] == "test_event"
         assert parsed["key"] == "value"
 
+    def test_json_file_handler_includes_runtime_role(self, tmp_path: Path) -> None:
+        """JSON logに指定したruntime roleが含まれることを検証する.
+
+        Args:
+            tmp_path (Path): test固有の書き込み可能なlog directory.
+
+        Returns:
+            None: runtime_role fieldを検証して完了する.
+        """
+        config = make_app_config(log_dir=str(tmp_path))
+        setup_logging(config, runtime_role="worker")
+
+        logger = _get_test_logger()
+        _ = logger.info("test_event")
+
+        parsed = _decode_last_json_line((tmp_path / "latest.jsonl").read_text())
+        assert parsed["runtime_role"] == "worker"
+
     def test_second_setup_logging_does_not_rotate_active_session(self, tmp_path: Path) -> None:
         """同一process内の再設定でactive latest.jsonlをarchiveしないことを検証する.
 

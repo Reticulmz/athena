@@ -205,13 +205,27 @@ class FetchBeatmapMetadataUseCase:
             )
             return
 
-        beatmapset = _snapshot_to_beatmapset(snapshot)
-        async with self._uow_factory() as uow:
-            previous_beatmapset = await uow.beatmaps.get_beatmapset(beatmapset.id)
-            rebuild_reason = _leaderboard_rebuild_reason(previous_beatmapset, beatmapset)
-            await uow.beatmaps.save_beatmapset_snapshot(beatmapset)
-            await uow.beatmaps.mark_fetch_succeeded(target, now)
-            await uow.commit()
+        try:
+            beatmapset = _snapshot_to_beatmapset(snapshot)
+            async with self._uow_factory() as uow:
+                previous_beatmapset = await uow.beatmaps.get_beatmapset(beatmapset.id)
+                rebuild_reason = _leaderboard_rebuild_reason(previous_beatmapset, beatmapset)
+                await uow.beatmaps.save_beatmapset_snapshot(beatmapset)
+                await uow.beatmaps.mark_fetch_succeeded(target, now)
+                await uow.commit()
+        except ValueError as exc:
+            await self._mark_failed(
+                target=target,
+                error=str(exc),
+                now=now,
+            )
+            logger.exception(
+                "beatmap_metadata_fetch_failed",
+                target_type=target.kind.value,
+                target_key=target.target_key,
+                error=str(exc),
+            )
+            return
 
         if rebuild_reason is not None:
             try:
@@ -651,6 +665,8 @@ def _snapshot_to_beatmapset(snapshot: BeatmapsetSnapshot) -> BeatmapSet:
         beatmaps=beatmaps,
         last_fetched_at=snapshot.last_fetched_at,
         next_refresh_at=snapshot.next_refresh_at,
+        source_text=snapshot.source_text,
+        tags=snapshot.tags,
     )
 
 

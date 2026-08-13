@@ -21,12 +21,10 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    cast,
     column,
     func,
     or_,
 )
-from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
 
 from osu_server.infrastructure.database.base import Base
@@ -46,9 +44,7 @@ from osu_server.repositories.sqlalchemy.models.enum_types import (
 
 _PLAY_COUNT_COLUMN = column("play_count", BigInteger)
 _PASS_COUNT_COLUMN = column("pass_count", BigInteger)
-_BEATMAP_MODE_VALUES = ("osu", "taiko", "fruits", "mania", "unknown")
-_SEARCH_DOCUMENT_MODES_COLUMN = column("modes", postgresql.ARRAY(String(length=16)))
-_SEARCH_DOCUMENT_VERSION_COLUMN = column("document_version", Integer)
+_SEARCH_DOCUMENT_VERSION_COLUMN = column("search_document_version", Integer)
 _COVERAGE_FROM_BEATMAPSET_ID_COLUMN = column("from_beatmapset_id", Integer)
 _COVERAGE_TO_BEATMAPSET_ID_COLUMN = column("to_beatmapset_id", Integer)
 _COVERAGE_COMPLETED_AT_COLUMN = column("completed_at", DateTime(timezone=True))
@@ -63,22 +59,40 @@ class BeatmapSetModel(Base):
 
     Attributes:
         __tablename__ (str): 保存先のbeatmapsets table名.
+        __table_args__ (tuple[Index | CheckConstraint, ...]): 検索version制約とlookup index.
         id (Mapped[int]): osu!が割り当てるbeatmap set識別子.
         artist (Mapped[str]): 主表示用artist名.
         title (Mapped[str]): 主表示用title.
         creator (Mapped[str]): beatmap setを作成したmapper名.
         artist_unicode (Mapped[str | None]): Unicode artist名. 未提供ならNULL.
         title_unicode (Mapped[str | None]): Unicode title. 未提供ならNULL.
+        source_text (Mapped[str]): 曲の出典検索文字列. 未提供なら空文字列.
+        tags (Mapped[str]): tag検索文字列. 未提供なら空文字列.
+        direct_search_text (Mapped[str]): ParadeDB/tsvector向けのmaterialized検索入力.
         official_status (Mapped[str]): upstreamが報告したrank status.
         official_status_source (Mapped[str]): official statusを得たmetadata source.
         official_status_verified (Mapped[bool]): statusが信頼できるsourceで確認済みか.
         last_fetched_at (Mapped[datetime | None]): metadataを最後に取得したUTC timestamp.
         next_refresh_at (Mapped[datetime | None]): 次のmetadata refresh予定UTC timestamp.
+        search_document_version (Mapped[int]): 検索入力の更新version.
+        search_document_updated_at (Mapped[datetime]): 検索入力を最後に更新したUTC timestamp.
         created_at (Mapped[datetime]): recordを作成したUTC timestamp.
         updated_at (Mapped[datetime]): recordを最後に更新したUTC timestamp.
     """
 
     __tablename__: str = "beatmapsets"
+    __table_args__: tuple[Index | CheckConstraint, ...] = (
+        CheckConstraint(
+            _SEARCH_DOCUMENT_VERSION_COLUMN > 0,
+            name="ck_beatmapsets_search_document_version_positive",
+        ),
+        Index(
+            "idx_beatmapsets_direct_status_update",
+            "official_status",
+            "search_document_updated_at",
+            "id",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
     artist: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -86,6 +100,9 @@ class BeatmapSetModel(Base):
     creator: Mapped[str] = mapped_column(String(255), nullable=False)
     artist_unicode: Mapped[str | None] = mapped_column(String(255), nullable=True)
     title_unicode: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_text: Mapped[str] = mapped_column("source", Text, nullable=False, server_default="")
+    tags: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    direct_search_text: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     official_status: Mapped[str] = mapped_column(BEATMAP_RANK_STATUS_ENUM, nullable=False)
     official_status_source: Mapped[str] = mapped_column(
         BEATMAP_METADATA_SOURCE_ENUM,
@@ -97,6 +114,12 @@ class BeatmapSetModel(Base):
     )
     next_refresh_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    search_document_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="1"
+    )
+    search_document_updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -294,87 +317,6 @@ class BeatmapFetchStateModel(Base):
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
-    )
-
-
-class BeatmapSetSearchDocumentModel(Base):
-    """osu!direct検索backendへ渡すbeatmap set単位のprojectionを表す.
-
-    Attributes:
-        __tablename__ (str): 保存先のbeatmapset_search_documents table名.
-        __table_args__ (tuple[UniqueConstraint | Index | CheckConstraint, ...]):
-            mode値, version制約, active listing lookup index.
-        beatmapset_id (Mapped[int]): projection対象のbeatmap set識別子.
-        artist (Mapped[str]): 検索対象のartist名.
-        title (Mapped[str]): 検索対象のtitle.
-        creator (Mapped[str]): 検索対象のmapper名.
-        artist_unicode (Mapped[str | None]): Unicode artist名. 未提供ならNULL.
-        title_unicode (Mapped[str | None]): Unicode title. 未提供ならNULL.
-        source (Mapped[str]): upstream source文字列. 未提供なら空文字列を保存する.
-        tags (Mapped[str]): upstream tag文字列. 未提供なら空文字列を保存する.
-        difficulty_names (Mapped[str]): 子beatmapのdifficulty名を検索用に結合した文字列.
-        modes (Mapped[list[str]]): 子beatmapが持つmodeの閉集合.
-        status (Mapped[str]): direct検索で使うeffective status.
-        last_update_at (Mapped[datetime | None]): upstream metadata更新時刻. 未提供ならNULL.
-        is_active (Mapped[bool]): 検索対象として有効なprojectionか.
-        document_version (Mapped[int]): projection内容の更新version.
-        updated_at (Mapped[datetime]): projectionを最後に更新したUTC timestamp.
-    """
-
-    __tablename__: str = "beatmapset_search_documents"
-    __table_args__: tuple[UniqueConstraint | Index | CheckConstraint, ...] = (
-        CheckConstraint(
-            _SEARCH_DOCUMENT_VERSION_COLUMN > 0,
-            name="ck_beatmapset_search_documents_document_version_positive",
-        ),
-        CheckConstraint(
-            func.cardinality(_SEARCH_DOCUMENT_MODES_COLUMN) > 0,
-            name="ck_beatmapset_search_documents_modes_not_empty",
-        ),
-        CheckConstraint(
-            _SEARCH_DOCUMENT_MODES_COLUMN.op("<@")(
-                cast(
-                    postgresql.array(_BEATMAP_MODE_VALUES),
-                    postgresql.ARRAY(String(length=16)),
-                )
-            ),
-            name="ck_beatmapset_search_documents_modes_known",
-        ),
-        Index(
-            "idx_beatmapset_search_documents_active_status_update",
-            "is_active",
-            "status",
-            "last_update_at",
-            "beatmapset_id",
-        ),
-    )
-
-    beatmapset_id: Mapped[int] = mapped_column(
-        ForeignKey(
-            "beatmapsets.id",
-            name="fk_beatmapset_search_documents_beatmapset_id",
-        ),
-        primary_key=True,
-        autoincrement=False,
-    )
-    artist: Mapped[str] = mapped_column(String(255), nullable=False)
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
-    creator: Mapped[str] = mapped_column(String(255), nullable=False)
-    artist_unicode: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    title_unicode: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    source: Mapped[str] = mapped_column(Text, nullable=False)
-    tags: Mapped[str] = mapped_column(Text, nullable=False)
-    difficulty_names: Mapped[str] = mapped_column(Text, nullable=False)
-    modes: Mapped[list[str]] = mapped_column(
-        postgresql.ARRAY(String(16)),
-        nullable=False,
-    )
-    status: Mapped[str] = mapped_column(BEATMAP_RANK_STATUS_ENUM, nullable=False)
-    last_update_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    document_version: Mapped[int] = mapped_column(Integer, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 

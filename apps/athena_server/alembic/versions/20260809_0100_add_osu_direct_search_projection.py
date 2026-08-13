@@ -1,4 +1,4 @@
-"""osu!direct search projectionとcoverage stateを作成するmigration.
+"""osu!direct search inputとcoverage stateを作成するmigration.
 
 Revision ID: 20260809_0100
 Revises: 20260713_0700
@@ -11,8 +11,7 @@ from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from alembic import op
-from paradedb.sqlalchemy import indexing
-from sqlalchemy.dialects import postgresql
+from paradedb.sqlalchemy.alembic import CreateParadeDBIndexOp
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -22,34 +21,26 @@ down_revision: str | None = "20260713_0700"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-_BEATMAP_MODE_VALUES = ("osu", "taiko", "fruits", "mania", "unknown")
-_SEARCH_DOCUMENT_TABLE = "beatmapset_search_documents"
+_BEATMAPSET_TABLE = "beatmapsets"
 _COVERAGE_TABLE = "beatmap_direct_coverage"
 _EXTERNAL_INDEX_STATE_TABLE = "beatmap_direct_external_index_state"
-_SEARCH_DOCUMENT_BM25_INDEX = "idx_beatmapset_search_documents_bm25"
-_SEARCH_DOCUMENT_ACTIVE_STATUS_INDEX = "idx_beatmapset_search_documents_active_status_update"
+_SEARCH_DOCUMENT_BM25_INDEX = "idx_beatmapsets_direct_search_bm25"
+_SEARCH_DOCUMENT_ACTIVE_STATUS_INDEX = "idx_beatmapsets_direct_status_update"
+_SEARCH_DOCUMENT_VERSION_CONSTRAINT = "ck_beatmapsets_search_document_version_positive"
 _COVERAGE_SCOPE_INDEX = "idx_beatmap_direct_coverage_scope_lookup"
 _COVERAGE_FAILURE_INDEX = "idx_beatmap_direct_coverage_failure_lookup"
 _EXTERNAL_INDEX_STATE_STATUS_INDEX = "idx_beatmap_direct_external_index_state_status_lookup"
 _SEARCH_DOCUMENT_PARADEDB_FIELDS = (
-    "beatmapset_id",
-    "artist",
-    "title",
-    "creator",
-    "source",
-    "tags",
-    "difficulty_names",
-    "artist_unicode",
-    "title_unicode",
-    "status",
-    "modes",
-    "last_update_at",
+    "id",
+    "direct_search_text",
 )
-_SEARCH_DOCUMENT_MODES_COLUMN = sa.column(
-    "modes",
-    postgresql.ARRAY(sa.String(length=16)),
+_PG_AVAILABLE_EXTENSIONS = sa.table(
+    "pg_available_extensions",
+    sa.column("name", sa.String()),
 )
-_SEARCH_DOCUMENT_VERSION_COLUMN = sa.column("document_version", sa.Integer())
+_PARADEDB_EXTENSION = "pg_search"
+_VECTOR_EXTENSION = "vector"
+_SEARCH_DOCUMENT_VERSION_COLUMN = sa.column("search_document_version", sa.Integer())
 _COVERAGE_FROM_BEATMAPSET_ID_COLUMN = sa.column("from_beatmapset_id", sa.Integer())
 _COVERAGE_TO_BEATMAPSET_ID_COLUMN = sa.column("to_beatmapset_id", sa.Integer())
 _COVERAGE_COMPLETED_AT_COLUMN = sa.column("completed_at", sa.DateTime(timezone=True))
@@ -136,64 +127,49 @@ BEATMAP_DIRECT_EXTERNAL_INDEX_STATUS_ENUM = _checked_string_enum(
 
 
 def upgrade() -> None:
-    """osu!direct search projection, coverage, external index stateを作成する.
+    """osu!direct search input, coverage, external index stateを作成する.
 
     Returns:
-        None: projection, coverage, index state tableと検索indexを作成したことを示す.
+        None: beatmapsets検索入力, coverage, index state table, optional検索indexを
+            作成したことを示す.
 
     Raises:
-        SQLAlchemyError: pg_search extension有効化またはBM25 index作成に失敗した場合.
+        SQLAlchemyError: pg_search extension利用可能環境で有効化またはBM25 index作成に失敗した場合.
     """
-    _ = op.create_table(
-        _SEARCH_DOCUMENT_TABLE,
-        sa.Column("beatmapset_id", sa.Integer(), nullable=False),
-        sa.Column("artist", sa.String(length=255), nullable=False),
-        sa.Column("title", sa.String(length=255), nullable=False),
-        sa.Column("creator", sa.String(length=255), nullable=False),
-        sa.Column("artist_unicode", sa.String(length=255), nullable=True),
-        sa.Column("title_unicode", sa.String(length=255), nullable=True),
-        sa.Column("source", sa.Text(), nullable=False),
-        sa.Column("tags", sa.Text(), nullable=False),
-        sa.Column("difficulty_names", sa.Text(), nullable=False),
-        sa.Column("modes", postgresql.ARRAY(sa.String(length=16)), nullable=False),
-        sa.Column("status", BEATMAP_RANK_STATUS_ENUM, nullable=False),
-        sa.Column("last_update_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("is_active", sa.Boolean(), nullable=False),
-        sa.Column("document_version", sa.Integer(), nullable=False),
+    op.add_column(
+        _BEATMAPSET_TABLE,
+        sa.Column("source", sa.Text(), nullable=False, server_default=""),
+    )
+    op.add_column(
+        _BEATMAPSET_TABLE,
+        sa.Column("tags", sa.Text(), nullable=False, server_default=""),
+    )
+    op.add_column(
+        _BEATMAPSET_TABLE,
+        sa.Column("direct_search_text", sa.Text(), nullable=False, server_default=""),
+    )
+    op.add_column(
+        _BEATMAPSET_TABLE,
+        sa.Column("search_document_version", sa.Integer(), nullable=False, server_default="1"),
+    )
+    op.add_column(
+        _BEATMAPSET_TABLE,
         sa.Column(
-            "updated_at",
+            "search_document_updated_at",
             sa.DateTime(timezone=True),
             nullable=False,
             server_default=sa.func.now(),
         ),
-        sa.PrimaryKeyConstraint("beatmapset_id", name="pk_beatmapset_search_documents"),
-        sa.ForeignKeyConstraint(
-            ["beatmapset_id"],
-            ["beatmapsets.id"],
-            name="fk_beatmapset_search_documents_beatmapset_id",
-        ),
-        sa.CheckConstraint(
-            _SEARCH_DOCUMENT_VERSION_COLUMN > 0,
-            name="ck_beatmapset_search_documents_document_version_positive",
-        ),
-        sa.CheckConstraint(
-            sa.func.cardinality(_SEARCH_DOCUMENT_MODES_COLUMN) > 0,
-            name="ck_beatmapset_search_documents_modes_not_empty",
-        ),
-        sa.CheckConstraint(
-            _SEARCH_DOCUMENT_MODES_COLUMN.op("<@")(
-                sa.cast(
-                    postgresql.array(_BEATMAP_MODE_VALUES),
-                    postgresql.ARRAY(sa.String(length=16)),
-                )
-            ),
-            name="ck_beatmapset_search_documents_modes_known",
-        ),
+    )
+    op.create_check_constraint(
+        _SEARCH_DOCUMENT_VERSION_CONSTRAINT,
+        _BEATMAPSET_TABLE,
+        _SEARCH_DOCUMENT_VERSION_COLUMN > 0,
     )
     op.create_index(
         _SEARCH_DOCUMENT_ACTIVE_STATUS_INDEX,
-        _SEARCH_DOCUMENT_TABLE,
-        ["is_active", "status", "last_update_at", "beatmapset_id"],
+        _BEATMAPSET_TABLE,
+        ["official_status", "search_document_updated_at", "id"],
     )
     _create_search_document_bm25_index()
 
@@ -287,10 +263,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """osu!direct search projection, coverage, external index stateを削除する.
+    """osu!direct search input, coverage, external index stateを削除する.
 
     Returns:
-        None: 追加したindexとtableを依存順に削除したことを示す.
+        None: 追加したindex, column, tableを依存順に削除したことを示す.
     """
     op.drop_index(
         _EXTERNAL_INDEX_STATE_STATUS_INDEX,
@@ -304,30 +280,69 @@ def downgrade() -> None:
     _drop_search_document_bm25_index()
     op.drop_index(
         _SEARCH_DOCUMENT_ACTIVE_STATUS_INDEX,
-        table_name=_SEARCH_DOCUMENT_TABLE,
+        table_name=_BEATMAPSET_TABLE,
         if_exists=True,
     )
-    op.drop_table(_SEARCH_DOCUMENT_TABLE)
+    op.drop_constraint(
+        _SEARCH_DOCUMENT_VERSION_CONSTRAINT,
+        _BEATMAPSET_TABLE,
+        type_="check",
+    )
+    op.drop_column(_BEATMAPSET_TABLE, "search_document_updated_at")
+    op.drop_column(_BEATMAPSET_TABLE, "search_document_version")
+    op.drop_column(_BEATMAPSET_TABLE, "direct_search_text")
+    op.drop_column(_BEATMAPSET_TABLE, "tags")
+    op.drop_column(_BEATMAPSET_TABLE, "source")
 
 
 def _create_search_document_bm25_index() -> None:
-    """ParadeDB indexをsearch document tableへ作成する.
+    """ParadeDB indexをbeatmapsetsのmaterialized検索入力へ作成する.
 
     Returns:
-        None: search/filter/sort columnを含むParadeDB indexを作成したことを示す.
+        None: pg_search利用可能時だけmaterialized検索入力を含むParadeDB indexを作成したことを示す.
     """
+    if not _paradedb_extensions_available():
+        return
+
     op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
     op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS pg_search"))
-    op.create_index(
-        _SEARCH_DOCUMENT_BM25_INDEX,
-        _SEARCH_DOCUMENT_TABLE,
-        [
-            indexing.ParadeDBField(sa.column(field_name))
-            for field_name in _SEARCH_DOCUMENT_PARADEDB_FIELDS
-        ],
-        postgresql_using="paradedb",
-        postgresql_with={"key_field": "beatmapset_id"},
+    op.invoke(
+        CreateParadeDBIndexOp(
+            index_name=_SEARCH_DOCUMENT_BM25_INDEX,
+            table_name=_BEATMAPSET_TABLE,
+            expressions=list(_SEARCH_DOCUMENT_PARADEDB_FIELDS),
+            key_field="id",
+        )
     )
+
+
+def _paradedb_extensions_available() -> bool:
+    """PostgreSQL clusterにParadeDBの依存extensionが導入済みか返す.
+
+    Returns:
+        bool: `CREATE EXTENSION vector` と `CREATE EXTENSION pg_search` が可能ならTrue.
+    """
+    return _postgres_extension_available(_VECTOR_EXTENSION) and _postgres_extension_available(
+        _PARADEDB_EXTENSION
+    )
+
+
+def _postgres_extension_available(extension_name: str) -> bool:
+    """PostgreSQL clusterに指定extensionが導入済みか返す.
+
+    Args:
+        extension_name (str): `pg_available_extensions`で確認するextension名.
+
+    Returns:
+        bool: 指定extensionをこのDBで作成できる場合はTrue.
+    """
+    statement = (
+        sa.select(sa.literal(True))
+        .select_from(_PG_AVAILABLE_EXTENSIONS)
+        .where(_PG_AVAILABLE_EXTENSIONS.c.name == extension_name)
+        .limit(1)
+    )
+    return bool(op.get_bind().execute(statement).scalar_one_or_none())
 
 
 def _drop_search_document_bm25_index() -> None:
@@ -336,4 +351,4 @@ def _drop_search_document_bm25_index() -> None:
     Returns:
         None: search document ParadeDB indexを削除または不在のまま確認したことを示す.
     """
-    op.drop_index(_SEARCH_DOCUMENT_BM25_INDEX, table_name=_SEARCH_DOCUMENT_TABLE, if_exists=True)
+    op.drop_index(_SEARCH_DOCUMENT_BM25_INDEX, table_name=_BEATMAPSET_TABLE, if_exists=True)

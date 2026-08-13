@@ -15,6 +15,7 @@ from osu_server.domain.beatmaps import (
     BeatmapSet,
     BeatmapSourceVerification,
 )
+from osu_server.domain.compatibility.stable.direct import STABLE_DIRECT_MORE_RESULTS_SENTINEL
 from osu_server.services.queries.beatmaps import (
     DirectPointLookupQueryResult,
     DirectSearchQueryResult,
@@ -141,6 +142,23 @@ def test_direct_status_values_follow_stable_ranked_status_mapping() -> None:
             )
         )
         assert body.split("|")[4] == expected
+
+
+def test_search_response_preserves_more_sentinel_for_short_upstream_page() -> None:
+    """50行のupstream pageでもmore sentinelをcount lineへ出す契約を検証する.
+
+    Returns:
+        None: Hinamizawa aeris互換の`101` count lineと短い本文pageを検証して完了する.
+    """
+    result = DirectSearchQueryResult(
+        beatmapsets=tuple(_beatmapset(beatmapset_id) for beatmapset_id in range(1, 51)),
+        stable_result_count=STABLE_DIRECT_MORE_RESULTS_SENTINEL,
+    )
+
+    lines = _response_text(format_direct_search_response(result)).splitlines()
+
+    assert lines[0] == "101"
+    assert len(lines[1:]) == 50
 
 
 def _response_text(response: Response) -> str:

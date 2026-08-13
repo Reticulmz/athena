@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -543,6 +544,7 @@ async def test_worker_startup_configures_logging(
     parsed = cast("dict[str, object]", json.loads(content.split("\n")[-1]))
     assert parsed["event"] == "worker_test_event"
     assert parsed["password"] == "***"
+    assert parsed["runtime_role"] == "worker"
 
 
 @pytest.mark.asyncio
@@ -578,6 +580,10 @@ async def test_worker_startup_sets_task_use_cases_from_dishka_container(
             PersistPrivateMessageUseCase,
         )
         assert isinstance(_state_beatmap_metadata_fetch(state), FetchBeatmapMetadataUseCase)
+        assert isinstance(
+            getattr(state, "beatmap_metadata_fetch_semaphore", None),
+            asyncio.Semaphore,
+        )
         assert isinstance(_state_beatmap_file_fetch(state), FetchBeatmapFileUseCase)
         assert isinstance(
             _state_score_performance_calculation_executor(state),
@@ -654,6 +660,7 @@ async def test_worker_startup_failure_closes_dishka_container(
     assert _state_persist_channel_message_use_case(state) is None
     assert _state_persist_private_message_use_case(state) is None
     assert _state_beatmap_metadata_fetch(state) is None
+    assert getattr(state, "beatmap_metadata_fetch_semaphore", None) is None
     assert _state_beatmap_file_fetch(state) is None
     assert _state_score_performance_calculation_executor(state) is None
     assert _state_performance_recalculation_batch_processor(state) is None
@@ -814,6 +821,7 @@ async def test_worker_shutdown_clears_runtime_state() -> None:
     state.persist_channel_message_use_case = object()
     state.persist_private_message_use_case = object()
     state.beatmap_metadata_fetch = object()
+    state.beatmap_metadata_fetch_semaphore = object()
     state.beatmap_file_fetch = object()
     state.score_performance_calculation_executor = object()
     state.performance_recalculation_batch_processor = object()
@@ -831,6 +839,7 @@ async def test_worker_shutdown_clears_runtime_state() -> None:
     assert _state_persist_channel_message_use_case(state) is None
     assert _state_persist_private_message_use_case(state) is None
     assert _state_beatmap_metadata_fetch(state) is None
+    assert getattr(state, "beatmap_metadata_fetch_semaphore", None) is None
     assert _state_beatmap_file_fetch(state) is None
     assert _state_score_performance_calculation_executor(state) is None
     assert _state_performance_recalculation_batch_processor(state) is None

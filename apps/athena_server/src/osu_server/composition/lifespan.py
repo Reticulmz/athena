@@ -48,7 +48,7 @@ async def _initialize_dishka_app_container(container: AsyncContainer) -> None:
     _ = await container.get(AsyncEngine)
     _ = await container.get(AsyncBroker)
     _ = await container.get(httpx.AsyncClient)
-    if config.osu_direct_validate_sql_search_backend_on_startup:
+    if config.osu_direct_validate_search_backend_on_startup:
         backend = await container.get(DirectSearchBackend)
         await backend.validate()
     _ = await container.get(BanchoEndpoint)
@@ -126,7 +126,7 @@ async def _run_lifespan(
         shutdownでは`dishka_container.close()`でDishka APP scope dependencyをfinalizeする.
     """
     config = load_config()
-    setup_logging(config)
+    setup_logging(config, runtime_role="app_server")
     dishka_container = make_app_container(config, overrides=provider_overrides)
     app.state.dishka_container = dishka_container
 

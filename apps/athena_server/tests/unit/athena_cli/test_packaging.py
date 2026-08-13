@@ -37,6 +37,7 @@ RUNTIME_DEPENDENCIES = [
     "starlette-dishka",
     "rosu-pp-py==4.0.2",
     "sqlalchemy-paradedb==0.10.0",
+    "meilisearch-python-sdk>=7.4.1",
 ]
 
 

@@ -300,7 +300,7 @@ class _InjectedDirectSearchBackend:
         return DirectSearchBackendResult(candidates=(), has_more=False)
 
     async def validate(self) -> None:
-        """Startup時のrequired SQL backend検証を記録する.
+        """Startup時のsearch backend検証を記録する.
 
         Returns:
             None: backendが利用可能であることを示し, 呼び出し回数だけを更新する.

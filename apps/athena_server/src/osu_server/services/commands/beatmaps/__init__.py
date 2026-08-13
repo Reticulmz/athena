@@ -10,6 +10,7 @@ from osu_server.services.commands.beatmaps.direct_catalog_sync import (
     DirectCatalogScheduleResult,
     DirectCatalogWork,
     DirectCatalogWorkKind,
+    RecordDirectSearchCoverageUseCase,
 )
 from osu_server.services.commands.beatmaps.fetch import (
     BeatmapBlobStorage,
@@ -39,5 +40,6 @@ __all__ = [
     "DirectCatalogWorkKind",
     "FetchBeatmapFileUseCase",
     "FetchBeatmapMetadataUseCase",
+    "RecordDirectSearchCoverageUseCase",
     "RequestBeatmapFileWarmupUseCase",
 ]

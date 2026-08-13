@@ -571,6 +571,37 @@ class DirectRangeCrawl:
             await uow.commit()
 
 
+class RecordDirectSearchCoverageUseCase:
+    """検索時に観測したosu!direct coverageを保存するcommand use-case.
+
+    Attributes:
+        _unit_of_work_factory (UnitOfWorkFactory): coverage recordを書き込むUoW factory.
+    """
+
+    _unit_of_work_factory: UnitOfWorkFactory
+
+    def __init__(self, unit_of_work_factory: UnitOfWorkFactory) -> None:
+        """Coverage保存用UoW factoryを保持する.
+
+        Args:
+            unit_of_work_factory (UnitOfWorkFactory): coverage recordを書き込むfactory.
+        """
+        self._unit_of_work_factory = unit_of_work_factory
+
+    async def execute(self, record: DirectCoverageRecord) -> None:
+        """Coverage recordを保存する.
+
+        Args:
+            record (DirectCoverageRecord): 検索またはcatalog jobが観測したcoverage record.
+
+        Returns:
+            None: coverage recordをcommitして値を返さず完了する.
+        """
+        async with self._unit_of_work_factory() as uow:
+            await uow.beatmaps.record_direct_coverage(record)
+            await uow.commit()
+
+
 def _is_catalog_work(work_kind: DirectCatalogWorkKind) -> bool:
     """Work種別がbackground catalog workか判定する.
 
@@ -736,6 +767,8 @@ def _snapshot_to_beatmapset(snapshot: BeatmapsetSnapshot) -> BeatmapSet:
         beatmaps=beatmaps,
         last_fetched_at=snapshot.last_fetched_at,
         next_refresh_at=snapshot.next_refresh_at,
+        source_text=snapshot.source_text,
+        tags=snapshot.tags,
     )
 
 

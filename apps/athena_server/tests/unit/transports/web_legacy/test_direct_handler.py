@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from http import HTTPStatus
 from typing import TYPE_CHECKING, cast
 
-from osu_server.domain.beatmaps import DirectAccessDecision, DirectPointLookupTargetKind
+from osu_server.domain.beatmaps import (
+    BeatmapMetadataSource,
+    DirectAccessDecision,
+    DirectCoverageKind,
+    DirectCoverageRecord,
+    DirectCoverageStatusScope,
+    DirectPointLookupTargetKind,
+)
 from osu_server.services.queries.beatmaps import (
     DirectPointLookupQueryResult,
     DirectSearchQueryResult,
@@ -25,8 +33,12 @@ from tests.support.starlette_requests import make_starlette_request
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from osu_server.domain.beatmaps import DirectPointLookupRequest, DirectSearchRequest
+    from osu_server.domain.beatmaps import (
+        DirectPointLookupRequest,
+        DirectSearchRequest,
+    )
     from osu_server.services.queries.beatmaps import DirectPointLookupQuery, DirectSearchQuery
+    from osu_server.transports.stable.web_legacy.direct import StableDirectSearchCoverageRecorder
     from osu_server.transports.stable.web_legacy.direct_access import StableDirectAccessGate
 
 
@@ -81,6 +93,28 @@ class _DirectSearchQueryFake:
 
 
 @dataclass(slots=True)
+class _DirectCoverageRecorderFake:
+    """Direct search coverage保存commandの呼び出しを記録するfake.
+
+    Attributes:
+        records (list[DirectCoverageRecord]): 保存要求されたcoverage record列.
+    """
+
+    records: list[DirectCoverageRecord]
+
+    async def execute(self, record: DirectCoverageRecord) -> None:
+        """Coverage recordを記録する.
+
+        Args:
+            record (DirectCoverageRecord): handlerから保存要求されたcoverage record.
+
+        Returns:
+            None: recordを記録して値を返さず完了する.
+        """
+        self.records.append(record)
+
+
+@dataclass(slots=True)
 class _DirectPointLookupQueryFake:
     """Direct point lookup handler test用に固定lookup結果を返すquery fake.
 
@@ -115,6 +149,7 @@ async def test_direct_search_handler_rejects_auth_failure_before_query() -> None
         None: 空bodyのHTTP 401とquery未呼出しを確認して完了する.
     """
     query = _DirectSearchQueryFake(DirectSearchQueryResult((), 0), [])
+    coverage_recorder = _DirectCoverageRecorderFake([])
     handler = StableDirectSearchHandler(
         access_gate=cast(
             "StableDirectAccessGate",
@@ -128,6 +163,10 @@ async def test_direct_search_handler_rejects_auth_failure_before_query() -> None
         ),
         search_parser=StableDirectSearchQueryParser(),
         search_query=cast("DirectSearchQuery", cast("object", query)),
+        coverage_recorder=cast(
+            "StableDirectSearchCoverageRecorder",
+            cast("object", coverage_recorder),
+        ),
     )
 
     response = await handler(make_starlette_request(path="/web/osu-search.php"))
@@ -135,6 +174,7 @@ async def test_direct_search_handler_rejects_auth_failure_before_query() -> None
     assert response.status_code == HTTPStatus.UNAUTHORIZED
     assert response.body == b""
     assert query.requests == []
+    assert coverage_recorder.records == []
 
 
 async def test_direct_search_handler_executes_parsed_query_for_authorized_user() -> None:
@@ -144,6 +184,7 @@ async def test_direct_search_handler_executes_parsed_query_for_authorized_user()
         None: stable query parameterからsearch requestを作りcount responseを返すことを確認する.
     """
     query = _DirectSearchQueryFake(DirectSearchQueryResult((), 0), [])
+    coverage_recorder = _DirectCoverageRecorderFake([])
     handler = StableDirectSearchHandler(
         access_gate=cast(
             "StableDirectAccessGate",
@@ -160,6 +201,10 @@ async def test_direct_search_handler_executes_parsed_query_for_authorized_user()
         ),
         search_parser=StableDirectSearchQueryParser(),
         search_query=cast("DirectSearchQuery", cast("object", query)),
+        coverage_recorder=cast(
+            "StableDirectSearchCoverageRecorder",
+            cast("object", coverage_recorder),
+        ),
     )
 
     response = await handler(
@@ -174,6 +219,62 @@ async def test_direct_search_handler_executes_parsed_query_for_authorized_user()
     assert len(query.requests) == 1
     assert query.requests[0].authenticated_user_id == 42
     assert query.requests[0].query_text == "Camellia"
+    assert coverage_recorder.records == []
+
+
+async def test_direct_search_handler_records_query_coverage() -> None:
+    """Query resultにcoverage recordがある場合に保存commandへ渡す契約を検証する.
+
+    Returns:
+        None: stable responseを返しつつcoverage保存commandが呼ばれることを確認して完了する.
+    """
+    coverage = DirectCoverageRecord(
+        coverage_kind=DirectCoverageKind.FEED_WINDOW,
+        source=BeatmapMetadataSource.MIRROR,
+        status_scope=DirectCoverageStatusScope.ALL,
+        sort_key="upstream-search",
+        window_key="search:0123456789abcdef0123456789abcdef",
+        from_beatmapset_id=0,
+        to_beatmapset_id=0,
+        cursor=None,
+        completed_at=datetime(2026, 1, 1, tzinfo=UTC),
+        failed_at=None,
+        failure_reason=None,
+    )
+    query = _DirectSearchQueryFake(DirectSearchQueryResult((), 0, coverage), [])
+    coverage_recorder = _DirectCoverageRecorderFake([])
+    handler = StableDirectSearchHandler(
+        access_gate=cast(
+            "StableDirectAccessGate",
+            cast(
+                "object",
+                _DirectAccessGateFake(
+                    StableDirectAccessResult(
+                        DirectAccessDecision.ALLOWED,
+                        authenticated_user_id=42,
+                    ),
+                    [],
+                ),
+            ),
+        ),
+        search_parser=StableDirectSearchQueryParser(),
+        search_query=cast("DirectSearchQuery", cast("object", query)),
+        coverage_recorder=cast(
+            "StableDirectSearchCoverageRecorder",
+            cast("object", coverage_recorder),
+        ),
+    )
+
+    response = await handler(
+        make_starlette_request(
+            path="/web/osu-search.php",
+            query_params={"u": "Player", "h": "hash", "q": "Camellia"},
+        )
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.body == b"0"
+    assert coverage_recorder.records == [coverage]
 
 
 async def test_direct_point_lookup_handler_executes_parsed_lookup_for_authorized_user() -> None:

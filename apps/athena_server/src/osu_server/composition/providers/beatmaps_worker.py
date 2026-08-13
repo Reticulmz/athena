@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast, final
+from typing import TYPE_CHECKING, final
 
 import httpx
 from dishka import Provider, Scope
+from meilisearch_python_sdk import AsyncClient as MeilisearchAsyncClient
 
 from osu_server.composition.providers._dishka import provide
 from osu_server.config import AppConfig
@@ -56,6 +57,7 @@ _DISHKA_RUNTIME_HINTS = (
     DirectIndexingCommands,
     DirectRangeCrawl,
     UnitOfWorkFactory,
+    MeilisearchAsyncClient,
     httpx.AsyncClient,
 )
 
@@ -243,21 +245,21 @@ class BeatmapWorkerProviderSet(Provider):
         self,
         config: AppConfig,
         unit_of_work_factory: UnitOfWorkFactory,
-        http_client: httpx.AsyncClient,
+        meilisearch_client: MeilisearchAsyncClient | None,
     ) -> DirectIndexingCommands:
         """Projection/external index commandをworker runtime用に構成する.
 
         Args:
             config (AppConfig): optional external index backend設定を持つ実行時設定.
             unit_of_work_factory (UnitOfWorkFactory): command transactionを開くfactory.
-            http_client (httpx.AsyncClient): Meilisearch adapterが利用する共有HTTP client.
+            meilisearch_client (MeilisearchAsyncClient | None): Meilisearch SDK client.
 
         Returns:
             DirectIndexingCommands: rebuildとexternal index update用command.
         """
         return DirectIndexingCommands(
             unit_of_work_factory=unit_of_work_factory,
-            external_index_backend=_make_external_index_backend(config, http_client),
+            external_index_backend=_make_external_index_backend(config, meilisearch_client),
             backend=DirectExternalIndexBackend.MEILISEARCH,
         )
 
@@ -325,24 +327,22 @@ def _feed_sort(sort_key: str) -> str:
 
 def _make_external_index_backend(
     config: AppConfig,
-    http_client: httpx.AsyncClient,
+    meilisearch_client: MeilisearchAsyncClient | None,
 ) -> DirectExternalIndexWriter | None:
     """設定に応じてoptional external index adapterを作成する.
 
     Args:
         config (AppConfig): external index backendとMeilisearch接続設定.
-        http_client (httpx.AsyncClient): Meilisearch request用HTTP client.
+        meilisearch_client (MeilisearchAsyncClient | None): Meilisearch SDK client.
 
     Returns:
         DirectExternalIndexWriter | None: disabledならNone, Meilisearchならadapter.
     """
-    if config.osu_direct_external_index_backend == "disabled":
+    if config.osu_direct_external_index_backend == "disabled" or meilisearch_client is None:
         return None
     return MeilisearchDirectIndexBackend(
-        http_client=http_client,
-        base_url=cast("str", config.osu_direct_meilisearch_url),
+        client=meilisearch_client,
         index_name=config.osu_direct_meilisearch_index_name,
-        access_key=config.osu_direct_meilisearch_access_key,
     )
 
 

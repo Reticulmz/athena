@@ -683,6 +683,36 @@ class TestFetchBeatmapMetadataUseCase:
         assert fetch_record is not None
         assert fetch_record.status is BeatmapFetchState.FAILED
 
+    async def test_mark_failed_when_snapshot_save_conflicts(self) -> None:
+        """保存時checksum競合を未処理例外にせずFAILED fetch stateへ変換する.
+
+        Returns:
+            None: checksum競合後のfetch stateを検証して完了する.
+        """
+        repo = InMemoryBeatmapStore()
+        initial = _make_snapshot(
+            beatmap_id=2000,
+            beatmapset_id=1000,
+            checksum_md5=_DEFAULT_CHECKSUM,
+        )
+        await repo.save_beatmapset_snapshot(_snapshot_to_beatmapset(initial))
+        conflicting = _make_snapshot(
+            beatmap_id=2001,
+            beatmapset_id=1001,
+            checksum_md5=_DEFAULT_CHECKSUM,
+        )
+        official = StubMetadataProvider(by_beatmap_id={2001: conflicting})
+        job = self._make_job(repo, official=official)
+        target = BeatmapFetchTarget.metadata_by_beatmap_id(2001)
+
+        await job.execute(target)
+
+        fetch_record = await repo.get_fetch_state(target)
+        assert fetch_record is not None
+        assert fetch_record.status is BeatmapFetchState.FAILED
+        assert fetch_record.last_error is not None
+        assert _DEFAULT_CHECKSUM in fetch_record.last_error
+
     # --- idempotency ---------------------------------------------------------
 
     async def test_already_pending_skips_fetch(self) -> None:

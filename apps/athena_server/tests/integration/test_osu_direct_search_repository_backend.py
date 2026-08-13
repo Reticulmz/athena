@@ -24,6 +24,8 @@ from osu_server.domain.beatmaps import (
     DirectCoverageStatusScope,
     DirectExternalIndexBackend,
     DirectExternalIndexStatus,
+    DirectSearchBackendResult,
+    DirectSearchCandidate,
     DirectSearchListing,
     DirectSearchRequest,
 )
@@ -34,7 +36,6 @@ from osu_server.repositories.sqlalchemy.models.beatmap import (
     BeatmapDirectExternalIndexStateModel,
     BeatmapModel,
     BeatmapSetModel,
-    BeatmapSetSearchDocumentModel,
 )
 from osu_server.repositories.sqlalchemy.queries.beatmaps import (
     SQLAlchemyBeatmapQueryRepository,
@@ -53,16 +54,21 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
     from osu_server.domain.beatmaps import BeatmapSetSearchDocument
+    from tests.conftest import QueryBudget
 
 _BEATMAPSET_ID = 2_147_460_201
 _BEATMAP_ID = 2_147_460_202
+_SECOND_BEATMAP_ID = 2_147_460_203
 _CHECKSUM_MD5 = "21474602010000000000000000000000"
+_SECOND_CHECKSUM_MD5 = "21474602030000000000000000000000"
 _NOW = datetime(2026, 8, 10, 12, 0, tzinfo=UTC)
 _FUTURE_LAST_UPDATED = datetime(2099, 1, 1, tzinfo=UTC)
 _COVERAGE_SORT_KEYS = (
     "kiro-osu-direct-feed",
     "kiro-osu-direct-range",
 )
+_BATCH_HYDRATE_START_ID = 2_147_460_300
+_BATCH_HYDRATE_COUNT = 100
 
 
 class FailingExternalIndexBackend:
@@ -92,6 +98,49 @@ class FailingExternalIndexBackend:
         """
         self.indexed_documents.append(document)
         raise RuntimeError("raw provider failure details")
+
+
+class FixedDirectSearchBackend:
+    """固定候補ID列を返すdirect search backend test double.
+
+    Attributes:
+        beatmapset_ids (tuple[int, ...]): search候補として返すbeatmapset ID列.
+    """
+
+    beatmapset_ids: tuple[int, ...]
+
+    def __init__(self, beatmapset_ids: tuple[int, ...]) -> None:
+        """候補ID列を保持する.
+
+        Args:
+            beatmapset_ids (tuple[int, ...]): search結果に含めるbeatmapset ID列.
+        """
+        self.beatmapset_ids = beatmapset_ids
+
+    async def search(self, request: DirectSearchRequest) -> DirectSearchBackendResult:
+        """固定候補ID列をbackend resultとして返す.
+
+        Args:
+            request (DirectSearchRequest): query use-caseから渡される検索条件.
+
+        Returns:
+            DirectSearchBackendResult: 固定候補ID列を含む検索結果.
+        """
+        _ = request
+        return DirectSearchBackendResult(
+            candidates=tuple(
+                DirectSearchCandidate(beatmapset_id=beatmapset_id, score=1.0)
+                for beatmapset_id in self.beatmapset_ids
+            ),
+            has_more=False,
+        )
+
+    async def validate(self) -> None:
+        """Backend availability検証を何もせず成功させる.
+
+        Returns:
+            None: test doubleが常に利用可能であることを示す.
+        """
 
 
 def _get_database_url() -> str:
@@ -197,18 +246,20 @@ async def test_direct_search_repository_backend_and_index_state_share_source_of_
     async with uow_factory() as uow:
         await uow.beatmaps.save_beatmapset_snapshot(_beatmapset())
         assert await uow.beatmaps.get_search_document(_BEATMAPSET_ID) is not None
-        assert await _get_search_document_model(session_factory) is None
+        assert await _get_beatmapset_model(session_factory) is None
         await uow.commit()
 
-    document = await _get_search_document_model(session_factory)
+    document = await _get_beatmapset_model(session_factory)
     assert document is not None
-    assert document.beatmapset_id == _BEATMAPSET_ID
+    assert document.id == _BEATMAPSET_ID
     assert document.title == "Metadata Title"
-    assert document.difficulty_names == "Integration"
-    assert document.is_active is True
-    assert document.document_version == 1
+    assert (
+        document.direct_search_text
+        == "Integration Artist Metadata Title Integration Mapper Integration"
+    )
+    assert document.search_document_version == 1
 
-    await _replace_projection_title(session_factory, "Projection Shadow Title")
+    await _replace_direct_search_text(session_factory, "Projection Shadow Title")
 
     backend = ParadeDBSearchBackend(session_factory)
     backend_result = await backend.search(request)
@@ -244,6 +295,27 @@ async def test_direct_search_repository_backend_and_index_state_share_source_of_
         backend,
     ).execute(request)
     assert [beatmapset.id for beatmapset in still_available.beatmapsets] == [_BEATMAPSET_ID]
+
+
+async def test_save_new_beatmapset_snapshot_persists_multiple_child_beatmaps(
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """新規beatmapsetと複数childを同じtransactionで保存できることを検証する.
+
+    Args:
+        uow_factory (SQLAlchemyUnitOfWorkFactory): 実DBへcommitするcommand UoW factory.
+        session_factory (async_sessionmaker[AsyncSession]): 保存済みchild rowを読むsession factory.
+
+    Returns:
+        None: 複数childがFK違反なく保存されることを確認して完了する.
+    """
+    async with uow_factory() as uow:
+        await uow.beatmaps.save_beatmapset_snapshot(_beatmapset_with_multiple_beatmaps())
+        await uow.commit()
+
+    beatmaps = await _get_beatmap_models(session_factory)
+    assert [beatmap.id for beatmap in beatmaps] == [_BEATMAP_ID, _SECOND_BEATMAP_ID]
 
 
 async def test_direct_coverage_records_completed_failed_feed_and_range_scopes(
@@ -326,6 +398,54 @@ async def test_direct_coverage_records_completed_failed_feed_and_range_scopes(
     )
 
 
+async def test_direct_search_hydrates_full_page_without_candidate_n_plus_one(
+    uow_factory: SQLAlchemyUnitOfWorkFactory,
+    session_factory: async_sessionmaker[AsyncSession],
+    query_budget: QueryBudget,
+) -> None:
+    """100件のdirect候補hydrateが候補数比例のSQLを発行しないことを検証する.
+
+    Args:
+        uow_factory (SQLAlchemyUnitOfWorkFactory): test beatmapsetを保存するcommand UoW.
+        session_factory (async_sessionmaker[AsyncSession]): query repository用session factory.
+        query_budget (QueryBudget): SQL query数を検証するfixture.
+
+    Returns:
+        None: 100候補が少数queryでhydrateされることを確認して完了する.
+    """
+    beatmapset_ids = tuple(
+        range(_BATCH_HYDRATE_START_ID, _BATCH_HYDRATE_START_ID + _BATCH_HYDRATE_COUNT)
+    )
+    async with uow_factory() as uow:
+        for beatmapset_id in beatmapset_ids:
+            await uow.beatmaps.save_beatmapset_snapshot(
+                _beatmapset(
+                    beatmapset_id=beatmapset_id,
+                    beatmap_id=beatmapset_id + 10_000,
+                    checksum_md5=f"{beatmapset_id:032x}",
+                )
+            )
+        await uow.commit()
+
+    query = DirectSearchQuery(
+        SQLAlchemyBeatmapQueryRepository(session_factory),
+        FixedDirectSearchBackend(beatmapset_ids),
+    )
+    request = DirectSearchRequest(
+        authenticated_user_id=42,
+        query_text="Newest",
+        statuses=(BeatmapRankStatus.RANKED,),
+        mode=BeatmapMode.OSU,
+        page_size=_BATCH_HYDRATE_COUNT,
+        listing=DirectSearchListing.NEWEST,
+    )
+
+    with query_budget(max_queries=5, name="osu direct hydrate full page"):
+        result = await query.execute(request)
+
+    assert [beatmapset.id for beatmapset in result.beatmapsets] == list(beatmapset_ids)
+
+
 async def _cleanup_rows(session_factory: async_sessionmaker[AsyncSession]) -> None:
     """このtest専用のosu!direct integration rowを削除する.
 
@@ -338,19 +458,14 @@ async def _cleanup_rows(session_factory: async_sessionmaker[AsyncSession]) -> No
     async with session_factory() as session:
         _ = await session.execute(
             delete(BeatmapDirectExternalIndexStateModel).where(
-                BeatmapDirectExternalIndexStateModel.beatmapset_id == _BEATMAPSET_ID
+                BeatmapDirectExternalIndexStateModel.beatmapset_id.in_((*_test_beatmapset_ids(),))
             )
         )
         _ = await session.execute(
-            delete(BeatmapSetSearchDocumentModel).where(
-                BeatmapSetSearchDocumentModel.beatmapset_id == _BEATMAPSET_ID
-            )
+            delete(BeatmapModel).where(BeatmapModel.beatmapset_id.in_(_test_beatmapset_ids()))
         )
         _ = await session.execute(
-            delete(BeatmapModel).where(BeatmapModel.beatmapset_id == _BEATMAPSET_ID)
-        )
-        _ = await session.execute(
-            delete(BeatmapSetModel).where(BeatmapSetModel.id == _BEATMAPSET_ID)
+            delete(BeatmapSetModel).where(BeatmapSetModel.id.in_(_test_beatmapset_ids()))
         )
         _ = await session.execute(
             delete(BeatmapDirectCoverageModel).where(
@@ -360,40 +475,40 @@ async def _cleanup_rows(session_factory: async_sessionmaker[AsyncSession]) -> No
         await session.commit()
 
 
-async def _get_search_document_model(
+async def _get_beatmapset_model(
     session_factory: async_sessionmaker[AsyncSession],
-) -> BeatmapSetSearchDocumentModel | None:
-    """保存済みsearch projection modelを直接読む.
+) -> BeatmapSetModel | None:
+    """保存済みbeatmapset modelを直接読む.
 
     Args:
         session_factory (async_sessionmaker[AsyncSession]): read用session factory.
 
     Returns:
-        BeatmapSetSearchDocumentModel | None: test beatmapsetのprojection row.
+        BeatmapSetModel | None: test beatmapsetのmetadata row.
     """
     async with session_factory() as session:
-        model = await session.get(BeatmapSetSearchDocumentModel, _BEATMAPSET_ID)
-        return model if isinstance(model, BeatmapSetSearchDocumentModel) else None
+        model = await session.get(BeatmapSetModel, _BEATMAPSET_ID)
+        return model if isinstance(model, BeatmapSetModel) else None
 
 
-async def _replace_projection_title(
+async def _replace_direct_search_text(
     session_factory: async_sessionmaker[AsyncSession],
-    title: str,
+    search_text: str,
 ) -> None:
-    """Hydration source of truth検証用にprojection titleだけを差し替える.
+    """Hydration source of truth検証用にmaterialized検索入力だけを差し替える.
 
     Args:
         session_factory (async_sessionmaker[AsyncSession]): update用session factory.
-        title (str): projection rowへ保存するmetadataと異なるtitle.
+        search_text (str): metadataと異なるmaterialized検索入力.
 
     Returns:
-        None: projection titleを更新してcommitする.
+        None: materialized検索入力を更新してcommitする.
     """
     async with session_factory() as session:
         _ = await session.execute(
-            update(BeatmapSetSearchDocumentModel)
-            .where(BeatmapSetSearchDocumentModel.beatmapset_id == _BEATMAPSET_ID)
-            .values(title=title)
+            update(BeatmapSetModel)
+            .where(BeatmapSetModel.id == _BEATMAPSET_ID)
+            .values(direct_search_text=search_text)
         )
         await session.commit()
 
@@ -415,6 +530,32 @@ async def _get_index_state_model(
             (DirectExternalIndexBackend.MEILISEARCH.value, _BEATMAPSET_ID),
         )
         return model if isinstance(model, BeatmapDirectExternalIndexStateModel) else None
+
+
+async def _get_beatmap_models(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> tuple[BeatmapModel, ...]:
+    """保存済みchild beatmap modelを直接読む.
+
+    Args:
+        session_factory (async_sessionmaker[AsyncSession]): read用session factory.
+
+    Returns:
+        tuple[BeatmapModel, ...]: test beatmapsetに属するchild row列.
+    """
+    async with session_factory() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(BeatmapModel)
+                    .where(BeatmapModel.beatmapset_id == _BEATMAPSET_ID)
+                    .order_by(BeatmapModel.id.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return tuple(rows)
 
 
 async def _get_coverage_models(
@@ -443,11 +584,49 @@ async def _get_coverage_models(
         return tuple(rows)
 
 
-def _beatmapset() -> BeatmapSet:
+def _beatmapset(
+    *,
+    beatmapset_id: int = _BEATMAPSET_ID,
+    beatmap_id: int = _BEATMAP_ID,
+    checksum_md5: str = _CHECKSUM_MD5,
+) -> BeatmapSet:
     """osu!direct integration test用beatmapset metadataを作る.
+
+    Args:
+        beatmapset_id (int): beatmapsetの永続化識別子.
+        beatmap_id (int): child beatmapの永続化識別子.
+        checksum_md5 (str): child beatmapのMD5 checksum.
 
     Returns:
         BeatmapSet: direct検索可能なchildを1件持つmetadata snapshot.
+    """
+    return BeatmapSet(
+        id=beatmapset_id,
+        artist="Integration Artist",
+        title="Metadata Title",
+        creator="Integration Mapper",
+        artist_unicode=None,
+        title_unicode=None,
+        official_status=BeatmapRankStatus.RANKED,
+        official_status_source=BeatmapMetadataSource.OFFICIAL,
+        official_status_verified=BeatmapSourceVerification.VERIFIED,
+        beatmaps=(
+            _beatmap(
+                beatmapset_id=beatmapset_id,
+                beatmap_id=beatmap_id,
+                checksum_md5=checksum_md5,
+            ),
+        ),
+        last_fetched_at=_NOW,
+        next_refresh_at=None,
+    )
+
+
+def _beatmapset_with_multiple_beatmaps() -> BeatmapSet:
+    """複数childを持つosu!direct integration test用beatmapset metadataを作る.
+
+    Returns:
+        BeatmapSet: FK保存順序を検証する2件のchildを持つmetadata snapshot.
     """
     return BeatmapSet(
         id=_BEATMAPSET_ID,
@@ -459,24 +638,43 @@ def _beatmapset() -> BeatmapSet:
         official_status=BeatmapRankStatus.RANKED,
         official_status_source=BeatmapMetadataSource.OFFICIAL,
         official_status_verified=BeatmapSourceVerification.VERIFIED,
-        beatmaps=(_beatmap(),),
+        beatmaps=(
+            _beatmap(),
+            _beatmap(
+                beatmap_id=_SECOND_BEATMAP_ID,
+                checksum_md5=_SECOND_CHECKSUM_MD5,
+                version="Extra",
+            ),
+        ),
         last_fetched_at=_NOW,
         next_refresh_at=None,
     )
 
 
-def _beatmap() -> Beatmap:
+def _beatmap(
+    *,
+    beatmapset_id: int = _BEATMAPSET_ID,
+    beatmap_id: int = _BEATMAP_ID,
+    checksum_md5: str = _CHECKSUM_MD5,
+    version: str = "Integration",
+) -> Beatmap:
     """osu!direct integration test用child beatmap metadataを作る.
+
+    Args:
+        beatmapset_id (int): 所属beatmapsetの永続化識別子.
+        beatmap_id (int): child beatmapの永続化識別子.
+        checksum_md5 (str): child beatmapのMD5 checksum.
+        version (str): child beatmapのdifficulty名.
 
     Returns:
         Beatmap: direct検索projectionへ入るranked osu child beatmap.
     """
     return Beatmap(
-        id=_BEATMAP_ID,
-        beatmapset_id=_BEATMAPSET_ID,
-        checksum_md5=_CHECKSUM_MD5,
+        id=beatmap_id,
+        beatmapset_id=beatmapset_id,
+        checksum_md5=checksum_md5,
         mode=BeatmapMode.OSU,
-        version="Integration",
+        version=version,
         total_length=120,
         hit_length=100,
         max_combo=500,
@@ -496,4 +694,16 @@ def _beatmap() -> Beatmap:
         last_fetched_at=_NOW,
         next_refresh_at=None,
         official_last_updated_at=_FUTURE_LAST_UPDATED,
+    )
+
+
+def _test_beatmapset_ids() -> tuple[int, ...]:
+    """このmoduleのintegration testが使うbeatmapset ID列を返す.
+
+    Returns:
+        tuple[int, ...]: cleanup対象の固定beatmapset ID列.
+    """
+    return (
+        _BEATMAPSET_ID,
+        *range(_BATCH_HYDRATE_START_ID, _BATCH_HYDRATE_START_ID + _BATCH_HYDRATE_COUNT),
     )

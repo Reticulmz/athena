@@ -5,8 +5,10 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
+from hashlib import blake2b
 from typing import TYPE_CHECKING, cast
 
+import structlog
 from sqlalchemy import func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
@@ -32,6 +34,7 @@ from osu_server.domain.beatmaps import (
     build_beatmapset_search_document,
 )
 from osu_server.repositories.interfaces.commands.beatmaps import BeatmapSubmissionCounts
+from osu_server.repositories.sqlalchemy.commands.error_details import sqlalchemy_error_details
 from osu_server.repositories.sqlalchemy.models.beatmap import (
     BeatmapDirectCoverageModel,
     BeatmapDirectExternalIndexStateModel,
@@ -39,12 +42,13 @@ from osu_server.repositories.sqlalchemy.models.beatmap import (
     BeatmapFileAttachmentModel,
     BeatmapModel,
     BeatmapSetModel,
-    BeatmapSetSearchDocumentModel,
 )
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.sql.dml import ReturningInsert
+
+logger = cast("structlog.stdlib.BoundLogger", structlog.get_logger(__name__))
 
 
 class DuplicateBeatmapChecksumError(ValueError):
@@ -70,6 +74,10 @@ class DuplicateBeatmapChecksumError(ValueError):
         super().__init__(
             f"checksum {checksum_md5} already belongs to beatmap {existing_beatmap_id}"
         )
+
+
+class BeatmapSnapshotPersistenceError(ValueError):
+    """Beatmapset snapshotの永続化がDB整合性違反で失敗したときに送出する例外."""
 
 
 class BeatmapNotFoundError(LookupError):
@@ -211,10 +219,13 @@ class SQLAlchemyBeatmapCommandRepository:
             既存の local status override,submission count,欠損した official last updated
             時刻を保持する.
         """
+        await self._lock_beatmapset_snapshot(snapshot.id)
         await self._check_checksum_conflicts(snapshot)
-        _ = await self._session.merge(_beatmapset_to_model(snapshot))
+        previous_document = await self._get_existing_search_document(snapshot.id)
+        beatmapset_model = _beatmapset_to_model(snapshot)
         stored_beatmaps: list[Beatmap] = []
         try:
+            stored_beatmapset_model = await self._session.merge(beatmapset_model)
             for beatmap in snapshot.beatmaps:
                 existing = await self._session.get(BeatmapModel, beatmap.id)
                 local_override = (
@@ -264,71 +275,85 @@ class SQLAlchemyBeatmapCommandRepository:
                         pass_count,
                     )
                 )
-            await self._upsert_search_document(replace(snapshot, beatmaps=tuple(stored_beatmaps)))
+            stored_snapshot = replace(snapshot, beatmaps=tuple(stored_beatmaps))
+            document = build_beatmapset_search_document(
+                stored_snapshot,
+                previous=previous_document,
+                updated_at=datetime.now(UTC),
+            )
+            _apply_search_document_to_beatmapset_model(stored_beatmapset_model, document)
             await self._session.flush()
         except IntegrityError as exc:
-            checksum_md5 = snapshot.beatmaps[0].checksum_md5 if snapshot.beatmaps else ""
-            raise DuplicateBeatmapChecksumError(
-                checksum_md5=checksum_md5,
-                existing_beatmap_id=0,
-            ) from exc
+            logger.warning(
+                "beatmapset_snapshot_persistence_failed",
+                beatmapset_id=snapshot.id,
+                **sqlalchemy_error_details(exc),
+            )
+            msg = f"beatmapset snapshot persistence failed for beatmapset {snapshot.id}"
+            raise BeatmapSnapshotPersistenceError(msg) from exc
 
-    async def _upsert_search_document(self, snapshot: BeatmapSet) -> None:
-        """Metadata保存transaction内でosu!direct検索projectionを更新する.
+    async def _lock_beatmapset_snapshot(self, beatmapset_id: int) -> None:
+        """同一beatmapset snapshot保存をtransaction内で直列化する.
 
         Args:
-            snapshot (BeatmapSet): 永続化するchild状態を反映したbeatmapset snapshot.
+            beatmapset_id (int): 保存対象beatmapsetの識別子.
 
         Returns:
-            None: projection modelを必要に応じてsessionへmergeして完了する.
+            None: transaction advisory lockを取得したことを示す.
         """
-        existing = await self._session.get(BeatmapSetSearchDocumentModel, snapshot.id)
-        previous = (
-            _search_document_to_domain(existing)
-            if isinstance(existing, BeatmapSetSearchDocumentModel)
-            else None
+        _ = await self._session.execute(
+            select(func.pg_advisory_xact_lock(_beatmapset_snapshot_lock_key(beatmapset_id)))
         )
-        document = build_beatmapset_search_document(
-            snapshot,
-            previous=previous,
-            updated_at=datetime.now(UTC),
-        )
-        if document == previous:
-            return
-        _ = await self._session.merge(_search_document_to_model(document))
+
+    async def _get_existing_search_document(
+        self,
+        beatmapset_id: int,
+    ) -> BeatmapSetSearchDocument | None:
+        """保存済みmetadataから既存の検索document DTOを組み立てる.
+
+        Args:
+            beatmapset_id (int): 既存検索documentを読むbeatmapset ID.
+
+        Returns:
+            BeatmapSetSearchDocument | None: 保存済みmetadataから復元したDTO. 未登録ならNone.
+        """
+        model = await self._session.get(BeatmapSetModel, beatmapset_id)
+        if not isinstance(model, BeatmapSetModel):
+            return None
+        beatmap_models = await self._get_beatmap_models_for_set(beatmapset_id=beatmapset_id)
+        return _search_document_from_models(model, tuple(beatmap_models))
 
     async def get_search_document(self, beatmapset_id: int) -> BeatmapSetSearchDocument | None:
-        """External indexing用に保存済み検索projectionを返す.
+        """External indexing用に保存済みmetadataから検索document DTOを返す.
 
         Args:
             beatmapset_id (int): 検索projectionを取得するbeatmapset ID.
 
         Returns:
-            BeatmapSetSearchDocument | None: 保存済みprojection. 未登録ならNone.
+            BeatmapSetSearchDocument | None: 保存済みmetadataから組み立てたDTO. 未登録ならNone.
         """
-        model = await self._session.get(BeatmapSetSearchDocumentModel, beatmapset_id)
-        if not isinstance(model, BeatmapSetSearchDocumentModel):
-            return None
-        return _search_document_to_domain(model)
+        return await self._get_existing_search_document(beatmapset_id)
 
     async def list_search_documents(self) -> tuple[BeatmapSetSearchDocument, ...]:
-        """External index rebuild用に検索projectionをbeatmapset ID順で返す.
+        """External index rebuild用に検索document DTOをbeatmapset ID順で返す.
 
         Returns:
-            tuple[BeatmapSetSearchDocument, ...]: 保存済み検索projection列.
+            tuple[BeatmapSetSearchDocument, ...]: 保存済みmetadataから組み立てた検索document列.
         """
         models = (
             (
                 await self._session.execute(
-                    select(BeatmapSetSearchDocumentModel).order_by(
-                        BeatmapSetSearchDocumentModel.beatmapset_id.asc()
-                    )
+                    select(BeatmapSetModel).order_by(BeatmapSetModel.id.asc())
                 )
             )
             .scalars()
             .all()
         )
-        return tuple(_search_document_to_domain(model) for model in models)
+        documents: list[BeatmapSetSearchDocument] = []
+        for model in models:
+            beatmap_models = await self._get_beatmap_models_for_set(beatmapset_id=model.id)
+            documents.append(_search_document_from_models(model, tuple(beatmap_models)))
+        return tuple(documents)
 
     async def rebuild_search_projection(self, *, now: datetime) -> int:
         """保存済みmetadataから検索projectionを再構築する.
@@ -356,22 +381,16 @@ class SQLAlchemyBeatmapCommandRepository:
             beatmaps = tuple(
                 _beatmap_to_domain(beatmap_model, None) for beatmap_model in beatmap_models
             )
-            previous_model = await self._session.get(
-                BeatmapSetSearchDocumentModel,
-                beatmapset_model.id,
-            )
-            previous = (
-                _search_document_to_domain(previous_model)
-                if isinstance(previous_model, BeatmapSetSearchDocumentModel)
-                else None
-            )
+            previous = _search_document_from_models(beatmapset_model, tuple(beatmap_models))
             document = build_beatmapset_search_document(
                 _beatmapset_to_domain(beatmapset_model, beatmaps),
                 previous=previous,
                 updated_at=now,
             )
-            if document != previous:
-                _ = await self._session.merge(_search_document_to_model(document))
+            if document != previous or beatmapset_model.direct_search_text != _direct_search_text(
+                document
+            ):
+                _apply_search_document_to_beatmapset_model(beatmapset_model, document)
             rebuilt_count += 1
         await self._session.flush()
         return rebuilt_count
@@ -823,6 +842,23 @@ def _increment_submission_counts_statement(beatmap_id: int, *, passed: bool):
     )
 
 
+def _beatmapset_snapshot_lock_key(beatmapset_id: int) -> int:
+    """Beatmapset snapshot保存scopeをPostgreSQL advisory lock keyへ変換する.
+
+    Args:
+        beatmapset_id (int): 保存対象beatmapsetの識別子.
+
+    Returns:
+        int: `pg_advisory_xact_lock`へ渡すsigned 64-bit key.
+    """
+    namespace = f"beatmapset_snapshot:{beatmapset_id}"
+    return int.from_bytes(
+        blake2b(namespace.encode(), digest_size=8).digest(),
+        byteorder="big",
+        signed=True,
+    )
+
+
 def _beatmapset_to_model(beatmapset: BeatmapSet) -> BeatmapSetModel:
     """Domain beatmapset を SQLAlchemy の保存 model へ変換する.
 
@@ -839,6 +875,8 @@ def _beatmapset_to_model(beatmapset: BeatmapSet) -> BeatmapSetModel:
         creator=beatmapset.creator,
         artist_unicode=beatmapset.artist_unicode,
         title_unicode=beatmapset.title_unicode,
+        source_text=beatmapset.source_text,
+        tags=beatmapset.tags,
         official_status=beatmapset.official_status.value,
         official_status_source=beatmapset.official_status_source.value,
         official_status_verified=(
@@ -898,62 +936,96 @@ def _beatmap_to_model(
     )
 
 
-def _search_document_to_model(document: BeatmapSetSearchDocument) -> BeatmapSetSearchDocumentModel:
-    """Domain検索projectionをSQLAlchemy保存modelへ変換する.
+def _apply_search_document_to_beatmapset_model(
+    model: BeatmapSetModel,
+    document: BeatmapSetSearchDocument,
+) -> None:
+    """検索document DTOの永続化対象fieldをbeatmapset modelへ反映する.
 
     Args:
-        document (BeatmapSetSearchDocument): osu!direct検索projectionのdomain値.
+        model (BeatmapSetModel): 保存するbeatmapset model.
+        document (BeatmapSetSearchDocument): metadataとchildから構築した検索document DTO.
 
     Returns:
-        BeatmapSetSearchDocumentModel: enumとmodeを永続化値へ変換したmodel.
+        None: modelの検索入力fieldを更新して値を返さず完了する.
     """
-    return BeatmapSetSearchDocumentModel(
-        beatmapset_id=document.beatmapset_id,
-        artist=document.artist,
-        title=document.title,
-        creator=document.creator,
-        artist_unicode=document.artist_unicode,
-        title_unicode=document.title_unicode,
-        source=document.source,
-        tags=document.tags,
-        difficulty_names=document.difficulty_names,
-        modes=[mode.value for mode in document.modes],
-        status=document.status.value,
-        last_update_at=document.last_update_at,
-        is_active=document.is_active,
-        document_version=document.document_version,
-        updated_at=document.updated_at,
-    )
+    model.direct_search_text = _direct_search_text(document)
+    model.search_document_version = document.document_version
+    model.search_document_updated_at = document.updated_at
 
 
-def _search_document_to_domain(
-    model: BeatmapSetSearchDocumentModel,
+def _search_document_from_models(
+    model: BeatmapSetModel,
+    beatmap_models: tuple[BeatmapModel, ...],
 ) -> BeatmapSetSearchDocument:
-    """SQLAlchemy検索projection modelをdomain値へ変換する.
+    """保存済みbeatmapsetとchild beatmapから検索document DTOを復元する.
 
     Args:
-        model (BeatmapSetSearchDocumentModel): 保存済みのosu!direct検索projection model.
+        model (BeatmapSetModel): 保存済みのbeatmapset model.
+        beatmap_models (tuple[BeatmapModel, ...]): modelに属するchild beatmap model列.
 
     Returns:
-        BeatmapSetSearchDocument: version比較に使うdomain projection.
+        BeatmapSetSearchDocument: external indexとversion比較に使う検索document DTO.
     """
-    return BeatmapSetSearchDocument(
-        beatmapset_id=model.beatmapset_id,
-        artist=model.artist,
-        title=model.title,
-        creator=model.creator,
-        artist_unicode=model.artist_unicode,
-        title_unicode=model.title_unicode,
-        source=model.source,
-        tags=model.tags,
-        difficulty_names=model.difficulty_names,
-        modes=tuple(BeatmapMode(value) for value in model.modes),
-        status=BeatmapRankStatus(model.status),
-        last_update_at=model.last_update_at,
-        is_active=model.is_active,
-        document_version=model.document_version,
-        updated_at=model.updated_at,
+    beatmaps = tuple(_beatmap_to_domain(beatmap_model, None) for beatmap_model in beatmap_models)
+    document = build_beatmapset_search_document(
+        _beatmapset_to_domain(model, beatmaps),
+        updated_at=_search_document_updated_at(model),
     )
+    return replace(
+        document,
+        document_version=_search_document_version(model),
+        updated_at=_search_document_updated_at(model),
+    )
+
+
+def _direct_search_text(document: BeatmapSetSearchDocument) -> str:
+    """ParadeDB/tsvector用のmaterialized検索入力を返す.
+
+    Args:
+        document (BeatmapSetSearchDocument): source of truthから組み立てた検索document DTO.
+
+    Returns:
+        str: 宣言済みsearchable fieldを空白結合した検索入力.
+    """
+    return " ".join(
+        part
+        for part in (
+            document.artist,
+            document.title,
+            document.creator,
+            document.source,
+            document.tags,
+            document.difficulty_names,
+            document.artist_unicode or "",
+            document.title_unicode or "",
+        )
+        if part
+    )
+
+
+def _search_document_version(model: BeatmapSetModel) -> int:
+    """保存済み検索document versionを返す.
+
+    Args:
+        model (BeatmapSetModel): versionを保持するbeatmapset model.
+
+    Returns:
+        int: 正の検索document version. 未設定なら初期値の1.
+    """
+    return model.search_document_version or 1
+
+
+def _search_document_updated_at(model: BeatmapSetModel) -> datetime:
+    """保存済み検索document更新時刻を返す.
+
+    Args:
+        model (BeatmapSetModel): 更新時刻を保持するbeatmapset model.
+
+    Returns:
+        datetime: 検索document更新時刻. 未設定なら現在UTC時刻.
+    """
+    return model.search_document_updated_at or datetime.now(UTC)
 
 
 def _index_state_to_model(state: DirectExternalIndexState) -> BeatmapDirectExternalIndexStateModel:
@@ -1002,6 +1074,8 @@ def _beatmapset_to_domain(model: BeatmapSetModel, beatmaps: tuple[Beatmap, ...])
         beatmaps=beatmaps,
         last_fetched_at=model.last_fetched_at,
         next_refresh_at=model.next_refresh_at,
+        source_text=model.source_text,
+        tags=model.tags,
     )
 
 

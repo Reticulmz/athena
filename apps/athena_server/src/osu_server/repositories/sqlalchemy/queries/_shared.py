@@ -255,6 +255,8 @@ def beatmapset_to_domain(model: BeatmapSetModel, beatmaps: tuple[Beatmap, ...]) 
         beatmaps=beatmaps,
         last_fetched_at=model.last_fetched_at,
         next_refresh_at=model.next_refresh_at,
+        source_text=model.source_text,
+        tags=model.tags,
     )
 
 

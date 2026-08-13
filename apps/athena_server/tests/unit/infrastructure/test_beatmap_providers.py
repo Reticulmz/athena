@@ -397,6 +397,8 @@ class TestBeatmapMetadataMapper:
                     "artist": "Camellia",
                     "title": "Exit This Earth's Atomosphere",
                     "creator": "Realazy",
+                    "source": "album source",
+                    "tags": "speed core",
                     "last_update": "2026-06-29 12:34:56",
                 }
             ],
@@ -407,6 +409,45 @@ class TestBeatmapMetadataMapper:
         assert snapshot.beatmaps[0].official_last_updated_at == datetime(
             2026, 6, 29, 12, 34, 56, tzinfo=UTC
         )
+        assert snapshot.source_text == "album source"
+        assert snapshot.tags == "speed core"
+
+    def test_v1_mapper_skips_unsavable_child_rows(self) -> None:
+        """V1 metadataで保存不能なchild rowを除外する契約を検証する.
+
+        Returns:
+            None: 有効なchildだけがsnapshotに残ることを確認して完了する.
+        """
+        snapshot = beatmap_v1_json_to_snapshot(
+            [
+                {
+                    "beatmap_id": "0",
+                    "beatmapset_id": "1000",
+                    "file_md5": "11111111111111111111111111111111",
+                    "mode": "0",
+                    "version": "Missing ID",
+                },
+                {
+                    "beatmap_id": "2000",
+                    "beatmapset_id": "1000",
+                    "file_md5": "00000000000000000000000000000000",
+                    "mode": "0",
+                    "version": "Zero checksum",
+                },
+                {
+                    "beatmap_id": "2001",
+                    "beatmapset_id": "1000",
+                    "file_md5": "A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6",
+                    "mode": "0",
+                    "version": "Normal",
+                },
+            ],
+            now=datetime(2026, 6, 30, tzinfo=UTC),
+        )
+
+        assert snapshot is not None
+        assert [beatmap.beatmap_id for beatmap in snapshot.beatmaps] == [2001]
+        assert snapshot.beatmaps[0].checksum_md5 == "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
 
     def test_v2_last_updated_maps_to_official_last_updated_at(self) -> None:
         """V2 beatmap last_updatedとset fallbackをofficial日時へ写す契約を検証する.
@@ -422,6 +463,8 @@ class TestBeatmapMetadataMapper:
                 "artist": "Camellia",
                 "title": "Exit This Earth's Atomosphere",
                 "creator": "Realazy",
+                "source": "compilation",
+                "tags": ["speed", "core"],
                 "status": "ranked",
                 "last_updated": "2026-06-28T00:00:00Z",
                 "beatmaps": [
@@ -451,6 +494,45 @@ class TestBeatmapMetadataMapper:
             2026, 6, 29, 12, 34, 56, tzinfo=UTC
         )
         assert snapshot.beatmaps[1].official_last_updated_at == datetime(2026, 6, 28, tzinfo=UTC)
+        assert snapshot.source_text == "compilation"
+        assert snapshot.tags == "speed core"
+
+    def test_v2_mapper_skips_unsavable_child_rows(self) -> None:
+        """V2 metadataで保存不能なchild rowを除外する契約を検証する.
+
+        Returns:
+            None: checksumを正規化しつつ有効childだけが残ることを確認して完了する.
+        """
+        snapshot = beatmap_json_to_snapshot(
+            {
+                "id": 1000,
+                "artist": "Camellia",
+                "title": "Exit This Earth's Atomosphere",
+                "creator": "Realazy",
+                "status": "ranked",
+                "beatmaps": [
+                    {
+                        "id": 0,
+                        "beatmapset_id": 1000,
+                        "checksum": "11111111111111111111111111111111",
+                    },
+                    {
+                        "id": 2000,
+                        "beatmapset_id": 1000,
+                        "checksum": "00000000000000000000000000000000",
+                    },
+                    {
+                        "id": 2001,
+                        "beatmapset_id": 1000,
+                        "checksum": "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+                    },
+                ],
+            },
+            now=datetime(2026, 6, 30, tzinfo=UTC),
+        )
+
+        assert [beatmap.beatmap_id for beatmap in snapshot.beatmaps] == [2001]
+        assert snapshot.beatmaps[0].checksum_md5 == "ffffffffffffffffffffffffffffffff"
 
 
 # ---------------------------------------------------------------------------

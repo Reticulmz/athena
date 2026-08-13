@@ -6,7 +6,8 @@ registry登録,Taskiq stateからのuse-case解決,payload変換,runtime未登�
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import asyncio
+from typing import TYPE_CHECKING, cast
 
 import pytest
 import structlog.testing
@@ -19,12 +20,13 @@ from osu_server.jobs.beatmap_fetch import (
     fetch_beatmap_metadata,
     get_beatmap_file_fetch,
     get_beatmap_metadata_fetch,
+    get_beatmap_metadata_fetch_semaphore,
     get_osu_direct_catalog_scheduler,
 )
 from osu_server.services.commands.beatmaps.direct_catalog_sync import DirectCatalogWorkKind
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+    from collections.abc import Awaitable, Callable, Coroutine
 
     from osu_server.domain.beatmaps import BeatmapFetchTarget
 
@@ -55,6 +57,40 @@ class _FakeJob:
             None: 取得対象を履歴へ追加して値を返さずに完了する.
         """
         self.calls.append(target)
+
+
+class _BlockingFakeJob:
+    """metadata fetch同時実行制限を観測するために実行中で止まるtest double.
+
+    Attributes:
+        started (asyncio.Event): execute開始を通知するevent.
+        release (asyncio.Event): execute終了を許可するevent.
+        calls (int): executeが開始された回数.
+    """
+
+    started: asyncio.Event
+    release: asyncio.Event
+    calls: int
+
+    def __init__(self) -> None:
+        """未開始状態のeventと呼出回数でtest doubleを初期化する."""
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+        self.calls = 0
+
+    async def execute(self, target: BeatmapFetchTarget) -> None:
+        """開始を記録しreleaseされるまで待機する.
+
+        Args:
+            target (BeatmapFetchTarget): adapterが渡した取得対象.
+
+        Returns:
+            None: release event後に完了する.
+        """
+        _ = target
+        self.calls += 1
+        _ = self.started.set()
+        _ = await self.release.wait()
 
 
 class _FakeScheduler:
@@ -318,6 +354,52 @@ class TestBeatmapFetchTaskExecution:
         assert len(fake.calls) == 1
         assert fake.calls[0].force_refresh is True
 
+    async def test_metadata_task_waits_for_configured_semaphore(self) -> None:
+        """Metadata taskがworker stateのsemaphoreで同時実行を抑制することを検証する.
+
+        Returns:
+            None: 2件目がsemaphore解放までexecuteへ入らないことを確認して完了する.
+        """
+        fake = _BlockingFakeJob()
+        semaphore = asyncio.Semaphore(1)
+        first_context = _make_context(
+            beatmap_metadata_fetch=fake,
+            beatmap_metadata_fetch_semaphore=semaphore,
+        )
+        second_context = _make_context(
+            beatmap_metadata_fetch=fake,
+            beatmap_metadata_fetch_semaphore=semaphore,
+        )
+
+        first = asyncio.create_task(
+            cast(
+                "Coroutine[object, object, None]",
+                fetch_beatmap_metadata(
+                    target_type="metadata:beatmap",
+                    target_key="2000",
+                    context=first_context,
+                ),
+            )
+        )
+        _ = await asyncio.wait_for(fake.started.wait(), timeout=1)
+        fake.started.clear()
+        second = asyncio.create_task(
+            cast(
+                "Coroutine[object, object, None]",
+                fetch_beatmap_metadata(
+                    target_type="metadata:beatmap",
+                    target_key="2001",
+                    context=second_context,
+                ),
+            )
+        )
+        await asyncio.sleep(0)
+
+        assert fake.calls == 1
+        _ = fake.release.set()
+        _ = await asyncio.wait_for(asyncio.gather(first, second), timeout=1)
+        assert fake.calls == 2
+
     async def test_metadata_task_direct_point_lookup_uses_osu_direct_scheduler(self) -> None:
         """Direct point lookup metadata fetchが共有schedulerのPOINT_LOOKUP枠で実行される.
 
@@ -389,6 +471,28 @@ class TestBeatmapFetchStateGetters:
         """
         state = TaskiqState()
         result = get_beatmap_metadata_fetch(state)
+        assert result is None
+
+    def test_get_beatmap_metadata_fetch_semaphore_returns_service(self) -> None:
+        """Metadata fetch semaphoreが登録済みなら同一instanceを返すことを検証する.
+
+        Returns:
+            None: stateへ登録したsemaphoreとgetter結果が同一であることを確認する.
+        """
+        semaphore = asyncio.Semaphore(1)
+        state = TaskiqState()
+        object.__setattr__(state, "beatmap_metadata_fetch_semaphore", semaphore)
+        result = get_beatmap_metadata_fetch_semaphore(state)
+        assert result is semaphore
+
+    def test_get_beatmap_metadata_fetch_semaphore_returns_none_when_missing(self) -> None:
+        """Metadata fetch semaphore未登録時にNoneを返すことを検証する.
+
+        Returns:
+            None: 空のstateからのgetter結果がNoneであることを確認する.
+        """
+        state = TaskiqState()
+        result = get_beatmap_metadata_fetch_semaphore(state)
         assert result is None
 
     def test_get_beatmap_file_fetch_returns_service(self) -> None:

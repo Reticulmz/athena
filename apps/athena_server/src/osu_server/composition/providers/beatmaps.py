@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections import abc
 from datetime import timedelta
 from typing import final
 
 from dishka import Provider, Scope
+from meilisearch_python_sdk import AsyncClient as MeilisearchAsyncClient
 from taskiq import AsyncBroker
 
 from osu_server.composition.providers._dishka import provide
@@ -30,6 +32,7 @@ from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 from osu_server.services.commands.beatmaps import (
     FetchBeatmapFileUseCase,
     FetchBeatmapMetadataUseCase,
+    RecordDirectSearchCoverageUseCase,
 )
 from osu_server.services.commands.storage.blob_storage import BlobStorageService
 from osu_server.services.queries.beatmaps import (
@@ -53,6 +56,9 @@ _DISHKA_RUNTIME_HINTS = (
     DirectExternalIndexUpdateWorkerWake,
     BeatmapQueryRepository,
     BlobStorageService,
+    RecordDirectSearchCoverageUseCase,
+    abc.AsyncIterator,
+    MeilisearchAsyncClient,
     TaskiqDirectExternalIndexUpdateWorkerWake,
     UnitOfWorkFactory,
     AsyncBroker,
@@ -68,6 +74,28 @@ class BeatmapProviderSet(Provider):
     """
 
     scope = Scope.APP
+
+    @provide
+    async def meilisearch_direct_client(
+        self,
+        config: AppConfig,
+    ) -> abc.AsyncIterator[MeilisearchAsyncClient | None]:
+        """設定がある場合だけMeilisearch SDK clientをAPP scopeで提供する.
+
+        Args:
+            config (AppConfig): Meilisearch URLとaccess keyを持つ設定.
+
+        Yields:
+            MeilisearchAsyncClient | None: URL未設定ならNone, 設定済みならclose管理付きclient.
+        """
+        if config.osu_direct_meilisearch_url is None:
+            yield None
+            return
+        async with MeilisearchAsyncClient(
+            config.osu_direct_meilisearch_url,
+            config.osu_direct_meilisearch_access_key,
+        ) as client:
+            yield client
 
     @provide
     def beatmap_freshness_policy(self, config: AppConfig) -> BeatmapFreshnessPolicy:
@@ -225,6 +253,21 @@ class BeatmapProviderSet(Provider):
             要求するport.
         """
         return TaskiqDirectExternalIndexUpdateWorkerWake(broker)
+
+    @provide
+    def record_direct_search_coverage_use_case(
+        self,
+        uow_factory: UnitOfWorkFactory,
+    ) -> RecordDirectSearchCoverageUseCase:
+        """検索時に観測したdirect coverage保存commandを構成する.
+
+        Args:
+            uow_factory (UnitOfWorkFactory): coverage recordを保存するcommand UoW factory.
+
+        Returns:
+            RecordDirectSearchCoverageUseCase: Stable handlerから呼ぶcoverage保存command.
+        """
+        return RecordDirectSearchCoverageUseCase(uow_factory)
 
     @provide
     def fetch_beatmap_file_use_case(

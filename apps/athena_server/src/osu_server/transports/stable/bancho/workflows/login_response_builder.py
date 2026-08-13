@@ -7,6 +7,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING
 
 from osu_server.domain.compatibility.stable.mode import StableMode
+from osu_server.domain.compatibility.stable.permissions import BanchoClientPermission
 from osu_server.domain.identity.system_users import BANCHO_BOT_IDENTITY, SystemUserIdentity
 from osu_server.domain.scores import Playstyle, Ruleset
 from osu_server.services.queries.chat import ChannelCatalogQueryInput
@@ -66,6 +67,8 @@ class LoginResponseBuilder:
         _stable_user_status_store (StableUserStatusStore | None): optional stable status store.
         _bot_identity (SystemUserIdentity): roster に常に含める system bot identity.
         _presence_roster (StablePresenceRoster): presence と stats packet の配置を決める policy.
+        _grant_stable_supporter_feature_bit (bool): stable supporter機能表示のためlogin
+            permissionへSUPPORTER bitを追加するか.
     """
 
     _visible_channels_query: ListVisibleChannelsQuery
@@ -76,6 +79,7 @@ class LoginResponseBuilder:
     _stable_user_status_store: StableUserStatusStore | None
     _bot_identity: SystemUserIdentity
     _presence_roster: StablePresenceRoster
+    _grant_stable_supporter_feature_bit: bool
 
     def __init__(
         self,
@@ -87,6 +91,7 @@ class LoginResponseBuilder:
         current_user_stats_query: CurrentUserStatsQuery,
         stable_user_status_store: StableUserStatusStore | None = None,
         bot_identity: SystemUserIdentity | None = None,
+        grant_stable_supporter_feature_bit: bool = False,
     ) -> None:
         """Login response を構成する query dependency と optional state store を設定する.
 
@@ -98,6 +103,8 @@ class LoginResponseBuilder:
             current_user_stats_query (CurrentUserStatsQuery): current stats query.
             stable_user_status_store (StableUserStatusStore | None): optional stable status store.
             bot_identity (SystemUserIdentity | None): bot identity. None なら BanchoBot.
+            grant_stable_supporter_feature_bit (bool): stable supporter機能表示のためlogin
+                permissionへSUPPORTER bitを追加するか.
         """
         self._visible_channels_query = visible_channels_query
         self._autojoin_channels_query = autojoin_channels_query
@@ -107,6 +114,7 @@ class LoginResponseBuilder:
         self._stable_user_status_store = stable_user_status_store
         self._bot_identity = bot_identity or BANCHO_BOT_IDENTITY
         self._presence_roster = StablePresenceRoster(self._bot_identity)
+        self._grant_stable_supporter_feature_bit = grant_stable_supporter_feature_bit
 
     async def build(self, login_response: LoginResponse) -> bytes:
         """Successful login 用の初期 S2C packet stream を組み立てる.
@@ -125,6 +133,9 @@ class LoginResponseBuilder:
         """
         user = login_response.user
         authorization_output = map_stable_bancho_authorization(login_response.privileges)
+        login_permission_flags = authorization_output.login_permissions
+        if self._grant_stable_supporter_feature_bit:
+            login_permission_flags |= BanchoClientPermission.SUPPORTER
         channel_query_input = ChannelCatalogQueryInput(
             user_privileges=int(login_response.privileges),
             user_role_ids=login_response.role_ids,
@@ -160,7 +171,7 @@ class LoginResponseBuilder:
         packets: list[bytes] = [
             login_reply(user.id),
             protocol_version(PROTOCOL_VERSION),
-            login_permissions(int(authorization_output.login_permissions)),
+            login_permissions(int(login_permission_flags)),
             *presence_roster.leading_packets,
         ]
 

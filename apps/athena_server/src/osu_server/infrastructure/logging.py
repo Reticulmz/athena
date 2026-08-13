@@ -82,6 +82,38 @@ def mask_sensitive_fields(
     return event_dict
 
 
+def _runtime_role_processor(runtime_role: str) -> structlog.types.Processor:
+    """固定runtime roleをeventへ追加するstructlog processorを作成する.
+
+    Args:
+        runtime_role (str): app_serverやworkerなどprocessの役割名.
+
+    Returns:
+        structlog.types.Processor: eventへruntime_role fieldを追加するprocessor.
+    """
+
+    def add_runtime_role(
+        logger: structlog.types.WrappedLogger,
+        method_name: str,
+        event_dict: structlog.types.EventDict,
+    ) -> structlog.types.EventDict:
+        """Event dictionaryへruntime roleを設定する.
+
+        Args:
+            logger (structlog.types.WrappedLogger): structlog processorが渡すlogger.
+            method_name (str): logger method名.
+            event_dict (structlog.types.EventDict): 出力対象のevent fields.
+
+        Returns:
+            structlog.types.EventDict: runtime_roleを持つevent dictionary.
+        """
+        _ = logger, method_name
+        event_dict.setdefault("runtime_role", runtime_role)
+        return event_dict
+
+    return add_runtime_role
+
+
 def _archive_latest_file(latest_path: Path, log_dir: Path) -> None:
     """``latest.jsonl``を日付連番のgzip fileへarchiveして元fileを削除する.
 
@@ -349,11 +381,12 @@ def rotate_logs(log_dir: Path, max_files: int) -> None:
         )
 
 
-def setup_logging(config: AppConfig) -> None:
+def setup_logging(config: AppConfig, *, runtime_role: str = "app_server") -> None:
     """structlogとstdlib loggerを初期化してconsole/JSON handlerを設定する.
 
     Args:
         config (AppConfig): log directory, 最大archive数, root log levelを持つapplication設定.
+        runtime_role (str): 出力logへ付加するprocess役割名.
 
     Returns:
         None: process全体のlogging handlerを設定するだけで値を返さない.
@@ -376,6 +409,7 @@ def setup_logging(config: AppConfig) -> None:
 
     shared_processors: list[structlog.types.Processor] = [  # pyright: ignore[reportAssignmentType]
         structlog.contextvars.merge_contextvars,
+        _runtime_role_processor(runtime_role),
         mask_sensitive_fields,
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),

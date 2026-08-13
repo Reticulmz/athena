@@ -10,7 +10,6 @@ from osu_server.repositories.sqlalchemy.models.beatmap import (
     BeatmapFileAttachmentModel,
     BeatmapModel,
     BeatmapSetModel,
-    BeatmapSetSearchDocumentModel,
 )
 from osu_server.repositories.sqlalchemy.models.beatmap_leaderboard import (
     BeatmapLeaderboardUserBestModel,
@@ -53,7 +52,6 @@ __all__ = [
     "BeatmapModel",
     "BeatmapPerformanceBestModel",
     "BeatmapSetModel",
-    "BeatmapSetSearchDocumentModel",
     "BlobModel",
     "ChannelMessageModel",
     "ChannelModel",

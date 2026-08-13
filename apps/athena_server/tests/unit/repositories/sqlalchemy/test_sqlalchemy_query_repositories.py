@@ -1407,11 +1407,16 @@ def _beatmapset_model() -> BeatmapSetModel:
         creator="mapper",
         artist_unicode="artist",
         title_unicode="title",
+        source_text="",
+        tags="",
+        direct_search_text="artist title mapper diff",
         official_status=BeatmapRankStatus.RANKED.value,
         official_status_source=BeatmapMetadataSource.OFFICIAL.value,
         official_status_verified=True,
         last_fetched_at=_NOW,
         next_refresh_at=None,
+        search_document_version=1,
+        search_document_updated_at=_NOW,
     )
 
 

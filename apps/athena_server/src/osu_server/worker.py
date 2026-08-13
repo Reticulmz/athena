@@ -8,6 +8,7 @@ shutdown hookでそのstateを解放する.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, cast
 
 import structlog
@@ -85,6 +86,7 @@ def _clear_worker_runtime_state(state: TaskiqState) -> None:
     state.persist_channel_message_use_case = None
     state.persist_private_message_use_case = None
     state.beatmap_metadata_fetch = None
+    state.beatmap_metadata_fetch_semaphore = None
     state.beatmap_file_fetch = None
     state.score_performance_calculation_executor = None
     state.performance_recalculation_batch_processor = None
@@ -107,7 +109,7 @@ async def startup(state: TaskiqState) -> None:
     Returns:
         None: logging,Dishka integration,job use-caseをstateへ設定したことを示す.
     """
-    setup_logging(_config)
+    setup_logging(_config, runtime_role="worker")
     worker_container: AsyncContainer | None = None
 
     try:
@@ -123,6 +125,9 @@ async def startup(state: TaskiqState) -> None:
             PersistPrivateMessageUseCase
         )
         state.beatmap_metadata_fetch = await worker_container.get(FetchBeatmapMetadataUseCase)
+        state.beatmap_metadata_fetch_semaphore = asyncio.Semaphore(
+            _config.beatmap_metadata_fetch_max_concurrency
+        )
         state.beatmap_file_fetch = await worker_container.get(FetchBeatmapFileUseCase)
         state.score_performance_calculation_executor = await worker_container.get(
             ExecutePerformanceCalculationUseCase
