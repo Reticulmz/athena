@@ -4,7 +4,7 @@
 
 Athena needs osu!direct-compatible stable search and beatmapset pickup behavior so stable clients can browse known beatmapsets, inspect single beatmapsets from now-playing or direct links, and get consistent empty results when metadata is unavailable. The current Beatmap Mirror Service already owns beatmap metadata resolution and file warmup; this feature adds the searchable catalog, stable direct response behavior, coverage tracking, and index maintenance needed to expose that metadata through stable osu!direct endpoints.
 
-This specification defines user-visible and operator-visible behavior for osu!direct search, search catalog coverage, point lookup, search backend selection, rebuild/recovery, and deferred download/rating concerns. It does not implement `.osz` package download caching or a rating system.
+This specification defines user-visible and operator-visible behavior for osu!direct search, hybrid upstream search supplementation, search catalog coverage, point lookup, search backend selection, rebuild/recovery, and deferred download/rating concerns. It does not implement `.osz` package download caching or a rating system.
 
 ## Boundary Context
 
@@ -14,8 +14,8 @@ This specification defines user-visible and operator-visible behavior for osu!di
   - Shared point lookup behavior for future now-playing and beatmap link entrances.
   - Search catalog coverage tracking for feed windows and explicit beatmapset id ranges.
   - Configurable search access policy with authenticated access as the default.
-  - Configurable search backend selection with a required SQL search backend and optional external index backend.
-  - Search projection, backend index field declarations, rebuild behavior, and operator diagnostics.
+  - Configurable search backend selection across ParadeDB, Meilisearch, and PostgreSQL `tsvector`, plus optional external index synchronization.
+  - Materialized search input, backend index field declarations, rebuild behavior, and operator diagnostics.
   - Worker priority behavior for point lookup, catalog feed sync, and id range crawl.
 
 - **Out of scope**:
@@ -45,6 +45,7 @@ This specification defines user-visible and operator-visible behavior for osu!di
 3. Where a future supporter-entitlement policy is configured, the osu!direct feature shall be able to deny access for users that do not satisfy that policy.
 4. When an unauthenticated stable request reaches osu!direct endpoints, the osu!direct feature shall return the stable-compatible authentication failure behavior for that endpoint.
 5. The osu!direct feature shall keep access policy decisions separate from search result ranking and catalog coverage state.
+6. When authenticated access is enabled, the stable login response shall expose the client-visible Supporter bit required to display stable supporter features without granting server-side Supporter privileges.
 
 ### Requirement 2: Search Catalog and Coverage
 
@@ -84,6 +85,9 @@ This specification defines user-visible and operator-visible behavior for osu!di
 4. When a stable client searches for `Top Rated` or `Most Played`, the osu!direct feature shall treat it as a special listing request and use the documented fallback ordering until rating and playcount ranking are implemented.
 5. When the catalog has more results beyond the current stable page, the osu!direct feature shall return a stable-compatible count sentinel indicating more results.
 6. The osu!direct feature shall not implement client-side song select filters such as AR, OD, CS, HP, BPM, or length in the stable osu!direct search query.
+7. When local search results are incomplete, the osu!direct feature shall use configured upstream search providers within a bounded wait and merge usable upstream beatmapsets into the stable response.
+8. When completed id-range coverage is missing or local candidates fall outside completed coverage, the osu!direct feature shall use configured upstream search providers even if the local page is full.
+9. When page 0 is requested again after the configured refresh interval, the osu!direct feature shall refresh from configured upstream search providers to improve first-page freshness.
 
 ### Requirement 5: Stable Response Shape
 
@@ -104,12 +108,16 @@ This specification defines user-visible and operator-visible behavior for osu!di
 
 #### Acceptance Criteria
 
-1. The osu!direct feature shall support a required SQL-backed search backend.
-2. The osu!direct feature shall support an optional external index backend.
+1. The osu!direct feature shall support configurable search backend values `auto`, `paradedb`, `meilisearch`, and `tsvector`.
+2. The osu!direct feature shall support an optional external index synchronization backend.
 3. The osu!direct feature shall require the configured search backend to expose beatmapset candidate ids and ranking scores rather than stable response bodies.
 4. When a search backend returns candidate ids, the osu!direct feature shall hydrate final stable responses from the beatmap metadata source of truth.
-5. If the configured SQL search backend is unavailable, the osu!direct feature shall fail startup or configuration validation before accepting search traffic.
-6. If the optional external index backend is unavailable, the osu!direct feature shall continue to serve search through the SQL search backend when it is available.
+5. If the explicitly configured search backend is unavailable, the osu!direct feature shall fail startup or configuration validation before accepting search traffic.
+6. If the optional external index synchronization backend is unavailable and search is not explicitly configured to use Meilisearch, the osu!direct feature shall continue to serve search through an available PostgreSQL backend.
+7. Where the search backend is configured as automatic, the osu!direct feature shall prefer ParadeDB `pg_search`, then configured Meilisearch, and fall back to PostgreSQL `tsvector` before accepting search traffic.
+8. Where the search backend is explicitly configured as ParadeDB, the osu!direct feature shall fail startup if `pg_search` is not installed, not created, or missing required index fields.
+9. Where the search backend is explicitly configured as `tsvector`, the osu!direct feature shall not require the `pg_search` extension.
+10. Where the search backend is explicitly configured as `meilisearch`, the osu!direct feature shall require Meilisearch external index configuration and fail startup if Meilisearch is unavailable.
 
 ### Requirement 7: Search Index Field Declaration
 
@@ -121,20 +129,20 @@ This specification defines user-visible and operator-visible behavior for osu!di
 2. The osu!direct feature shall include artist, title, creator, source, tags, difficulty names, unicode artist, and unicode title in the initial searchable fields.
 3. The osu!direct feature shall include status, mode, and beatmapset id in the initial filterable fields.
 4. The osu!direct feature shall include last update and beatmapset id in the initial sortable fields.
-5. When a search field declaration changes, the osu!direct feature shall require search projection and backend index revalidation.
+5. When a search field declaration changes, the osu!direct feature shall require materialized search input and backend index revalidation.
 6. The osu!direct feature shall not infer new searchable fields from arbitrary metadata without an explicit declaration.
 
-### Requirement 8: Search Projection Consistency
+### Requirement 8: Search Input Consistency
 
-**Objective:** As an operator, I want the search projection to stay consistent with saved metadata, so that SQL search does not miss newly saved beatmapsets.
+**Objective:** As an operator, I want the materialized search input to stay consistent with saved metadata, so that SQL search does not miss newly saved beatmapsets.
 
 #### Acceptance Criteria
 
-1. When beatmapset metadata is saved, the osu!direct feature shall update the search projection in the same durable consistency boundary as the metadata save.
-2. When a beatmapset becomes incomplete, inactive, deleted, or not submitted, the osu!direct feature shall remove or disable that beatmapset from the search projection.
-3. When a beatmapset has searchable metadata but no usable child beatmaps, the osu!direct feature shall keep it out of the search projection.
-4. The osu!direct feature shall treat the search projection as index input and not as the source of truth for stable response hydration.
-5. If search projection update fails during metadata save, the osu!direct feature shall not expose the metadata save as a fully successful catalog update.
+1. When beatmapset metadata is saved, the osu!direct feature shall update materialized search input in the same durable consistency boundary as the metadata save.
+2. When a beatmapset becomes incomplete, inactive, deleted, or not submitted, the osu!direct feature shall make that beatmapset ineligible for search from source metadata and child beatmaps.
+3. When a beatmapset has searchable metadata but no usable child beatmaps, the osu!direct feature shall keep it out of search results.
+4. The osu!direct feature shall treat materialized search input as index input and not as the source of truth for stable response hydration.
+5. If materialized search input update fails during metadata save, the osu!direct feature shall not expose the metadata save as a fully successful catalog update.
 
 ### Requirement 9: External Index Synchronization
 
@@ -142,11 +150,11 @@ This specification defines user-visible and operator-visible behavior for osu!di
 
 #### Acceptance Criteria
 
-1. When search projection changes are committed, the osu!direct feature shall request external index updates after the metadata and projection changes are durable.
-2. If an external index update fails, the osu!direct feature shall keep the SQL search projection available for search.
+1. When materialized search input changes are committed, the osu!direct feature shall request external index updates after the metadata and search input changes are durable.
+2. If an external index update fails, the osu!direct feature shall keep SQL search available.
 3. If an external index update fails, the osu!direct feature shall record the failed index state for retry or rebuild.
 4. When the external index is stale, the osu!direct feature shall not use external index document fields as stable response source data.
-5. The osu!direct feature shall provide an operator-triggered rebuild path from stored metadata to search projection and external index state.
+5. The osu!direct feature shall provide an operator-triggered rebuild path from stored metadata to materialized search input and external index state.
 
 ### Requirement 10: Point Lookup
 
@@ -172,7 +180,7 @@ This specification defines user-visible and operator-visible behavior for osu!di
 2. While a beatmapset is deleted, inactive, or not submitted, the osu!direct feature shall exclude it from search responses.
 3. While a beatmapset is deleted, inactive, or not submitted, the osu!direct feature shall return the stable-compatible empty point lookup response.
 4. If a deleted, inactive, or not submitted beatmapset is requested repeatedly, the osu!direct feature shall avoid repeatedly treating it as an uncached unknown beatmapset.
-5. When a later authoritative refresh changes an inactive beatmapset into a usable state, the osu!direct feature shall make it eligible for search projection again.
+5. When a later authoritative refresh changes an inactive beatmapset into a usable state, the osu!direct feature shall make it eligible for search again.
 
 ### Requirement 12: Deferred Download and Rating Scope
 

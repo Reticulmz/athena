@@ -100,6 +100,126 @@ Athena で「譜面リスト情報を取得して、Athena 側で osu!direct 検
 
 含意: `osu-search-set.php`、NP command、beatmap link handling は HTTP handler を共有する必要はないが、内部では「beatmapset point lookup」を共有するのが妥当。入力は set id / beatmap id / checksum / topic id / post id / beatmap link を許容し、出力は保存済みまたはオンデマンド取得済みの beatmapset metadata に寄せる。osu!direct row 整形、BanchoBot表示、`.osz` download availability はそれぞれ別の薄い adapter に分ける。
 
+## Stable `/web/osu-search.php` common response contract
+
+This section narrows the de facto stable-client contract from public
+implementations only. It separates the pipe-delimited stable response from
+CheeseGull/levbod mirror APIs, which expose JSON search catalogs instead.
+
+### Common facts
+
+- Stable clients call `/web/osu-search.php` with `q` for the search text, `r`
+  for osu!direct display/ranked status, `m` for mode, and `p` for zero-based
+  page number. bancho.py declares those aliases directly; deck does the same
+  and also detects whether `p` was supplied.[bancho.py osu.py L330-L415](https://github.com/osuAkatsuki/bancho.py/blob/0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/api/domains/osu.py#L330-L415),
+  [deck direct.py L91-L149](https://github.com/osuTitanic/deck/blob/9c9319e5e6f2c6e8996cf7785135352baf4e9f3f/app/routes/web/direct.py#L91-L149)
+- The search page size is 100 beatmapsets. bancho.py converts `p` to
+  `offset = p * 100` for the mirror request; deck passes `limit=100` and
+  `offset=page * 100` to local search; levbod uses `BEATMAPS_PER_PAGE = 100`.
+  [bancho.py direct_search.py L97-L125](https://github.com/osuAkatsuki/bancho.py/blob/0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/services/direct_search.py#L97-L125),
+  [deck direct.py L123-L130](https://github.com/osuTitanic/deck/blob/9c9319e5e6f2c6e8996cf7785135352baf4e9f3f/app/routes/web/direct.py#L123-L130),
+  [levbod listing.py L5-L36](https://github.com/osuripple/levbod/blob/d24ca0267262ab31b23d0aac53f347834802446b/web/handlers/listing.py#L5-L36)
+- The first response line is a count/sentinel, followed by one beatmapset per
+  line. bancho.py returns `101` when the mirror returns exactly 100 rows so
+  the client asks for the next page. deck also returns `101` when paginated
+  search gets 100 rows; if the client did not send `p`, deck returns the
+  plain result count instead. Ripple lets uses `999` for the same "more than
+  this page" signal, so `999` is a Ripple-era dialect, not the common modern
+  minimum.[bancho.py direct_search.py L168-L182](https://github.com/osuAkatsuki/bancho.py/blob/0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/services/direct_search.py#L168-L182),
+  [deck direct.py L131-L149](https://github.com/osuTitanic/deck/blob/9c9319e5e6f2c6e8996cf7785135352baf4e9f3f/app/routes/web/direct.py#L131-L149),
+  [lets osuSearchHandler.py L47-L55](https://github.com/osuripple/lets/blob/98e9e07faa48398fbccf17251650011e36bdf6e4/handlers/osuSearchHandler.py#L47-L55)
+- Body rows are pipe-delimited beatmapset records. The shared leading fields
+  are: filename, artist, title, creator, ranked/status, rating, last update,
+  set id, thread/topic id, has video, has storyboard, `.osz` filesize,
+  `.osz` no-video filesize, and a comma-separated difficulty list. deck appends
+  a post id field after the difficulty list; bancho.py and Ripple-style rows do
+  not rely on that extra field.[bancho.py osu.py L270-L320](https://github.com/osuAkatsuki/bancho.py/blob/0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/api/domains/osu.py#L270-L320),
+  [deck direct.py L47-L68](https://github.com/osuTitanic/deck/blob/9c9319e5e6f2c6e8996cf7785135352baf4e9f3f/app/routes/web/direct.py#L47-L68),
+  [ripple-python-common cheesegull.py L108-L132](https://github.com/osuripple/ripple-python-common/blob/4ea64a6ff281ee34ae95e7b2078188a833330474/web/cheesegull.py#L108-L132)
+- The difficulty list is comma-delimited and each entry ends with `@<mode>`.
+  bancho.py/Ripple build a rich display string from difficulty rating, diff
+  name, CS/OD/AR/HP, then append `@Mode`; deck uses `version@mode`. This means
+  the stable parser-visible invariant is the comma list and `@mode`, not the
+  exact human-readable difficulty label.[bancho.py osu.py L282-L307](https://github.com/osuAkatsuki/bancho.py/blob/0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/api/domains/osu.py#L282-L307),
+  [deck direct.py L47-L50](https://github.com/osuTitanic/deck/blob/9c9319e5e6f2c6e8996cf7785135352baf4e9f3f/app/routes/web/direct.py#L47-L50),
+  [ripple-python-common cheesegull.py L108-L132](https://github.com/osuripple/ripple-python-common/blob/4ea64a6ff281ee34ae95e7b2078188a833330474/web/cheesegull.py#L108-L132)
+- Implementations tolerate missing optional row data by using empty strings or
+  zeroes. deck emits empty artist/title/creator strings when absent and zeroes
+  missing topic/video/storyboard/size fields. bancho.py hard-codes rating
+  `10.0` and zeroes thread/storyboard/filesize fields. bancho.py skips
+  mirror rows with `ChildrenBeatmaps = None`; levbod substitutes an
+  `Unknown@0` difficulty when a child beatmap JSON file is missing.[deck direct.py L47-L68](https://github.com/osuTitanic/deck/blob/9c9319e5e6f2c6e8996cf7785135352baf4e9f3f/app/routes/web/direct.py#L47-L68),
+  [bancho.py direct_search.py L129-L160](https://github.com/osuAkatsuki/bancho.py/blob/0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/services/direct_search.py#L129-L160),
+  [levbod listing.py L75-L87](https://github.com/osuripple/levbod/blob/d24ca0267262ab31b23d0aac53f347834802446b/web/handlers/listing.py#L75-L87)
+- Delimiter sanitation is required for stable rows. bancho.py replaces `|` in
+  artist/title/diff names with `I`; Ripple's CheeseGull adapter replaces row
+  delimiters before formatting stable output.[bancho.py direct_search.py L143-L190](https://github.com/osuAkatsuki/bancho.py/blob/0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/services/direct_search.py#L143-L190),
+  [ripple-python-common cheesegull.py L108-L132](https://github.com/osuripple/ripple-python-common/blob/4ea64a6ff281ee34ae95e7b2078188a833330474/web/cheesegull.py#L108-L132)
+
+### Parameter mapping
+
+- `m = -1` means all modes. Other valid stable modes are `0..3`. bancho.py
+  forwards `mode` to the mirror only when it is not `-1`; deck passes `mode`
+  into local search; levbod normalizes invalid values back to `-1`.[bancho.py direct_search.py L113-L117](https://github.com/osuAkatsuki/bancho.py/blob/0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/services/direct_search.py#L113-L117),
+  [deck direct.py L91-L130](https://github.com/osuTitanic/deck/blob/9c9319e5e6f2c6e8996cf7785135352baf4e9f3f/app/routes/web/direct.py#L91-L130),
+  [levbod listing.py L12-L20](https://github.com/osuripple/levbod/blob/d24ca0267262ab31b23d0aac53f347834802446b/web/handlers/listing.py#L12-L20)
+- `r = 4` means all statuses in bancho.py and levbod/Ripple mapping. The
+  commonly repeated direct-to-osu-api mapping is `0`/`7 -> 1` ranked,
+  `8 -> 4` loved, `3 -> 3` qualified, `2 -> 0` pending, `5 -> -2`
+  graveyard, and `4 -> all/no status filter`. bancho.py delegates the same
+  idea through `RankedStatus.from_osudirect(...).osu_api` and omits `status`
+  when `r = 4`.[levbod listing.py L29-L48](https://github.com/osuripple/levbod/blob/d24ca0267262ab31b23d0aac53f347834802446b/web/handlers/listing.py#L29-L48),
+  [ripple-python-common cheesegull.py L144-L160](https://github.com/osuripple/ripple-python-common/blob/4ea64a6ff281ee34ae95e7b2078188a833330474/web/cheesegull.py#L144-L160),
+  [bancho.py direct_search.py L118-L121](https://github.com/osuAkatsuki/bancho.py/blob/0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/services/direct_search.py#L118-L121)
+- `q` is usually forwarded as a text query, but `Newest`, `Top+Rated`, and
+  `Most+Played` are special stable-client labels. bancho.py does not forward
+  those labels as text to the mirror; osuBasil makes the same distinction for
+  local search. The exact sort behavior is therefore an implementation choice
+  unless the Athena spec fixes it.[bancho.py direct_search.py L106-L112](https://github.com/osuAkatsuki/bancho.py/blob/0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/services/direct_search.py#L106-L112),
+  [osuBasil DirectSearchService.cs L41-L67](https://github.com/thnhmai06/osuBasil/blob/main/src/Basil.Application/Services/Beatmaps/DirectSearchService.cs#L41-L67)
+
+### Mirror APIs and related endpoints
+
+- CheeseGull's `/api/search` is not the stable wire response. It accepts
+  `query`, `status`, `mode`, `amount`, and `offset`, then returns JSON
+  beatmapsets with `ChildrenBeatmaps`. bancho.py and Ripple lets convert that
+  JSON into the stable pipe/newline response.[CheeseGull single.go L94-L121](https://github.com/osuripple/cheesegull/blob/efa2a3a98e86dd13c1f862afd2f2fcfed1ddfbcf/api/metadata/single.go#L94-L121),
+  [CheeseGull set_search.go L57-L126](https://github.com/osuripple/cheesegull/blob/efa2a3a98e86dd13c1f862afd2f2fcfed1ddfbcf/models/set_search.go#L57-L126),
+  [bancho.py direct_search.py L97-L182](https://github.com/osuAkatsuki/bancho.py/blob/0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/services/direct_search.py#L97-L182)
+- levbod is also a mirror/catalog API rather than a stable `/web/osu-search.php`
+  implementation. Its README describes an osu!direct-feature API backed by a
+  MySQL copy of static mirror `index.json`, and its listing handler returns
+  JSON under `data` with `beatmapset_id`, artist/title/creator/status, and
+  child beatmaps. It is useful evidence for `query/status/mode/page` behavior,
+  page size, and fallback difficulty metadata, but not for the stable row
+  delimiter format.[levbod README.md L1-L16](https://github.com/osuripple/levbod/blob/d24ca0267262ab31b23d0aac53f347834802446b/README.md#L1-L16),
+  [levbod listing.py L5-L111](https://github.com/osuripple/levbod/blob/d24ca0267262ab31b23d0aac53f347834802446b/web/handlers/listing.py#L5-L111),
+  [levbod mirror_api.py L1-L14](https://github.com/osuripple/levbod/blob/d24ca0267262ab31b23d0aac53f347834802446b/web/mirror_api.py#L1-L14)
+- `/web/osu-search-set.php` reuses the same beatmapset row formatter for
+  point lookup. bancho.py accepts set id `s`, beatmap id `b`, and checksum `c`.
+  deck accepts those plus post id `p` and topic id `t`. Ripple lets accepts
+  `s` or `b` and resolves through CheeseGull. All of these converge on
+  beatmapset metadata before formatting the response.[bancho.py osu.py L418-L470](https://github.com/osuAkatsuki/bancho.py/blob/0651b54c66daa839c1bb3998e4f9a8d1173e144d/app/api/domains/osu.py#L418-L470),
+  [deck direct.py L151-L201](https://github.com/osuTitanic/deck/blob/9c9319e5e6f2c6e8996cf7785135352baf4e9f3f/app/routes/web/direct.py#L151-L201),
+  [lets osuSearchSetHandler.py L22-L40](https://github.com/osuripple/lets/blob/98e9e07faa48398fbccf17251650011e36bdf6e4/handlers/osuSearchSetHandler.py#L22-L40),
+  [ripple-python-common cheesegull.py L89-L98](https://github.com/osuripple/ripple-python-common/blob/4ea64a6ff281ee34ae95e7b2078188a833330474/web/cheesegull.py#L89-L98)
+
+### Athena contract recommendation
+
+Athena should implement the stable response as:
+
+```text
+<count-or-101>
+<filename>|<artist>|<title>|<creator>|<status>|<rating>|<last_update>|<set_id>|<topic_id>|<has_video>|<has_storyboard>|<filesize>|<filesize_novideo>|<diff@mode,diff@mode,...>[|<post_id>]
+```
+
+For Athena's MVP, treat the bracketed `post_id` tail as optional input/output
+compatibility rather than a required field. The durable requirements are:
+100 set pages, `101` when exactly 100 rows are returned, `r=4` and `m=-1`
+meaning no filter, stable delimiter sanitation, zero/empty defaults for
+missing optional metadata, and shared beatmapset lookup/formatting between
+search results and `osu-search-set.php`.
+
 ## Athena設計への含意
 
 1. 検索面は `beatmap-mirror` のmetadata cacheを読む read model にする。CheeseGull/osuBasil/deck はいずれも検索時に保存済みmetadataを使う。bancho.py/lets は検索を外部mirrorへ委譲するが、その外部mirrorが CheeseGull 型の保存済みmetadata検索である。
