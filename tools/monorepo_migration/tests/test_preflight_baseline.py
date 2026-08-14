@@ -291,6 +291,19 @@ def _write_recorded_pre_cutover_baseline(tmp_path: Path) -> Path:
     runtime["worker"] = worker
     document["runtime"] = runtime
     document["migrations"] = _nested_mapping(recorded, "migrations")
+    cleanup_inventory = _nested_mapping(document, "cleanup_inventory")
+    scope_exclusions = _nested_mapping(cleanup_inventory, "scope_exclusions")
+    recorded_cleanup_inventory = _nested_mapping(recorded, "cleanup_inventory")
+    recorded_scope_exclusions = _nested_mapping(
+        recorded_cleanup_inventory,
+        "scope_exclusions",
+    )
+    scope_exclusions["root_python_dependencies"] = _string_list_value(
+        recorded_scope_exclusions,
+        "root_python_dependencies",
+    )
+    cleanup_inventory["scope_exclusions"] = scope_exclusions
+    document["cleanup_inventory"] = cleanup_inventory
 
     baseline_path = tmp_path / "recorded-preflight-baseline.json"
     _ = baseline_path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
