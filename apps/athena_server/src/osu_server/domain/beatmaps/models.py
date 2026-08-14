@@ -296,6 +296,9 @@ class BeatmapSet:
         beatmaps (tuple[Beatmap, ...]): 所属するbeatmap difficultyの不変列.
         last_fetched_at (datetime | None): metadataを最後に取得した日時. 未取得時はNone.
         next_refresh_at (datetime | None): 次回refresh予定日時. 未設定時はNone.
+        official_submitted_at (datetime | None): providerが示す公式投稿日時. 不明な場合はNone.
+        official_ranked_at (datetime | None): providerが示す公式ranked日時. 不明な場合はNone.
+        official_last_updated_at (datetime | None): providerが示す公式更新日時. 不明な場合はNone.
         source_text (str): 曲の出典としてproviderが返した検索対象文字列.
         tags (str): providerが返したtag検索文字列.
     """
@@ -312,6 +315,9 @@ class BeatmapSet:
     beatmaps: tuple[Beatmap, ...]
     last_fetched_at: datetime | None
     next_refresh_at: datetime | None
+    official_submitted_at: datetime | None = None
+    official_ranked_at: datetime | None = None
+    official_last_updated_at: datetime | None = None
     source_text: str = ""
     tags: str = ""
 
@@ -1073,6 +1079,9 @@ class BeatmapsetSnapshot:
         title_unicode (str | None): Unicode表記の曲名. 未提供時はNone.
         last_fetched_at (datetime | None): providerから取得した日時. 未取得時はNone.
         next_refresh_at (datetime | None): 次回metadata refresh予定日時. 未設定時はNone.
+        official_submitted_at (datetime | None): providerが示す公式投稿日時. 不明な場合はNone.
+        official_ranked_at (datetime | None): providerが示す公式ranked日時. 不明な場合はNone.
+        official_last_updated_at (datetime | None): providerが示す公式更新日時. 不明な場合はNone.
         source_text (str): 曲の出典としてproviderが返した検索対象文字列.
         tags (str): providerが返したtag検索文字列.
     """
@@ -1091,6 +1100,9 @@ class BeatmapsetSnapshot:
     title_unicode: str | None = None
     last_fetched_at: datetime | None = None
     next_refresh_at: datetime | None = None
+    official_submitted_at: datetime | None = None
+    official_ranked_at: datetime | None = None
+    official_last_updated_at: datetime | None = None
     source_text: str = ""
     tags: str = ""
 

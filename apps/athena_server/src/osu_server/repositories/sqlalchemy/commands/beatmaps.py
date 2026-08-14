@@ -9,7 +9,7 @@ from hashlib import blake2b
 from typing import TYPE_CHECKING, cast
 
 import structlog
-from sqlalchemy import func, literal, select, update
+from sqlalchemy import func, literal, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 
@@ -212,25 +212,52 @@ class SQLAlchemyBeatmapCommandRepository:
             snapshot (BeatmapSet): upstream metadata から得た beatmapset と子 beatmap の snapshot.
 
         Returns:
-            None: session への merge と flush が完了したことを示す. transaction の確定は行わない.
+            None: sessionへの保存とflushが完了したことを示す. transactionの確定は行わない.
+
+        Raises:
+            DuplicateBeatmapChecksumError: snapshot 内または保存済み beatmap と checksum が
+                衝突する場合.
+        """
+        _ = await self.save_beatmapset_snapshot_returning_previous(snapshot)
+
+    async def save_beatmapset_snapshot_returning_previous(
+        self,
+        snapshot: BeatmapSet,
+    ) -> BeatmapSet | None:
+        """Beatmapset snapshotを保存し保存前のBeatmapSetを返す.
+
+        Args:
+            snapshot (BeatmapSet): upstream metadataから得たbeatmapsetと子beatmapのsnapshot.
+
+        Returns:
+            BeatmapSet | None: 保存前のBeatmapSet. 初回保存ではNone.
 
         Raises:
             DuplicateBeatmapChecksumError: snapshot 内または保存済み beatmap と checksum が
                 衝突する場合.
 
         Notes:
-            既存の local status override,submission count,欠損した official last updated
-            時刻を保持する.
+            既存の local status override,submission count,欠損した official 日時を保持する.
         """
+        snapshot = _deduplicate_snapshot_beatmaps(snapshot)
         await self._lock_beatmapset_snapshot(snapshot.id)
-        await self._check_checksum_conflicts(snapshot)
-        previous_document = await self._get_existing_search_document(snapshot.id)
-        beatmapset_model = _beatmapset_to_model(snapshot)
+        (
+            existing_beatmapset_model,
+            previous_beatmapset,
+            previous_document,
+            existing_beatmap_models_by_id,
+        ) = await self._load_existing_snapshot_state(snapshot)
+        stored_snapshot = _merge_beatmapset_official_dates(snapshot, existing_beatmapset_model)
         stored_beatmaps: list[Beatmap] = []
         try:
-            stored_beatmapset_model = await self._session.merge(beatmapset_model)
-            for beatmap in snapshot.beatmaps:
-                existing = await self._session.get(BeatmapModel, beatmap.id)
+            stored_beatmapset_model = self._store_beatmapset_model(
+                stored_snapshot,
+                existing_beatmapset_model,
+            )
+            if existing_beatmapset_model is None and stored_snapshot.beatmaps:
+                await self._session.flush()
+            for beatmap in stored_snapshot.beatmaps:
+                existing = existing_beatmap_models_by_id.get(beatmap.id)
                 local_override = (
                     existing.local_status_override
                     if isinstance(existing, BeatmapModel)
@@ -269,16 +296,15 @@ class SQLAlchemyBeatmapCommandRepository:
                     official_last_updated_at=official_last_updated_at,
                 )
                 stored_beatmaps.append(stored_beatmap)
-                _ = await self._session.merge(
-                    _beatmap_to_model(
-                        stored_beatmap,
-                        local_override,
-                        local_override_changed_at,
-                        play_count,
-                        pass_count,
-                    )
+                self._store_beatmap_model(
+                    stored_beatmap,
+                    existing,
+                    local_override,
+                    local_override_changed_at,
+                    play_count,
+                    pass_count,
                 )
-            stored_snapshot = replace(snapshot, beatmaps=tuple(stored_beatmaps))
+            stored_snapshot = replace(stored_snapshot, beatmaps=tuple(stored_beatmaps))
             document = build_beatmapset_search_document(
                 stored_snapshot,
                 previous=previous_document,
@@ -294,6 +320,7 @@ class SQLAlchemyBeatmapCommandRepository:
             )
             msg = f"beatmapset snapshot persistence failed for beatmapset {snapshot.id}"
             raise BeatmapSnapshotPersistenceError(msg) from exc
+        return previous_beatmapset
 
     async def _lock_beatmapset_snapshot(self, beatmapset_id: int) -> None:
         """同一beatmapset snapshot保存をtransaction内で直列化する.
@@ -325,6 +352,121 @@ class SQLAlchemyBeatmapCommandRepository:
             return None
         beatmap_models = await self._get_beatmap_models_for_set(beatmapset_id=beatmapset_id)
         return _search_document_from_models(model, tuple(beatmap_models))
+
+    async def _load_existing_snapshot_state(
+        self,
+        snapshot: BeatmapSet,
+    ) -> tuple[
+        BeatmapSetModel | None,
+        BeatmapSet | None,
+        BeatmapSetSearchDocument | None,
+        dict[int, BeatmapModel],
+    ]:
+        """Snapshot保存に必要な既存metadataをまとめて読む.
+
+        Args:
+            snapshot (BeatmapSet): 保存予定のbeatmapset snapshot.
+
+        Returns:
+            tuple[BeatmapSetModel | None, BeatmapSet | None, BeatmapSetSearchDocument | None,
+            dict[int, BeatmapModel]]: 既存set model, 保存前domain set, 保存前検索document,
+            既存child modelのID別辞書.
+
+        Raises:
+            DuplicateBeatmapChecksumError: snapshot内または既存beatmapとchecksumが衝突する場合.
+        """
+        incoming_beatmap_ids_by_checksum = _incoming_beatmap_ids_by_checksum(snapshot)
+        existing_beatmapset_model = await self._session.get(BeatmapSetModel, snapshot.id)
+        existing_beatmap_models = await self._get_snapshot_related_beatmap_models(
+            beatmapset_id=snapshot.id,
+            checksums=tuple(incoming_beatmap_ids_by_checksum),
+        )
+        _raise_existing_checksum_conflict(
+            existing_beatmap_models,
+            incoming_beatmap_ids_by_checksum,
+        )
+
+        existing_child_models = tuple(
+            model for model in existing_beatmap_models if model.beatmapset_id == snapshot.id
+        )
+        previous_beatmapset: BeatmapSet | None = None
+        previous_document: BeatmapSetSearchDocument | None = None
+        if existing_beatmapset_model is not None:
+            previous_beatmaps = tuple(
+                _beatmap_to_domain(beatmap_model, None) for beatmap_model in existing_child_models
+            )
+            previous_beatmapset = _beatmapset_to_domain(
+                existing_beatmapset_model,
+                previous_beatmaps,
+            )
+            previous_document = _search_document_from_models(
+                existing_beatmapset_model,
+                existing_child_models,
+            )
+        return (
+            existing_beatmapset_model,
+            previous_beatmapset,
+            previous_document,
+            {model.id: model for model in existing_beatmap_models},
+        )
+
+    def _store_beatmapset_model(
+        self,
+        snapshot: BeatmapSet,
+        existing: BeatmapSetModel | None,
+    ) -> BeatmapSetModel:
+        """Beatmapset modelを新規追加または既存model更新としてsessionへ保持する.
+
+        Args:
+            snapshot (BeatmapSet): 保存するbeatmapset snapshot.
+            existing (BeatmapSetModel | None): 既存の永続model. 新規時はNone.
+
+        Returns:
+            BeatmapSetModel: 検索projection更新にも使う保存対象model.
+        """
+        model = existing or _beatmapset_to_model(snapshot)
+        _apply_beatmapset_to_model(model, snapshot)
+        self._session.add(model)
+        return model
+
+    def _store_beatmap_model(
+        self,
+        beatmap: Beatmap,
+        existing: BeatmapModel | None,
+        local_status_override: str | None,
+        local_status_override_changed_at: datetime | None,
+        play_count: int,
+        pass_count: int,
+    ) -> None:
+        """Beatmap modelを新規追加または既存model更新としてsessionへ保持する.
+
+        Args:
+            beatmap (Beatmap): 保存するchild beatmap snapshot.
+            existing (BeatmapModel | None): 既存の永続model. 新規時はNone.
+            local_status_override (str | None): 保持するlocal status override.
+            local_status_override_changed_at (datetime | None): override更新時刻.
+            play_count (int): 保持するplay count.
+            pass_count (int): 保持するpass count.
+
+        Returns:
+            None: sessionへ保存対象modelを登録して完了する.
+        """
+        model = existing or _beatmap_to_model(
+            beatmap,
+            local_status_override,
+            local_status_override_changed_at,
+            play_count,
+            pass_count,
+        )
+        _apply_beatmap_to_model(
+            model,
+            beatmap,
+            local_status_override,
+            local_status_override_changed_at,
+            play_count,
+            pass_count,
+        )
+        self._session.add(model)
 
     async def get_search_document(self, beatmapset_id: int) -> BeatmapSetSearchDocument | None:
         """External indexing用に保存済みmetadataから検索document DTOを返す.
@@ -532,10 +674,6 @@ class SQLAlchemyBeatmapCommandRepository:
             BeatmapNotFoundError: 対象 beatmap が未登録または attachment の flush が外部キーで
                 失敗した場合.
         """
-        beatmap = await self._session.get(BeatmapModel, attachment.beatmap_id)
-        if not isinstance(beatmap, BeatmapModel):
-            raise BeatmapNotFoundError(attachment.beatmap_id)
-
         existing = await self._get_file_attachment_by_key(attachment)
         if existing is not None:
             return _attachment_to_domain(existing)
@@ -642,57 +780,14 @@ class SQLAlchemyBeatmapCommandRepository:
         Returns:
             None: 新規 state の追加または既存 state の更新と flush が完了したことを示す.
         """
-        model = await self._get_fetch_state_model(target)
-        if model is None:
-            model = BeatmapFetchStateModel(
-                target_type=target.kind.value,
-                target_key=target.target_key,
-                status=status.value,
-                attempt_count=0,
+        _ = await self._session.execute(
+            _mark_fetch_completed_statement(
+                target=target,
+                status=status,
                 last_error=last_error,
-                pending_since=None,
-                last_attempted_at=now,
+                now=now,
             )
-            self._session.add(model)
-        else:
-            model.status = status.value
-            model.last_error = last_error
-            model.pending_since = None
-            model.last_attempted_at = now
-        await self._session.flush()
-
-    async def _check_checksum_conflicts(self, snapshot: BeatmapSet) -> None:
-        """Snapshot 内と保存済み beatmap の MD5 checksum 衝突を検証する.
-
-        Args:
-            snapshot (BeatmapSet): 保存前に検証する beatmapset snapshot.
-
-        Returns:
-            None: checksum がすべて各 beatmap ID に一意であることを示す.
-
-        Raises:
-            DuplicateBeatmapChecksumError: 同じ checksum が異なる beatmap ID に属する場合.
-        """
-        incoming_beatmap_ids_by_checksum: dict[str, int] = {}
-        for beatmap in snapshot.beatmaps:
-            incoming_beatmap_id = incoming_beatmap_ids_by_checksum.get(beatmap.checksum_md5)
-            if incoming_beatmap_id is not None and incoming_beatmap_id != beatmap.id:
-                raise DuplicateBeatmapChecksumError(
-                    checksum_md5=beatmap.checksum_md5,
-                    existing_beatmap_id=incoming_beatmap_id,
-                )
-            incoming_beatmap_ids_by_checksum[beatmap.checksum_md5] = beatmap.id
-
-            existing = (
-                await self._session.execute(
-                    select(BeatmapModel).where(BeatmapModel.checksum_md5 == beatmap.checksum_md5)
-                )
-            ).scalar_one_or_none()
-            if isinstance(existing, BeatmapModel) and existing.id != beatmap.id:
-                raise DuplicateBeatmapChecksumError(
-                    checksum_md5=beatmap.checksum_md5,
-                    existing_beatmap_id=existing.id,
-                )
+        )
 
     async def _get_beatmap_models_for_set(self, *, beatmapset_id: int) -> list[BeatmapModel]:
         """Beatmapset に属する SQLAlchemy beatmap model をすべて返す.
@@ -709,6 +804,34 @@ class SQLAlchemyBeatmapCommandRepository:
                     select(BeatmapModel)
                     .where(BeatmapModel.beatmapset_id == beatmapset_id)
                     .order_by(BeatmapModel.id.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    async def _get_snapshot_related_beatmap_models(
+        self,
+        *,
+        beatmapset_id: int,
+        checksums: tuple[str, ...],
+    ) -> tuple[BeatmapModel, ...]:
+        """Snapshot保存前に必要な既存childとchecksum所有者をまとめて返す.
+
+        Args:
+            beatmapset_id (int): 保存対象beatmapset ID.
+            checksums (tuple[str, ...]): 保存予定childのchecksum列.
+
+        Returns:
+            tuple[BeatmapModel, ...]: 保存対象setの既存childとchecksum衝突確認対象.
+        """
+        where_clause = BeatmapModel.beatmapset_id == beatmapset_id
+        if checksums:
+            where_clause = or_(where_clause, BeatmapModel.checksum_md5.in_(checksums))
+        return tuple(
+            (
+                await self._session.execute(
+                    select(BeatmapModel).where(where_clause).order_by(BeatmapModel.id.asc())
                 )
             )
             .scalars()
@@ -855,6 +978,48 @@ def _mark_fetch_pending_statement(
     ).returning(BeatmapFetchStateModel.id)
 
 
+def _mark_fetch_completed_statement(
+    *,
+    target: BeatmapFetchTarget,
+    status: BeatmapFetchState,
+    last_error: str | None,
+    now: datetime,
+):
+    """Fetch stateを完了状態へupsertするstatementを構築する.
+
+    Args:
+        target (BeatmapFetchTarget): 更新するfetch target.
+        status (BeatmapFetchState): 保存する完了状態.
+        last_error (str | None): failed時の理由. fresh時はNone.
+        now (datetime): 完了時刻.
+
+    Returns:
+        Insert: fetch stateを再読込せずに完了状態へ保存するPostgreSQL upsert statement.
+    """
+    insert_statement = insert(BeatmapFetchStateModel).values(
+        target_type=target.kind.value,
+        target_key=target.target_key,
+        status=status.value,
+        attempt_count=0,
+        last_error=last_error,
+        pending_since=None,
+        last_attempted_at=now,
+    )
+    return insert_statement.on_conflict_do_update(
+        index_elements=[
+            BeatmapFetchStateModel.target_type,
+            BeatmapFetchStateModel.target_key,
+        ],
+        set_={
+            "status": status.value,
+            "last_error": last_error,
+            "pending_since": None,
+            "last_attempted_at": now,
+            "updated_at": func.now(),
+        },
+    )
+
+
 def _increment_submission_counts_statement(beatmap_id: int, *, passed: bool):
     """Submission count を atomic に増加して更新後の count を返す UPDATE statement を構築する.
 
@@ -875,6 +1040,113 @@ def _increment_submission_counts_statement(beatmap_id: int, *, passed: bool):
             updated_at=func.now(),
         )
         .returning(BeatmapModel.play_count, BeatmapModel.pass_count)
+    )
+
+
+def _incoming_beatmap_ids_by_checksum(snapshot: BeatmapSet) -> dict[str, int]:
+    """Snapshot内のchecksum所有beatmap IDを返す.
+
+    Args:
+        snapshot (BeatmapSet): checksum重複を検査するsnapshot.
+
+    Returns:
+        dict[str, int]: checksum別のincoming beatmap ID.
+
+    Raises:
+        DuplicateBeatmapChecksumError: 同じchecksumが別IDのchildに割り当てられた場合.
+    """
+    beatmap_ids_by_checksum: dict[str, int] = {}
+    for beatmap in snapshot.beatmaps:
+        existing_beatmap_id = beatmap_ids_by_checksum.get(beatmap.checksum_md5)
+        if existing_beatmap_id is not None and existing_beatmap_id != beatmap.id:
+            raise DuplicateBeatmapChecksumError(
+                checksum_md5=beatmap.checksum_md5,
+                existing_beatmap_id=existing_beatmap_id,
+            )
+        beatmap_ids_by_checksum[beatmap.checksum_md5] = beatmap.id
+    return beatmap_ids_by_checksum
+
+
+def _deduplicate_snapshot_beatmaps(snapshot: BeatmapSet) -> BeatmapSet:
+    """同じbeatmap IDが重複したsnapshotを保存可能な子列へ正規化する.
+
+    Args:
+        snapshot (BeatmapSet): providerから得たbeatmapset snapshot.
+
+    Returns:
+        BeatmapSet: 各beatmap IDを初出1件にしたsnapshot. 重複がなければ入力をそのまま返す.
+    """
+    seen_ids: set[int] = set()
+    beatmaps: list[Beatmap] = []
+    for beatmap in snapshot.beatmaps:
+        if beatmap.id in seen_ids:
+            continue
+        seen_ids.add(beatmap.id)
+        beatmaps.append(beatmap)
+    if len(beatmaps) == len(snapshot.beatmaps):
+        return snapshot
+    return replace(snapshot, beatmaps=tuple(beatmaps))
+
+
+def _raise_existing_checksum_conflict(
+    existing_models: tuple[BeatmapModel, ...],
+    incoming_beatmap_ids_by_checksum: dict[str, int],
+) -> None:
+    """既存beatmapとincoming snapshotのchecksum衝突を拒否する.
+
+    Args:
+        existing_models (tuple[BeatmapModel, ...]): checksum照合用に取得済みの既存model列.
+        incoming_beatmap_ids_by_checksum (dict[str, int]): checksum別のincoming beatmap ID.
+
+    Returns:
+        None: checksum所有者が衝突しないことを示す.
+
+    Raises:
+        DuplicateBeatmapChecksumError: 既存beatmapが別IDで同じchecksumを所有する場合.
+    """
+    for model in existing_models:
+        if model.checksum_md5 is None:
+            continue
+        incoming_beatmap_id = incoming_beatmap_ids_by_checksum.get(model.checksum_md5)
+        if incoming_beatmap_id is not None and incoming_beatmap_id != model.id:
+            raise DuplicateBeatmapChecksumError(
+                checksum_md5=model.checksum_md5,
+                existing_beatmap_id=model.id,
+            )
+
+
+def _merge_beatmapset_official_dates(
+    snapshot: BeatmapSet,
+    existing: BeatmapSetModel | None,
+) -> BeatmapSet:
+    """Incoming snapshotに既存beatmapsetの公式日時を必要に応じて補う.
+
+    Args:
+        snapshot (BeatmapSet): 保存するincoming beatmapset snapshot.
+        existing (BeatmapSetModel | None): 既存の永続beatmapset model. 未登録時はNone.
+
+    Returns:
+        BeatmapSet: incoming値を優先し,欠損した公式日時だけ既存値で補ったsnapshot.
+    """
+    if existing is None:
+        return snapshot
+    return replace(
+        snapshot,
+        official_submitted_at=(
+            snapshot.official_submitted_at
+            if snapshot.official_submitted_at is not None
+            else existing.official_submitted_at
+        ),
+        official_ranked_at=(
+            snapshot.official_ranked_at
+            if snapshot.official_ranked_at is not None
+            else existing.official_ranked_at
+        ),
+        official_last_updated_at=(
+            snapshot.official_last_updated_at
+            if snapshot.official_last_updated_at is not None
+            else existing.official_last_updated_at
+        ),
     )
 
 
@@ -920,7 +1192,39 @@ def _beatmapset_to_model(beatmapset: BeatmapSet) -> BeatmapSetModel:
         ),
         last_fetched_at=beatmapset.last_fetched_at,
         next_refresh_at=beatmapset.next_refresh_at,
+        official_submitted_at=beatmapset.official_submitted_at,
+        official_ranked_at=beatmapset.official_ranked_at,
+        official_last_updated_at=beatmapset.official_last_updated_at,
     )
+
+
+def _apply_beatmapset_to_model(model: BeatmapSetModel, beatmapset: BeatmapSet) -> None:
+    """Domain beatmapsetの保存fieldを既存modelへ反映する.
+
+    Args:
+        model (BeatmapSetModel): 更新するSQLAlchemy model.
+        beatmapset (BeatmapSet): upstream metadataを含むdomain beatmapset.
+
+    Returns:
+        None: modelのmetadata fieldを更新して完了する.
+    """
+    model.artist = beatmapset.artist
+    model.title = beatmapset.title
+    model.creator = beatmapset.creator
+    model.artist_unicode = beatmapset.artist_unicode
+    model.title_unicode = beatmapset.title_unicode
+    model.source_text = beatmapset.source_text
+    model.tags = beatmapset.tags
+    model.official_status = beatmapset.official_status.value
+    model.official_status_source = beatmapset.official_status_source.value
+    model.official_status_verified = (
+        beatmapset.official_status_verified is BeatmapSourceVerification.VERIFIED
+    )
+    model.last_fetched_at = beatmapset.last_fetched_at
+    model.next_refresh_at = beatmapset.next_refresh_at
+    model.official_submitted_at = beatmapset.official_submitted_at
+    model.official_ranked_at = beatmapset.official_ranked_at
+    model.official_last_updated_at = beatmapset.official_last_updated_at
 
 
 def _beatmap_to_model(
@@ -970,6 +1274,54 @@ def _beatmap_to_model(
         last_fetched_at=beatmap.last_fetched_at,
         next_refresh_at=beatmap.next_refresh_at,
     )
+
+
+def _apply_beatmap_to_model(
+    model: BeatmapModel,
+    beatmap: Beatmap,
+    local_status_override: str | None,
+    local_status_override_changed_at: datetime | None,
+    play_count: int,
+    pass_count: int,
+) -> None:
+    """Domain beatmapの保存fieldを既存modelへ反映する.
+
+    Args:
+        model (BeatmapModel): 更新するSQLAlchemy model.
+        beatmap (Beatmap): upstream metadataを含むdomain beatmap.
+        local_status_override (str | None): 保持するlocal status override.
+        local_status_override_changed_at (datetime | None): override更新時刻.
+        play_count (int): 保持するplay count.
+        pass_count (int): 保持するpass count.
+
+    Returns:
+        None: modelのmetadata fieldを更新して完了する.
+    """
+    model.beatmapset_id = beatmap.beatmapset_id
+    model.checksum_md5 = beatmap.checksum_md5
+    model.mode = beatmap.mode.value
+    model.version = beatmap.version
+    model.total_length = beatmap.total_length
+    model.hit_length = beatmap.hit_length
+    model.max_combo = beatmap.max_combo
+    model.bpm = _decimal_or_none(beatmap.bpm)
+    model.cs = _decimal_or_none(beatmap.cs)
+    model.od = _decimal_or_none(beatmap.od)
+    model.ar = _decimal_or_none(beatmap.ar)
+    model.hp = _decimal_or_none(beatmap.hp)
+    model.difficulty_rating = _decimal_or_none(beatmap.difficulty_rating)
+    model.official_status = beatmap.official_status.value
+    model.official_status_source = beatmap.official_status_source.value
+    model.official_status_verified = (
+        beatmap.official_status_verified is BeatmapSourceVerification.VERIFIED
+    )
+    model.local_status_override = local_status_override
+    model.local_status_override_changed_at = local_status_override_changed_at
+    model.play_count = play_count
+    model.pass_count = pass_count
+    model.official_last_updated_at = beatmap.official_last_updated_at
+    model.last_fetched_at = beatmap.last_fetched_at
+    model.next_refresh_at = beatmap.next_refresh_at
 
 
 def _apply_search_document_to_beatmapset_model(
@@ -1110,6 +1462,9 @@ def _beatmapset_to_domain(model: BeatmapSetModel, beatmaps: tuple[Beatmap, ...])
         beatmaps=beatmaps,
         last_fetched_at=model.last_fetched_at,
         next_refresh_at=model.next_refresh_at,
+        official_submitted_at=model.official_submitted_at,
+        official_ranked_at=model.official_ranked_at,
+        official_last_updated_at=model.official_last_updated_at,
         source_text=model.source_text,
         tags=model.tags,
     )

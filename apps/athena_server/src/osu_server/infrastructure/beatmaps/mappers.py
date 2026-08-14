@@ -81,6 +81,8 @@ class _BeatmapsetJSON(TypedDict, total=False):
         source (str | None): 曲の出典文字列.
         tags (str | list[str] | None): beatmapset tag.
         status (str): osu! APIが返す公開status名.
+        submitted_date (str | None): ビートマップセットの投稿日時文字列.
+        ranked_date (str | None): ビートマップセットのranked日時文字列.
         last_updated (str | None): ビートマップセットの最終更新日時文字列.
         beatmaps (list[_BeatmapJSON]): 内包するビートマップJSON列.
 
@@ -97,6 +99,8 @@ class _BeatmapsetJSON(TypedDict, total=False):
     source: str | None
     tags: str | list[str] | None
     status: str
+    submitted_date: str | None
+    ranked_date: str | None
     last_updated: str | None
     beatmaps: list[_BeatmapJSON]
 
@@ -189,6 +193,14 @@ def beatmap_v1_json_to_snapshot(
         title_unicode=_maybe_str(first.get("title_unicode")),
         last_fetched_at=_now,
         next_refresh_at=_now,
+        official_submitted_at=_maybe_datetime(first.get("submitted_date")),
+        official_ranked_at=(
+            _maybe_datetime(first.get("ranked_date"))
+            or _maybe_datetime(first.get("approved_date"))
+        ),
+        official_last_updated_at=(
+            _maybe_datetime(first.get("last_updated")) or _maybe_datetime(first.get("last_update"))
+        ),
         source_text=_maybe_str(first.get("source")) or "",
         tags=_tags_text(first.get("tags")),
     )
@@ -215,7 +227,7 @@ def _from_beatmap_json(
     beatmapset_data = data.get("beatmapset") or {}
     return _from_beatmapset_json(
         {
-            "id": beatmapset_data.get("id", 0),
+            "id": beatmapset_data.get("id") or data.get("beatmapset_id") or 0,
             "artist": beatmapset_data.get("artist", ""),
             "title": beatmapset_data.get("title", ""),
             "creator": beatmapset_data.get("creator", ""),
@@ -224,6 +236,9 @@ def _from_beatmap_json(
             "source": beatmapset_data.get("source", ""),
             "tags": beatmapset_data.get("tags", ""),
             "status": beatmapset_data.get("status", ""),
+            "submitted_date": beatmapset_data.get("submitted_date"),
+            "ranked_date": beatmapset_data.get("ranked_date"),
+            "last_updated": beatmapset_data.get("last_updated"),
             "beatmaps": [data],
         },
         now=now,
@@ -252,6 +267,8 @@ def _from_beatmapset_json(
     """
     beatmapset_id = data.get("id", 0)
     beatmapset_status = data.get("status", "")
+    beatmapset_submitted_at = _maybe_datetime(data.get("submitted_date"))
+    beatmapset_ranked_at = _maybe_datetime(data.get("ranked_date"))
     beatmapset_last_updated_at = _maybe_datetime(data.get("last_updated"))
 
     beatmaps_raw: list[_BeatmapJSON] = data.get("beatmaps") or []
@@ -287,6 +304,9 @@ def _from_beatmapset_json(
         title_unicode=data.get("title_unicode"),
         last_fetched_at=now,
         next_refresh_at=now,
+        official_submitted_at=beatmapset_submitted_at,
+        official_ranked_at=beatmapset_ranked_at,
+        official_last_updated_at=beatmapset_last_updated_at,
         source_text=_maybe_str(data.get("source")) or "",
         tags=_tags_text(data.get("tags")),
     )

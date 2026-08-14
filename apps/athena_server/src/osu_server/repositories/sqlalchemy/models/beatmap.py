@@ -74,6 +74,9 @@ class BeatmapSetModel(Base):
         official_status_verified (Mapped[bool]): statusが信頼できるsourceで確認済みか.
         last_fetched_at (Mapped[datetime | None]): metadataを最後に取得したUTC timestamp.
         next_refresh_at (Mapped[datetime | None]): 次のmetadata refresh予定UTC timestamp.
+        official_submitted_at (Mapped[datetime | None]): upstream投稿日時のUTC timestamp.
+        official_ranked_at (Mapped[datetime | None]): upstream ranked日時のUTC timestamp.
+        official_last_updated_at (Mapped[datetime | None]): upstream metadata更新のUTC timestamp.
         search_document_version (Mapped[int]): 検索入力の更新version.
         search_document_updated_at (Mapped[datetime]): 検索入力を最後に更新したUTC timestamp.
         created_at (Mapped[datetime]): recordを作成したUTC timestamp.
@@ -113,6 +116,15 @@ class BeatmapSetModel(Base):
         DateTime(timezone=True), nullable=True
     )
     next_refresh_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    official_submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    official_ranked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    official_last_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     search_document_version: Mapped[int] = mapped_column(

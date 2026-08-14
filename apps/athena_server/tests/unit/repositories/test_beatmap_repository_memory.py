@@ -98,12 +98,18 @@ def _make_beatmap(
 def _make_beatmapset(
     *beatmaps: Beatmap,
     status: BeatmapRankStatus = BeatmapRankStatus.RANKED,
+    official_submitted_at: datetime | None = None,
+    official_ranked_at: datetime | None = None,
+    official_last_updated_at: datetime | None = None,
 ) -> BeatmapSet:
     """指定Beatmap群を持つBeatmapSet snapshot fixtureを構築する.
 
     Args:
         beatmaps (Beatmap): snapshotへ含めるchild Beatmap.
         status (BeatmapRankStatus): BeatmapSetのofficial rank status.
+        official_submitted_at (datetime | None): sourceが報告した投稿日時.
+        official_ranked_at (datetime | None): sourceが報告したranked日時.
+        official_last_updated_at (datetime | None): sourceが報告した更新日時.
 
     Returns:
         BeatmapSet: fixed metadata/timestampsと指定childを持つsnapshot fixture.
@@ -121,6 +127,9 @@ def _make_beatmapset(
         beatmaps=beatmaps,
         last_fetched_at=_NOW,
         next_refresh_at=_NEXT_REFRESH,
+        official_submitted_at=official_submitted_at,
+        official_ranked_at=official_ranked_at,
+        official_last_updated_at=official_last_updated_at,
     )
 
 
@@ -367,6 +376,34 @@ async def test_official_refresh_preserves_existing_last_updated_when_source_omit
 
     refreshed = await repo.get_beatmap(2_000)
     assert refreshed is not None
+    assert refreshed.official_last_updated_at == official_last_updated_at
+
+
+async def test_official_refresh_preserves_existing_set_dates_when_source_omits_them() -> None:
+    """sourceがset-level日時を省略するofficial refreshが既存公式日時を保持する契約を検証する.
+
+    Returns:
+        None: 投稿,ranked,更新日時がrefresh後も保持されることを確認して完了する.
+    """
+    repo = _repo()
+    official_submitted_at = datetime(2026, 6, 27, 12, 0, tzinfo=UTC)
+    official_ranked_at = datetime(2026, 6, 28, 12, 0, tzinfo=UTC)
+    official_last_updated_at = datetime(2026, 6, 29, 12, 0, tzinfo=UTC)
+    await repo.save_beatmapset_snapshot(
+        _make_beatmapset(
+            _make_beatmap(),
+            official_submitted_at=official_submitted_at,
+            official_ranked_at=official_ranked_at,
+            official_last_updated_at=official_last_updated_at,
+        )
+    )
+
+    await repo.save_beatmapset_snapshot(_make_beatmapset(_make_beatmap()))
+
+    refreshed = await repo.get_beatmapset(1_000)
+    assert refreshed is not None
+    assert refreshed.official_submitted_at == official_submitted_at
+    assert refreshed.official_ranked_at == official_ranked_at
     assert refreshed.official_last_updated_at == official_last_updated_at
 
 

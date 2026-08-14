@@ -208,9 +208,10 @@ class FetchBeatmapMetadataUseCase:
         try:
             beatmapset = _snapshot_to_beatmapset(snapshot)
             async with self._uow_factory() as uow:
-                previous_beatmapset = await uow.beatmaps.get_beatmapset(beatmapset.id)
+                previous_beatmapset = (
+                    await uow.beatmaps.save_beatmapset_snapshot_returning_previous(beatmapset)
+                )
                 rebuild_reason = _leaderboard_rebuild_reason(previous_beatmapset, beatmapset)
-                await uow.beatmaps.save_beatmapset_snapshot(beatmapset)
                 await uow.beatmaps.mark_fetch_succeeded(target, now)
                 await uow.commit()
         except ValueError as exc:
@@ -490,8 +491,7 @@ class FetchBeatmapFileUseCase:
             return
 
         expected_md5 = beatmap.checksum_md5
-        async with self._uow_factory() as uow:
-            existing_attachment = await uow.beatmaps.get_current_file_attachment(beatmap_id)
+        existing_attachment = beatmap.file_attachment
         if existing_attachment is not None and existing_attachment.checksum_md5 == expected_md5:
             await self._mark_succeeded(target=target, now=now)
             logger.info(
@@ -665,6 +665,9 @@ def _snapshot_to_beatmapset(snapshot: BeatmapsetSnapshot) -> BeatmapSet:
         beatmaps=beatmaps,
         last_fetched_at=snapshot.last_fetched_at,
         next_refresh_at=snapshot.next_refresh_at,
+        official_submitted_at=snapshot.official_submitted_at,
+        official_ranked_at=snapshot.official_ranked_at,
+        official_last_updated_at=snapshot.official_last_updated_at,
         source_text=snapshot.source_text,
         tags=snapshot.tags,
     )

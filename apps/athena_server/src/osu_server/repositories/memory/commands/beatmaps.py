@@ -158,16 +158,39 @@ class InMemoryBeatmapCommandRepository:
         Raises:
             DuplicateBeatmapChecksumError: snapshot 内又は既存 state と MD5 checksum が競合する
                 場合.
+        """
+        _ = await self.save_beatmapset_snapshot_returning_previous(snapshot)
+
+    async def save_beatmapset_snapshot_returning_previous(
+        self,
+        snapshot: BeatmapSet,
+    ) -> BeatmapSet | None:
+        """Beatmapset snapshotを保存し保存前のbeatmapsetを返す.
+
+        Args:
+            snapshot (BeatmapSet): 保存するbeatmapsetとその子beatmap snapshots.
+
+        Returns:
+            BeatmapSet | None: 保存前のbeatmapset. 初回保存ではNone.
+
+        Raises:
+            DuplicateBeatmapChecksumError: snapshot 内又は既存 state と MD5 checksum が競合する
+                場合.
 
         Notes:
             既存 beatmap の local status override と file attachment を優先して保持する.
             checksum 競合は state を変更する前に検証する.
         """
+        previous = self._state.beatmapsets_by_id.get(snapshot.id)
         self._check_checksum_conflicts(snapshot)
         stored_beatmaps = tuple(
             self._merge_beatmap_snapshot(beatmap) for beatmap in snapshot.beatmaps
         )
-        stored_snapshot = replace(snapshot, beatmaps=stored_beatmaps)
+        stored_snapshot = self._merge_beatmapset_snapshot(
+            snapshot,
+            previous,
+            beatmaps=stored_beatmaps,
+        )
         for beatmap in stored_beatmaps:
             self._store_beatmap(beatmap)
         self._state.beatmapsets_by_id[snapshot.id] = stored_snapshot
@@ -178,6 +201,7 @@ class InMemoryBeatmapCommandRepository:
                 updated_at=now_utc(),
             )
         )
+        return previous
 
     async def get_search_document(self, beatmapset_id: int) -> BeatmapSetSearchDocument | None:
         """External indexing用に保存済み検索projectionを返す.
@@ -515,6 +539,45 @@ class InMemoryBeatmapCommandRepository:
             or existing.official_last_updated_at,
             file_state=file_state,
             file_attachment=file_attachment,
+        )
+
+    def _merge_beatmapset_snapshot(
+        self,
+        snapshot: BeatmapSet,
+        previous: BeatmapSet | None,
+        *,
+        beatmaps: tuple[Beatmap, ...],
+    ) -> BeatmapSet:
+        """Incoming beatmapset snapshotに既存の公式日時を必要に応じて統合する.
+
+        Args:
+            snapshot (BeatmapSet): 外部snapshotから得たincoming beatmapset.
+            previous (BeatmapSet | None): 保存済みbeatmapset. 未登録時はNone.
+            beatmaps (tuple[Beatmap, ...]): local stateを統合済みのchild beatmap列.
+
+        Returns:
+            BeatmapSet: incoming値を優先し,欠損した公式日時だけ既存値で補ったsnapshot.
+        """
+        if previous is None:
+            return replace(snapshot, beatmaps=beatmaps)
+        return replace(
+            snapshot,
+            beatmaps=beatmaps,
+            official_submitted_at=(
+                snapshot.official_submitted_at
+                if snapshot.official_submitted_at is not None
+                else previous.official_submitted_at
+            ),
+            official_ranked_at=(
+                snapshot.official_ranked_at
+                if snapshot.official_ranked_at is not None
+                else previous.official_ranked_at
+            ),
+            official_last_updated_at=(
+                snapshot.official_last_updated_at
+                if snapshot.official_last_updated_at is not None
+                else previous.official_last_updated_at
+            ),
         )
 
     def _store_beatmap(self, beatmap: Beatmap) -> None:

@@ -126,6 +126,24 @@ class BeatmapCommandRepository(Protocol):
         """
         ...
 
+    async def save_beatmapset_snapshot_returning_previous(
+        self,
+        snapshot: BeatmapSet,
+    ) -> BeatmapSet | None:
+        """取得済みBeatmapSet snapshotを保存し保存前の値を返す.
+
+        Args:
+            snapshot (BeatmapSet): 保存する取得済みBeatmapSet snapshot.
+
+        Returns:
+            BeatmapSet | None: 保存前のBeatmapSet. 初回保存ではNone.
+
+        Raises:
+            ValueError: Snapshot 内または保存済み Beatmap と,同じ checksum を異なる Beatmap ID に
+                対応付けようとした場合に送出する.
+        """
+        ...
+
     async def get_search_document(self, beatmapset_id: int) -> BeatmapSetSearchDocument | None:
         """External indexing用に保存済み検索projectionを返す.
 
