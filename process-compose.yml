@@ -88,22 +88,17 @@ processes:
         condition: process_completed_successfully
       valkey:
         condition: process_healthy
-    readiness_probe:
-      exec:
-        command: >-
-          python -c 'import sys; from urllib.request import urlopen;
-          response = urlopen(sys.argv[1], timeout=2); response.close()'
-          "http://127.0.0.1:${SERVER_PORT:-8000}/health"
-      # Development StatReloadの初回起動をprobe failureとして扱わないgrace period.
-      initial_delay_seconds: 15
-      period_seconds: 2
     shutdown:
       signal: 15
       timeout_seconds: 30
 
   worker:
     # uv wrapperを置き換え、Taskiqが停止signalを直接受け取る.
-    command: exec uv run --directory apps/athena_server taskiq worker osu_server.worker:broker
+    command: >-
+      exec uv run --directory apps/athena_server taskiq worker
+      --reload
+      --reload-dir src
+      osu_server.worker:broker
     depends_on:
       postgres:
         condition: process_healthy
