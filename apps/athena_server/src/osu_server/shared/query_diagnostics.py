@@ -8,6 +8,7 @@ from collections import Counter
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from traceback import FrameSummary, extract_stack
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -25,6 +26,13 @@ _SQL_WHITESPACE_PATTERN = re.compile(r"\s+")
 _SQL_PREFIX_MAX_LENGTH = 160
 _FINGERPRINT_LENGTH = 16
 _DUPLICATE_SUMMARY_LIMIT = 10
+_TRACEBACK_CAPTURE_LIMIT = 40
+_TRACEBACK_SUMMARY_LIMIT = 8
+_PROJECT_PATH_MARKERS = ("apps/athena_server/", "tests/")
+_INTERNAL_TRACEBACK_SUFFIXES = (
+    "/shared/query_diagnostics.py",
+    "/infrastructure/database/query_diagnostics.py",
+)
 _current_collector: ContextVar[QueryDiagnosticCollector | None] = ContextVar(
     "query_diagnostic_collector",
     default=None,
@@ -67,11 +75,13 @@ class DuplicateQuerySummary:
         fingerprint (str): redacted SQL template から算出した短縮 fingerprint.
         count (int): この template が scope 内で観測された回数.
         sql_prefix (str): literal 値を ? に置換した SQL template の先頭部分.
+        traceback (tuple[str, ...]): 最初に観測した同一 template の呼び出し元 stack.
     """
 
     fingerprint: str
     count: int
     sql_prefix: str
+    traceback: tuple[str, ...]
 
 
 @dataclass(slots=True, frozen=True)
@@ -106,6 +116,7 @@ class QueryDiagnosticCollector:
         duplicate_threshold (int): duplicate として扱う同一 template の最小回数.
         _query_count (int): scope 内で記録した SQL query 数.
         _template_counts (Counter[str]): redacted SQL template ごとの出現回数.
+        _template_tracebacks (dict[str, tuple[str, ...]]): template ごとの最初の呼び出し元 stack.
     """
 
     scope_kind: str
@@ -113,6 +124,7 @@ class QueryDiagnosticCollector:
     duplicate_threshold: int
     _query_count: int = 0
     _template_counts: Counter[str] = field(default_factory=Counter)
+    _template_tracebacks: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     def record(self, statement: str) -> None:
         """SQL statement を redacted template として記録する.
@@ -131,6 +143,8 @@ class QueryDiagnosticCollector:
             return
         self._query_count += 1
         self._template_counts[template] += 1
+        if template not in self._template_tracebacks:
+            self._template_tracebacks[template] = _query_traceback()
 
     def summary(self) -> QueryDiagnosticSummary:
         """現在の記録内容から redacted summary を返す.
@@ -153,6 +167,7 @@ class QueryDiagnosticCollector:
                 fingerprint=_fingerprint_sql(template),
                 count=count,
                 sql_prefix=_sql_prefix(template),
+                traceback=self._template_tracebacks.get(template, ()),
             )
             for template, count in retained_templates
         )
@@ -206,6 +221,7 @@ def query_diagnostics_warning_fields(
                 "fingerprint": duplicate.fingerprint,
                 "count": duplicate.count,
                 "sql_prefix": duplicate.sql_prefix,
+                "traceback": duplicate.traceback,
             }
             for duplicate in summary.duplicate_queries
         ),
@@ -368,3 +384,63 @@ def _sql_prefix(template: str) -> str:
     if len(template) <= _SQL_PREFIX_MAX_LENGTH:
         return template
     return f"{template[: _SQL_PREFIX_MAX_LENGTH - 3]}..."
+
+
+def _query_traceback() -> tuple[str, ...]:
+    """Query diagnostics に出す呼び出し元 stack を値なし形式で返す.
+
+    Returns:
+        tuple[str, ...]: project内frameだけを `path:line in function` 形式にしたstack.
+
+    Notes:
+        Source lineはSQL literalやparameterを含む可能性があるため記録しない.
+    """
+    frames = [
+        _format_traceback_frame(frame)
+        for frame in extract_stack(limit=_TRACEBACK_CAPTURE_LIMIT)
+        if _is_query_traceback_frame(frame)
+    ]
+    return tuple(frames[-_TRACEBACK_SUMMARY_LIMIT:])
+
+
+def _is_query_traceback_frame(frame: FrameSummary) -> bool:
+    """SQL diagnostics の呼び出し元として表示するproject frameかを返す.
+
+    Args:
+        frame (FrameSummary): Python tracebackから抽出したframe.
+
+    Returns:
+        bool: Athenaのsource/test frameで内部diagnostics実装ではない場合はTrue.
+    """
+    filename = frame.filename.replace("\\", "/")
+    if filename.endswith(_INTERNAL_TRACEBACK_SUFFIXES):
+        return False
+    return any(marker in filename for marker in _PROJECT_PATH_MARKERS)
+
+
+def _format_traceback_frame(frame: FrameSummary) -> str:
+    """Traceback frame を source lineなしの短い表示へ変換する.
+
+    Args:
+        frame (FrameSummary): Python tracebackから抽出したframe.
+
+    Returns:
+        str: `path:line in function` 形式のframe表示.
+    """
+    filename = frame.filename.replace("\\", "/")
+    return f"{_display_traceback_path(filename)}:{frame.lineno} in {frame.name}"
+
+
+def _display_traceback_path(filename: str) -> str:
+    """Traceback用の絶対pathをrepository内pathへ短縮する.
+
+    Args:
+        filename (str): Python tracebackから得たsource file path.
+
+    Returns:
+        str: project marker以降のpath. markerがない場合は入力path.
+    """
+    for marker in _PROJECT_PATH_MARKERS:
+        if marker in filename:
+            return filename[filename.index(marker) :]
+    return filename

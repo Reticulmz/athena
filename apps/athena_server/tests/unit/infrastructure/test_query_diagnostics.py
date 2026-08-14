@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 import pytest
 from sqlalchemy import event as sqlalchemy_event
@@ -92,6 +92,8 @@ def test_scope_records_duplicate_templates_without_parameters() -> None:
     assert duplicate.count == 2
     assert duplicate.sql_prefix == "SELECT * FROM users WHERE email = ? AND id = ?"
     assert duplicate.fingerprint
+    assert duplicate.traceback
+    assert "test_query_diagnostics.py" in repr(duplicate.traceback)
     assert "secret-password" not in repr(summary)
     assert "secret@example.invalid" not in repr(summary)
     assert "user@example.invalid" not in repr(summary)
@@ -223,6 +225,9 @@ def test_duplicate_summary_is_bounded_and_reports_truncation() -> None:
     assert len(summary.duplicate_queries) == 10
     assert fields["duplicate_templates_total"] == 12
     assert fields["duplicates_truncated"] is True
+    duplicates = cast("tuple[dict[str, object], ...]", fields["duplicates"])
+    assert duplicates
+    assert "traceback" in duplicates[0]
 
 
 def test_query_budget_fixture_allows_within_limit(query_budget: QueryBudget) -> None:
