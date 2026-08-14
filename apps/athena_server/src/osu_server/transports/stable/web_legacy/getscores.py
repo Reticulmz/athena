@@ -173,7 +173,7 @@ class StableGetscoresExchange:
             assert outcome.header is not None  # invariant for UPDATE_AVAILABLE outcomes
             await self._request_beatmap_file_warmup(
                 user_id=user_id,
-                beatmap=outcome.header.beatmap,
+                beatmap_id=outcome.header.beatmap.id,
             )
             logger.info(
                 "getscores_update_available",
@@ -186,7 +186,7 @@ class StableGetscoresExchange:
         assert outcome.header is not None  # invariant for HEADER outcomes
         await self._request_beatmap_file_warmup(
             user_id=user_id,
-            beatmap=outcome.header.beatmap,
+            beatmap_id=outcome.header.beatmap.id,
         )
         wire_status = self._status_mapper.map_header_status(outcome.header.beatmap)
         if wire_status is None:
@@ -277,7 +277,6 @@ class StableGetscoresExchange:
         self,
         *,
         user_id: int,
-        beatmap: Beatmap | None = None,
         beatmap_id: int | None = None,
         checksum_md5: str | None = None,
     ) -> None:
@@ -285,7 +284,6 @@ class StableGetscoresExchange:
 
         Args:
             user_id (int): warmup要求を行う認証済みuser ID.
-            beatmap (Beatmap | None): 既に解決済みのwarmup対象beatmap.
             beatmap_id (int | None): warmup対象beatmap ID. checksum_md5と両方がない場合は
                 何もしない.
             checksum_md5 (str | None): warmup対象beatmapのMD5 checksum.
@@ -296,17 +294,10 @@ class StableGetscoresExchange:
         Notes:
             warmup失敗は記録して抑制し, 既に選択したstable responseを変えない.
         """
-        if beatmap is None and beatmap_id is None and checksum_md5 is None:
+        if beatmap_id is None and checksum_md5 is None:
             return
 
         try:
-            if beatmap is not None:
-                _ = await self._beatmap_resolver.resolve_known_beatmap(
-                    beatmap,
-                    BeatmapResolveOptions(require_osu_file=True),
-                )
-                return
-
             _ = await self._beatmap_file_warmup.execute(
                 BeatmapFileWarmupRequest(
                     entrance=BeatmapFileWarmupEntrance.STABLE_GETSCORES,
@@ -319,7 +310,7 @@ class StableGetscoresExchange:
             logger.exception(
                 "getscores_beatmap_file_warmup_failed",
                 user_id=user_id,
-                beatmap_id=beatmap.id if beatmap is not None else beatmap_id,
+                beatmap_id=beatmap_id,
                 has_checksum=checksum_md5 is not None,
             )
 

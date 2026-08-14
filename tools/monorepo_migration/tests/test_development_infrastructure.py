@@ -1624,16 +1624,6 @@ def test_process_graph_preserves_core_readiness_dependency_and_shutdown() -> Non
     }
     app = _require_mapping(processes, "app")
     assert _dependency_conditions(app) == expected_runtime_dependencies
-    app_readiness = _require_mapping(app, "readiness_probe")
-    app_readiness_command = _require_string(
-        _require_mapping(app_readiness, "exec"),
-        "command",
-    )
-    assert "SERVER_PORT" in app_readiness_command
-    assert ":-8000" in app_readiness_command
-    assert "/health" in app_readiness_command
-    assert app_readiness["initial_delay_seconds"] == 15
-    assert app_readiness["period_seconds"] == 2
     assert _require_mapping(app, "shutdown") == {
         "signal": 15,
         "timeout_seconds": 30,

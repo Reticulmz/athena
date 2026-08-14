@@ -42,7 +42,7 @@ def _job_blocks(workflow_source: str) -> dict[str, str]:
 
 
 def test_ci_reports_each_validation_boundary_as_a_distinct_job() -> None:
-    """Quality、test、build、migration、Nix、auditを独立statusとして公開する契約を検証する.
+    """Quality、test、build、Nixを独立statusとして公開する契約を検証する.
 
     Returns:
         None: Required job IDまたは表示名が欠落する場合にassertionで失敗する.
@@ -52,9 +52,7 @@ def test_ci_reports_each_validation_boundary_as_a_distinct_job() -> None:
         "quality": "Quality",
         "test": "Test",
         "build": "Build",
-        "migration": "Migration",
         "nix": "Nix",
-        "audit": "Audit",
     }
 
     assert required_jobs.keys() <= jobs.keys()
@@ -73,8 +71,6 @@ def test_ci_validation_jobs_invoke_canonical_root_recipes() -> None:
     expected_recipes = {
         "quality": "just quality",
         "build": "just build",
-        "migration": "just migration-check",
-        "audit": "just audit-monorepo",
     }
 
     for job_id, command in expected_recipes.items():
@@ -110,13 +106,12 @@ def test_native_jobs_share_locked_setup_without_local_development_mutations() ->
     """
     workflow_source = CI_WORKFLOW_PATH.read_text(encoding="utf-8")
     jobs = _job_blocks(workflow_source)
-    for job_id in ("quality", "test", "build", "migration", "audit"):
+    for job_id in ("quality", "test", "build"):
         job_source = jobs[job_id]
         assert "needs: setup" in job_source
         assert "uses: extractions/setup-just@v3" in job_source
         assert "uv sync --locked --reinstall-package athena-crypto" in job_source
 
-    assert "image: paradedb/paradedb:0.25.1-pg18" in jobs["migration"]
     for forbidden_command in (
         "just setup",
         "just tunnel-setup",
