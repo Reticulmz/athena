@@ -16,7 +16,6 @@ from osu_server.shared.checksums import MD5_HEX_LENGTH, is_lowercase_md5_hexdige
 
 _DIRECT_INACTIVE_STATUSES: Final = frozenset(
     {
-        BeatmapRankStatus.GRAVEYARD,
         BeatmapRankStatus.NOT_SUBMITTED,
         BeatmapRankStatus.UNKNOWN,
     }
@@ -598,7 +597,7 @@ def build_beatmapset_search_document(
         difficulty_names=_difficulty_names(beatmapset.beatmaps),
         modes=_document_modes(beatmapset.beatmaps),
         status=beatmapset.official_status,
-        last_update_at=_last_update_at(beatmapset.beatmaps),
+        last_update_at=_last_update_at(beatmapset),
         is_active=is_direct_searchable_beatmapset(beatmapset),
         document_version=previous.document_version if previous is not None else 1,
         updated_at=previous.updated_at if previous is not None else now,
@@ -683,18 +682,20 @@ def _document_modes(beatmaps: tuple[Beatmap, ...]) -> tuple[BeatmapMode, ...]:
     return tuple(sorted(modes, key=lambda mode: mode.value))
 
 
-def _last_update_at(beatmaps: tuple[Beatmap, ...]) -> datetime | None:
-    """Child metadataが持つ最新のofficial更新時刻を返す.
+def _last_update_at(beatmapset: BeatmapSet) -> datetime | None:
+    """Beatmapsetのofficial更新時刻をset-level優先で返す.
 
     Args:
-        beatmaps (tuple[Beatmap, ...]): 更新時刻を抽出するchild beatmap列.
+        beatmapset (BeatmapSet): 更新時刻を抽出するbeatmapset metadata.
 
     Returns:
-        datetime | None: 最大のofficial_last_updated_at. どのchildにもなければNone.
+        datetime | None: set-levelのofficial_last_updated_at. 未提供時はchildの最大値.
     """
+    if beatmapset.official_last_updated_at is not None:
+        return beatmapset.official_last_updated_at
     values = [
         beatmap.official_last_updated_at
-        for beatmap in beatmaps
+        for beatmap in beatmapset.beatmaps
         if beatmap.official_last_updated_at is not None
     ]
     return max(values) if values else None

@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 _TSVECTOR_REQUIRED_FIELDS = (
     "id",
     "official_status",
+    "official_last_updated_at",
     "direct_search_text",
 )
 
@@ -209,6 +210,7 @@ async def test_text_search_returns_candidates_and_compiles_declared_filters() ->
     assert "beatmaps.mode = 'osu'" in sql
     assert "GROUP BY anon_1.beatmapset_id" in sql
     assert "ORDER BY score DESC" in sql
+    assert "coalesce((SELECT beatmapsets.official_last_updated_at" in sql
     assert "max(beatmaps.official_last_updated_at)" in sql
     assert "anon_1.beatmapset_id DESC" in sql
     assert "LIMIT 3" in sql
@@ -261,6 +263,7 @@ async def test_tsvector_search_returns_candidates_and_compiles_declared_filters(
     assert "beatmapsets.official_status IN ('ranked')" in sql
     assert "beatmaps.mode = 'osu'" in sql
     assert "ORDER BY score DESC" in sql
+    assert "coalesce(beatmapsets.official_last_updated_at" in sql
     assert "max(beatmaps.official_last_updated_at)" in sql
     assert "beatmapsets.id DESC" in sql
     assert "LIMIT 3" in sql
@@ -306,7 +309,10 @@ async def test_special_listing_uses_fallback_order_without_text_predicate(
     assert "@@@" not in sql
     assert "|||" not in sql
     assert "0.0 AS score" in sql
-    assert "ORDER BY (SELECT max(beatmaps.official_last_updated_at)" in sql
+    assert (
+        "ORDER BY coalesce(beatmapsets.official_last_updated_at, "
+        "(SELECT max(beatmaps.official_last_updated_at)"
+    ) in sql
     assert "beatmapsets.id DESC" in sql
 
 

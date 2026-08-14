@@ -36,7 +36,7 @@ def test_direct_search_parser_builds_authenticated_typed_request() -> None:
     assert result.request is not None
     assert result.request.authenticated_user_id == 42
     assert result.request.query_text == "camellia"
-    assert result.request.statuses == (BeatmapRankStatus.RANKED, BeatmapRankStatus.APPROVED)
+    assert result.request.statuses == (BeatmapRankStatus.RANKED,)
     assert result.request.mode is BeatmapMode.OSU
     assert result.request.page == 2
     assert result.request.page_size == 100

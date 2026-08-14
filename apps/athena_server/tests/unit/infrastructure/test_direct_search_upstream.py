@@ -11,6 +11,7 @@ from osu_server.domain.beatmaps import (
     BeatmapMode,
     BeatmapRankStatus,
     BeatmapSourceVerification,
+    DirectSearchListing,
     DirectSearchRequest,
     DirectSearchUpstreamResult,
 )
@@ -142,34 +143,30 @@ async def test_cheesegull_provider_maps_hinamizawa_json_search_results() -> None
     assert result.beatmapsets[0].beatmaps[0].mode is BeatmapMode.OSU
 
 
-async def test_cheesegull_provider_splits_multi_status_search() -> None:
-    """複合status検索をCheeseGullが扱える単一status queryへ分解する契約を検証する.
+async def test_cheesegull_provider_uses_ranked_direct_filter_for_ranked_group() -> None:
+    """Ranked系stable filterをHinamizawa direct互換のranked queryへ畳む契約を検証する.
 
-    Stable `r=0` はrankedとapprovedを同時に要求するが, CheeseGull互換JSON検索は単一status
-    queryだけを受けるため, status別に取得してBeatmapSet IDで重複排除することを確認する.
+    Stable `r=0` はHinamizawa direct仕様と同じrankedのみとして扱うため、`status=1`を
+    1回だけ照会することを確認する.
 
     Returns:
-        None: status別request, page上限, more flagを検証して完了する.
+        None: ranked direct query, page上限, more flagを検証して完了する.
     """
     requested_statuses: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        """MockTransportでstatus別CheeseGull検索responseを返す.
+        """MockTransportでHinamizawa ranked検索responseを返す.
 
         Args:
             request (httpx.Request): providerが送信したHTTP request.
 
         Returns:
-            httpx.Response: statusごとのCheeseGull互換検索結果JSON.
+            httpx.Response: ranked direct互換のCheeseGull型検索結果JSON.
         """
         mock_request = _mock_transport_request(request)
         status = mock_request.url.params["status"]
         requested_statuses.append(status)
-        rows = (
-            [_cheesegull_row(1000), _cheesegull_row(1001)]
-            if status == "1"
-            else [_cheesegull_row(1001), _cheesegull_row(1002)]
-        )
+        rows = [_cheesegull_row(1000), _cheesegull_row(1001), _cheesegull_row(1002)]
         return httpx.Response(200, json=rows)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
@@ -183,14 +180,250 @@ async def test_cheesegull_provider_splits_multi_status_search() -> None:
             DirectSearchRequest(
                 authenticated_user_id=1,
                 query_text="",
-                statuses=(BeatmapRankStatus.RANKED, BeatmapRankStatus.APPROVED),
+                statuses=(BeatmapRankStatus.RANKED,),
                 page_size=2,
             )
         )
 
-    assert requested_statuses == ["1", "2"]
+    assert requested_statuses == ["1"]
     assert [beatmapset.id for beatmapset in result.beatmapsets] == [1000, 1001]
     assert result.has_more is True
+
+
+async def test_cheesegull_provider_expands_all_status_search() -> None:
+    """Stable All filterをHinamizawa v1の明示status検索へ展開する契約を検証する.
+
+    `status`を省略したv1検索がsource側の既定statusに偏っても、Stable `r=4`のAllでは
+    v1が公開しているstatusを個別に取得し、Newest順で混在statusを返すことを確認する.
+
+    Returns:
+        None: All検索のstatus query列とNewest順の混在結果を検証して完了する.
+    """
+    requested_statuses: list[str] = []
+    rows_by_status = {
+        "0": [_cheesegull_row(1000, ranked_status=0, last_update="2026-01-01T00:00:00Z")],
+        "1": [_cheesegull_row(1001, ranked_status=1, last_update="2026-01-02T00:00:00Z")],
+        "2": [_cheesegull_row(1002, ranked_status=2, last_update="2026-01-03T00:00:00Z")],
+        "3": [_cheesegull_row(1003, ranked_status=3, last_update="2026-01-04T00:00:00Z")],
+        "4": [_cheesegull_row(1004, ranked_status=4, last_update="2026-01-05T00:00:00Z")],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """MockTransportでstatus別のHinamizawa検索responseを返す.
+
+        Args:
+            request (httpx.Request): providerが送信したHTTP request.
+
+        Returns:
+            httpx.Response: status queryに対応するCheeseGull互換検索結果JSON.
+        """
+        params = _mock_transport_request(request).url.params
+        status = params.get("status")
+        requested_statuses.append(status or "<missing>")
+        fallback_rows = [
+            _cheesegull_row(9999, ranked_status=1, last_update="2026-01-06T00:00:00Z")
+        ]
+        rows = fallback_rows if status is None else rows_by_status.get(status, fallback_rows)
+        return httpx.Response(200, json=rows)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = CheeseGullDirectSearchUpstreamProvider(
+            http_client=BeatmapHttpClient(client),
+            search_url="https://mirror.hinamizawa.ai/api/v1/hinai/search",
+            source_label="hinamizawa",
+        )
+
+        result = await provider.search(
+            DirectSearchRequest(
+                authenticated_user_id=1,
+                query_text="",
+                statuses=(),
+                listing=DirectSearchListing.NEWEST,
+                page_size=3,
+            )
+        )
+
+    assert requested_statuses == ["0", "1", "2", "3", "4"]
+    assert [beatmapset.id for beatmapset in result.beatmapsets] == [1004, 1003, 1002]
+    assert [beatmapset.official_status for beatmapset in result.beatmapsets] == [
+        BeatmapRankStatus.LOVED,
+        BeatmapRankStatus.QUALIFIED,
+        BeatmapRankStatus.APPROVED,
+    ]
+    assert result.has_more is True
+
+
+async def test_cheesegull_provider_paginates_expanded_all_status_globally() -> None:
+    """All status展開後のpageをstatus別offsetではなくglobal順で切り出す契約を検証する.
+
+    Stable `r=4&p=1`では各statusの2件目以降を単純連結するのではなく、要求pageまでの
+    status別候補を集めてNewest順に並べ、全status混在結果の2page目を返すことを確認する.
+
+    Returns:
+        None: status別request offsetとglobal page結果を検証して完了する.
+    """
+    requested_pages: list[tuple[str, str]] = []
+    rows_by_page = {
+        ("0", "0"): [
+            _cheesegull_row(1000, ranked_status=0, last_update="2026-01-06T00:00:00Z"),
+            _cheesegull_row(1002, ranked_status=0, last_update="2026-01-04T00:00:00Z"),
+        ],
+        ("0", "2"): [_cheesegull_row(1004, ranked_status=0, last_update="2026-01-02T00:00:00Z")],
+        ("1", "0"): [
+            _cheesegull_row(1001, ranked_status=1, last_update="2026-01-05T00:00:00Z"),
+            _cheesegull_row(1003, ranked_status=1, last_update="2026-01-03T00:00:00Z"),
+        ],
+        ("1", "2"): [_cheesegull_row(1005, ranked_status=1, last_update="2026-01-01T00:00:00Z")],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """MockTransportでstatusとoffsetに対応する検索pageを返す.
+
+        Args:
+            request (httpx.Request): providerが送信したHTTP request.
+
+        Returns:
+            httpx.Response: 指定status/pageのCheeseGull互換検索結果JSON.
+        """
+        params = _mock_transport_request(request).url.params
+        page_key = (params["status"], params["offset"])
+        requested_pages.append(page_key)
+        assert params["amount"] == "2"
+        return httpx.Response(200, json=rows_by_page.get(page_key, []))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = CheeseGullDirectSearchUpstreamProvider(
+            http_client=BeatmapHttpClient(client),
+            search_url="https://mirror.hinamizawa.ai/api/v1/hinai/search",
+            source_label="hinamizawa",
+        )
+
+        result = await provider.search(
+            DirectSearchRequest(
+                authenticated_user_id=1,
+                query_text="",
+                statuses=(),
+                listing=DirectSearchListing.NEWEST,
+                page=1,
+                page_size=2,
+            )
+        )
+
+    assert requested_pages == [
+        ("0", "0"),
+        ("0", "2"),
+        ("1", "0"),
+        ("1", "2"),
+        ("2", "0"),
+        ("2", "2"),
+        ("3", "0"),
+        ("3", "2"),
+        ("4", "0"),
+        ("4", "2"),
+    ]
+    assert [beatmapset.id for beatmapset in result.beatmapsets] == [1002, 1003]
+    assert result.has_more is True
+
+
+async def test_cheesegull_provider_uses_graveyard_status_query() -> None:
+    """Graveyard stable filterをHinamizawa JSON検索の`status=-2`へ変換する契約を検証する.
+
+    Returns:
+        None: Graveyard検索のstatus queryとdomain変換結果を検証して完了する.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """MockTransportでGraveyard検索requestとJSON responseを返す.
+
+        Args:
+            request (httpx.Request): providerが送信したHTTP request.
+
+        Returns:
+            httpx.Response: GraveyardのCheeseGull互換検索結果JSON.
+        """
+        mock_request = _mock_transport_request(request)
+        assert mock_request.url.params["status"] == "-2"
+        return httpx.Response(200, json=[_cheesegull_row(1000, ranked_status=-2)])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = CheeseGullDirectSearchUpstreamProvider(
+            http_client=BeatmapHttpClient(client),
+            search_url="https://mirror.hinamizawa.ai/api/v1/hinai/search",
+            source_label="hinamizawa",
+        )
+
+        result = await provider.search(
+            DirectSearchRequest(
+                authenticated_user_id=1,
+                query_text="",
+                statuses=(BeatmapRankStatus.GRAVEYARD,),
+            )
+        )
+
+    assert result.beatmapsets[0].official_status is BeatmapRankStatus.GRAVEYARD
+
+
+async def test_cheesegull_provider_translates_special_listings_to_hinamizawa_sort() -> None:
+    """Stable directのquick queryをHinamizawa JSON検索のsortへ変換する契約を検証する.
+
+    `Newest`, `Top Rated`, `Most Played` はliteral text検索ではなく、空queryとsort指定として
+    `/api/v1/hinai/search` へ渡すことを確認する.
+
+    Returns:
+        None: special listingごとのquery, status, mode, amount, offset, sortを検証する.
+    """
+    observed_params: list[tuple[str, str, str, str, str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """MockTransportでspecial listing検索requestを記録して空JSON responseを返す.
+
+        Args:
+            request (httpx.Request): providerが送信したHTTP request.
+
+        Returns:
+            httpx.Response: 空のCheeseGull互換検索結果JSON.
+        """
+        params = _mock_transport_request(request).url.params
+        observed_params.append(
+            (
+                params["query"],
+                params["mode"],
+                params["status"],
+                params["amount"],
+                params["offset"],
+                params["sort"],
+            )
+        )
+        return httpx.Response(200, json=[])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = CheeseGullDirectSearchUpstreamProvider(
+            http_client=BeatmapHttpClient(client),
+            search_url="https://mirror.hinamizawa.ai/api/v1/hinai/search",
+            source_label="hinamizawa",
+        )
+
+        for listing in (
+            DirectSearchListing.NEWEST,
+            DirectSearchListing.TOP_RATED,
+            DirectSearchListing.MOST_PLAYED,
+        ):
+            _ = await provider.search(
+                DirectSearchRequest(
+                    authenticated_user_id=1,
+                    query_text=listing.value,
+                    statuses=(BeatmapRankStatus.LOVED,),
+                    mode=BeatmapMode.OSU,
+                    page=1,
+                    listing=listing,
+                )
+            )
+
+    assert observed_params == [
+        ("", "0", "4", "100", "100", "ranked_desc"),
+        ("", "0", "4", "100", "100", "favourites_desc"),
+        ("", "0", "4", "100", "100", "plays_desc"),
+    ]
 
 
 async def test_nerinyan_provider_maps_v2_search_results() -> None:
@@ -313,11 +546,18 @@ class _SucceedingUpstreamProvider:
         return self.result
 
 
-def _cheesegull_row(beatmapset_id: int) -> dict[str, object]:
+def _cheesegull_row(
+    beatmapset_id: int,
+    *,
+    ranked_status: int = 1,
+    last_update: str = "2024-01-02T03:04:05Z",
+) -> dict[str, object]:
     """CheeseGull互換のbeatmapset検索rowを作る.
 
     Args:
         beatmapset_id (int): rowへ設定するbeatmapset ID.
+        ranked_status (int): `RankedStatus` fieldへ設定するCheeseGull互換status値.
+        last_update (str): `LastUpdate` fieldへ設定する更新日時文字列.
 
     Returns:
         dict[str, object]: Hinamizawa JSON検索と同型の最小row.
@@ -327,8 +567,8 @@ def _cheesegull_row(beatmapset_id: int) -> dict[str, object]:
         "Artist": "Camellia",
         "Title": f"Title {beatmapset_id}",
         "Creator": "Mapper",
-        "RankedStatus": 1,
-        "LastUpdate": "2024-01-02T03:04:05Z",
+        "RankedStatus": ranked_status,
+        "LastUpdate": last_update,
         "Source": "album",
         "Tags": "electronic",
         "ChildrenBeatmaps": [

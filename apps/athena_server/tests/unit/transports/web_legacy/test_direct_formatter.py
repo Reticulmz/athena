@@ -32,7 +32,7 @@ _UPDATED_AT = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 
 
 def test_search_response_formats_count_and_stable_rows() -> None:
-    """Search結果をcount lineと15 fieldのstable direct rowへ整形する契約を検証する.
+    """Search結果をcount lineと14 fieldのstable direct rowへ整形する契約を検証する.
 
     Returns:
         None: count, row field順, difficulty summary順を検証して完了する.
@@ -47,14 +47,14 @@ def test_search_response_formats_count_and_stable_rows() -> None:
     fields = lines[1].split("|")
 
     assert lines[0] == "1"
-    assert len(fields) == 15
+    assert len(fields) == 14
     assert fields == [
-        "10 Artist - Title 10.osz",
+        "10.osz",
         "Artist",
         "Title 10",
         "Mapper",
-        "2",
-        "0.0",
+        "1",
+        "10.00",
         "2026-01-02 03:04:05",
         "10",
         "0",
@@ -62,8 +62,7 @@ def test_search_response_formats_count_and_stable_rows() -> None:
         "0",
         "0",
         "0",
-        "Easy@0,Insane@0",
-        "0",
+        "Easy ★5.00@0,Insane ★6.00@0",
     ]
 
 
@@ -78,8 +77,26 @@ def test_point_lookup_formats_one_row_or_empty_body() -> None:
     )
     missing = format_direct_point_lookup_response(DirectPointLookupQueryResult(beatmapset=None))
 
-    assert len(_response_text(found).split("|")) == 15
+    assert len(_response_text(found).split("|")) == 14
     assert _response_text(missing) == ""
+
+
+def test_formatter_prefers_set_level_last_update() -> None:
+    """Set-level更新日時がある場合にstable direct rowのLastUpdateへ優先出力する契約を検証する.
+
+    Returns:
+        None: child更新日時ではなくBeatmapSetのofficial_last_updated_atをassertして完了する.
+    """
+    set_updated_at = datetime(2026, 1, 3, 4, 5, 6, tzinfo=UTC)
+    response = format_direct_point_lookup_response(
+        DirectPointLookupQueryResult(
+            beatmapset=_beatmapset(25, official_last_updated_at=set_updated_at)
+        )
+    )
+
+    fields = _response_text(response).split("|")
+
+    assert fields[6] == "2026-01-03 04:05:06"
 
 
 def test_formatter_sanitizes_delimiters_and_recounts_omitted_rows() -> None:
@@ -109,7 +126,7 @@ def test_formatter_sanitizes_delimiters_and_recounts_omitted_rows() -> None:
 
     assert lines[0] == "1"
     assert len(lines) == 2
-    assert len(fields) == 15
+    assert len(fields) == 14
     assert "A|B" not in row
     assert "T\rD" not in row
     assert "M|N" not in row
@@ -117,22 +134,23 @@ def test_formatter_sanitizes_delimiters_and_recounts_omitted_rows() -> None:
     assert "official" not in row
     assert "verified" not in row
     assert "fresh" not in row
-    assert fields[13] == "Easy One Bad Extra@0"
+    assert fields[13] == "Easy One Bad Extra ★6.00@0"
 
 
 def test_direct_status_values_follow_stable_ranked_status_mapping() -> None:
-    """Direct rowのstatus fieldが既存stable status値に揃う契約を検証する.
+    """Direct rowのstatus fieldがosu!direct row status値に揃う契約を検証する.
 
     Returns:
-        None: status別のwire値を検証して完了する.
+        None: getscoresとは異なるdirect row status値を検証して完了する.
     """
     statuses = (
         (BeatmapRankStatus.PENDING, "0"),
         (BeatmapRankStatus.WIP, "0"),
-        (BeatmapRankStatus.RANKED, "2"),
-        (BeatmapRankStatus.APPROVED, "3"),
-        (BeatmapRankStatus.QUALIFIED, "4"),
-        (BeatmapRankStatus.LOVED, "5"),
+        (BeatmapRankStatus.GRAVEYARD, "-2"),
+        (BeatmapRankStatus.RANKED, "1"),
+        (BeatmapRankStatus.APPROVED, "2"),
+        (BeatmapRankStatus.QUALIFIED, "3"),
+        (BeatmapRankStatus.LOVED, "4"),
     )
 
     for status, expected in statuses:
@@ -182,6 +200,7 @@ def _beatmapset(
     status: BeatmapRankStatus = BeatmapRankStatus.RANKED,
     versions: tuple[str, ...] = ("Insane", "Easy"),
     beatmaps: tuple[Beatmap, ...] | None = None,
+    official_last_updated_at: datetime | None = None,
 ) -> BeatmapSet:
     """Direct formatter test用のbeatmapset metadataを作る.
 
@@ -193,6 +212,7 @@ def _beatmapset(
         status (BeatmapRankStatus): setとchildに設定するrank status.
         versions (tuple[str, ...]): child difficulty名.
         beatmaps (tuple[Beatmap, ...] | None): 明示するchild列. Noneならversionsから作る.
+        official_last_updated_at (datetime | None): set-level更新日時. Noneならchildの値を使う.
 
     Returns:
         BeatmapSet: stable direct formatterへ渡すmetadata.
@@ -212,6 +232,7 @@ def _beatmapset(
         ),
         last_fetched_at=_UPDATED_AT,
         next_refresh_at=None,
+        official_last_updated_at=official_last_updated_at,
     )
 
 

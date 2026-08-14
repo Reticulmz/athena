@@ -214,10 +214,10 @@ def test_direct_search_route_returns_count_and_stable_rows_for_authenticated_use
     lines = response.text.splitlines()
     row_fields = lines[1].split("|")
     assert lines[0] == "1"
-    assert len(row_fields) == 15
-    assert row_fields[0] == f"{_BEATMAPSET_ID} Camellia - Direct Contract.osz"
+    assert len(row_fields) == 14
+    assert row_fields[0] == f"{_BEATMAPSET_ID}.osz"
     assert row_fields[7] == str(_BEATMAPSET_ID)
-    assert row_fields[13] == "Normal@0"
+    assert row_fields[13] == "Normal ★2.50@0"
     assert len(search_query.inputs) == 1
     assert search_query.inputs[0].authenticated_user_id == user_id
     assert search_query.inputs[0].query_text == "Camellia"
@@ -608,12 +608,12 @@ def _stable_row_text() -> str:
         str: formatterから期待されるsingle-row stable direct body.
     """
     return (
-        f"{_BEATMAPSET_ID} Camellia - Direct Contract.osz"
+        f"{_BEATMAPSET_ID}.osz"
         "|Camellia"
         "|Direct Contract"
         "|ContractMapper"
-        "|2"
-        "|0.0"
+        "|1"
+        "|10.00"
         "|2026-08-10 00:00:00"
         f"|{_BEATMAPSET_ID}"
         "|0"
@@ -621,8 +621,7 @@ def _stable_row_text() -> str:
         "|0"
         "|0"
         "|0"
-        "|Normal@0"
-        "|0"
+        "|Normal ★2.50@0"
     )
 
 

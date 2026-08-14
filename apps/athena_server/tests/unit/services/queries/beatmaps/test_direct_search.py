@@ -386,8 +386,8 @@ async def test_hydrates_candidates_in_backend_order_for_special_listing() -> Non
 async def test_excludes_unusable_metadata_without_false_more_results_sentinel() -> None:
     """欠損又は利用不能なmetadataを除外した不完全pageにmore-results sentinelを出さない.
 
-    childless, inactive, not submittedの候補を混ぜ、usableなsetだけが返り、backendのhas_moreが
-    Trueでも返却件数がpage size未満なら実件数を返すことを確認する.
+    childless, graveyard, not submittedの候補を混ぜ、directで表示可能なsetだけが返り、
+    backendのhas_moreがTrueでも返却件数がpage size未満なら実件数を返すことを確認する.
 
     Returns:
         None: metadata除外と実件数を検証して完了する.
@@ -411,8 +411,8 @@ async def test_excludes_unusable_metadata_without_false_more_results_sentinel() 
         DirectSearchRequest(authenticated_user_id=1, query_text="Camellia")
     )
 
-    assert [beatmapset.id for beatmapset in result.beatmapsets] == [10]
-    assert result.stable_result_count == 1
+    assert [beatmapset.id for beatmapset in result.beatmapsets] == [30, 10]
+    assert result.stable_result_count == 2
 
 
 async def test_uses_more_results_sentinel_for_full_hydrated_page() -> None:
@@ -513,13 +513,13 @@ async def test_uses_more_results_sentinel_for_short_upstream_page_with_more() ->
 
 
 async def test_newest_search_does_not_stop_at_short_local_page_when_upstream_has_more() -> None:
-    """Newestのlocal 48件pageをexternal候補で補い`101` sentinelを返す契約を検証する.
+    """Newestのlocal 48件pageをexternal最新候補で置き換えて`101` sentinelを返す契約を検証する.
 
     Stable `q=Newest&r=0&m=-1&p=0`でlocal catalogが48件しかhydrateできない条件でも,
-    upstreamが次pageありを示す場合はlocalだけで打ち切らず100行までmergeすることを確認する.
+    upstreamが次pageありを示す場合はlocalだけで打ち切らずupstreamの最新順を返すことを確認する.
 
     Returns:
-        None: local不足pageのmerge件数とstable count sentinelを検証して完了する.
+        None: local不足pageのupstream優先順序とstable count sentinelを検証して完了する.
     """
     store = InMemoryBeatmapStore()
     local_ids = range(1, 49)
@@ -543,7 +543,7 @@ async def test_newest_search_does_not_stop_at_short_local_page_when_upstream_has
     request = DirectSearchRequest(
         authenticated_user_id=1,
         query_text="",
-        statuses=(BeatmapRankStatus.RANKED, BeatmapRankStatus.APPROVED),
+        statuses=(BeatmapRankStatus.RANKED,),
         listing=DirectSearchListing.NEWEST,
     )
 
@@ -555,9 +555,180 @@ async def test_newest_search_does_not_stop_at_short_local_page_when_upstream_has
 
     assert upstream.requests == [request]
     assert len(result.beatmapsets) == 100
-    assert [beatmapset.id for beatmapset in result.beatmapsets[:3]] == [1, 2, 3]
-    assert [beatmapset.id for beatmapset in result.beatmapsets[-3:]] == [98, 99, 100]
+    assert [beatmapset.id for beatmapset in result.beatmapsets[:3]] == [49, 50, 51]
+    assert [beatmapset.id for beatmapset in result.beatmapsets[-3:]] == [146, 147, 148]
     assert result.stable_result_count == STABLE_DIRECT_MORE_RESULTS_SENTINEL
+
+
+async def test_newest_search_prefers_upstream_when_local_page_is_full() -> None:
+    """Newestのfull local pageでもexternal最新候補をresponse先頭へ出す契約を検証する.
+
+    Stable `q=Newest&r=8&m=0&p=0`でlocal catalogが古い100件を返せる条件でも、初回refreshで
+    upstreamが返したLoved最新順をresponseとして採用することを確認する.
+
+    Returns:
+        None: full local pageでupstream最新順がlocal候補に潰されないことを検証して完了する.
+    """
+    store = InMemoryBeatmapStore()
+    local_ids = range(1, 101)
+    for beatmapset_id in local_ids:
+        await store.save_beatmapset_snapshot(
+            _beatmapset(beatmapset_id, status=BeatmapRankStatus.LOVED)
+        )
+    backend = DirectSearchBackendStub(
+        DirectSearchBackendResult(
+            candidates=tuple(
+                DirectSearchCandidate(beatmapset_id=beatmapset_id, score=0.0)
+                for beatmapset_id in local_ids
+            ),
+            has_more=True,
+        )
+    )
+    upstream = DirectSearchUpstreamProviderStub(
+        DirectSearchUpstreamResult(
+            beatmapsets=tuple(
+                _beatmapset(beatmapset_id, status=BeatmapRankStatus.LOVED)
+                for beatmapset_id in range(1001, 1101)
+            ),
+            has_more=True,
+        )
+    )
+    request = DirectSearchRequest(
+        authenticated_user_id=1,
+        query_text="",
+        statuses=(BeatmapRankStatus.LOVED,),
+        mode=BeatmapMode.OSU,
+        listing=DirectSearchListing.NEWEST,
+    )
+
+    result = await DirectSearchQuery(
+        store.query_repository,
+        backend,
+        upstream_provider=upstream,
+    ).execute(request)
+
+    assert upstream.requests == [request]
+    assert [beatmapset.id for beatmapset in result.beatmapsets[:3]] == [1001, 1002, 1003]
+    assert [beatmapset.id for beatmapset in result.beatmapsets[-3:]] == [1098, 1099, 1100]
+    assert result.stable_result_count == STABLE_DIRECT_MORE_RESULTS_SENTINEL
+
+
+async def test_newest_search_merges_upstream_and_local_without_duplicates() -> None:
+    """Newestのexternal候補とlocal候補をID重複なしで統合する契約を検証する.
+
+    Upstreamがlocalにも存在するbeatmapsetを返す条件で、upstream順を優先しつつlocalの残り候補を
+    後ろへ補充し、同じbeatmapset IDが2回出ないことを確認する.
+
+    Returns:
+        None: Newest検索のupstream-first mergeと重複排除を検証して完了する.
+    """
+    store = InMemoryBeatmapStore()
+    for beatmapset_id in (10, 20, 30):
+        await store.save_beatmapset_snapshot(
+            _beatmapset(beatmapset_id, status=BeatmapRankStatus.LOVED)
+        )
+    backend = DirectSearchBackendStub(
+        DirectSearchBackendResult(
+            candidates=(
+                DirectSearchCandidate(beatmapset_id=10, score=3.0),
+                DirectSearchCandidate(beatmapset_id=20, score=2.0),
+                DirectSearchCandidate(beatmapset_id=30, score=1.0),
+            ),
+            has_more=False,
+        )
+    )
+    upstream = DirectSearchUpstreamProviderStub(
+        DirectSearchUpstreamResult(
+            beatmapsets=(
+                _beatmapset(20, status=BeatmapRankStatus.LOVED),
+                _beatmapset(40, status=BeatmapRankStatus.LOVED),
+            ),
+            has_more=False,
+        )
+    )
+    request = DirectSearchRequest(
+        authenticated_user_id=1,
+        query_text="",
+        statuses=(BeatmapRankStatus.LOVED,),
+        page_size=4,
+        listing=DirectSearchListing.NEWEST,
+    )
+
+    result = await DirectSearchQuery(
+        store.query_repository,
+        backend,
+        upstream_provider=upstream,
+    ).execute(request)
+
+    assert upstream.requests == [request]
+    assert [beatmapset.id for beatmapset in result.beatmapsets] == [20, 40, 10, 30]
+    assert result.stable_result_count == 4
+
+
+async def test_newest_search_respects_first_page_refresh_interval() -> None:
+    """Newestはcoverage保存済みでもpage 0 refresh間隔でexternal検索を抑制する.
+
+    Stable `q=Newest&r=8&m=0&p=0` は最新feedの表示なので、前回のupstream coverage保存後でも
+    短時間の再検索ではupstreamを再実行せず、interval経過後は再実行することを確認する.
+
+    Returns:
+        None: coverage保存後のNewest page 0でupstream検索がintervalに従うことを検証して完了する.
+    """
+    store = InMemoryBeatmapStore()
+    for beatmapset_id in (10, 20):
+        await store.save_beatmapset_snapshot(
+            _beatmapset(beatmapset_id, status=BeatmapRankStatus.LOVED)
+        )
+    backend = DirectSearchBackendStub(
+        DirectSearchBackendResult(
+            candidates=(
+                DirectSearchCandidate(beatmapset_id=10, score=2.0),
+                DirectSearchCandidate(beatmapset_id=20, score=1.0),
+            ),
+            has_more=True,
+        )
+    )
+    upstream = DirectSearchUpstreamProviderStub(
+        DirectSearchUpstreamResult(
+            beatmapsets=(
+                _beatmapset(30, status=BeatmapRankStatus.LOVED),
+                _beatmapset(40, status=BeatmapRankStatus.LOVED),
+            ),
+            has_more=True,
+        )
+    )
+    request = DirectSearchRequest(
+        authenticated_user_id=1,
+        query_text="",
+        statuses=(BeatmapRankStatus.LOVED,),
+        mode=BeatmapMode.OSU,
+        page_size=2,
+        listing=DirectSearchListing.NEWEST,
+    )
+    current_time = [datetime(2026, 1, 1, tzinfo=UTC)]
+    query = DirectSearchQuery(
+        store.query_repository,
+        backend,
+        upstream_provider=upstream,
+        coverage_reader=store.query_repository,
+        first_page_refresh_seconds=10.0,
+        clock=lambda: current_time[0],
+    )
+
+    first = await query.execute(request)
+    assert first.coverage_record is not None
+    async with store.uow_factory() as uow:
+        await uow.beatmaps.record_direct_coverage(first.coverage_record)
+        await uow.commit()
+    second = await query.execute(request)
+    current_time[0] += timedelta(seconds=11)
+    third = await query.execute(request)
+
+    assert upstream.requests == [request, request]
+    assert [beatmapset.id for beatmapset in second.beatmapsets] == [10, 20]
+    assert second.coverage_record is None
+    assert [beatmapset.id for beatmapset in third.beatmapsets] == [30, 40]
+    assert third.coverage_record is not None
 
 
 async def test_returns_empty_result_without_triggering_metadata_fetch() -> None:
@@ -620,8 +791,8 @@ async def test_merges_external_search_results_when_local_page_is_incomplete() ->
 async def test_external_search_results_are_filtered_and_deduplicated() -> None:
     """External search候補をlocal候補と同じ公開status/mode条件でfilterして重複排除する.
 
-    外部検索がlocal重複、status不一致、mode不一致、有効候補を返す条件で、有効な未保存候補だけが
-    stable結果に追加されることを確認する.
+    外部検索がlocal重複、Graveyard、mode不一致、有効候補を返す条件で、requestのstatus条件に
+    合う未保存候補だけがstable結果に追加されることを確認する.
 
     Returns:
         None: external候補のdedupeとfilterを検証して完了する.
@@ -659,6 +830,39 @@ async def test_external_search_results_are_filtered_and_deduplicated() -> None:
     ).execute(request)
 
     assert [beatmapset.id for beatmapset in result.beatmapsets] == [10, 40]
+
+
+async def test_graveyard_external_search_results_are_accepted() -> None:
+    """Graveyard filterのexternal検索候補をstable結果へ追加する契約を検証する.
+
+    Stable directの`r=5`はGraveyard検索なので、upstreamが返したGraveyard候補がdirect eligibilityで
+    落ちずに結果へ残ることを確認する.
+
+    Returns:
+        None: Graveyard external候補が結果へmergeされることを検証して完了する.
+    """
+    store = InMemoryBeatmapStore()
+    backend = DirectSearchBackendStub(DirectSearchBackendResult(candidates=(), has_more=False))
+    upstream = DirectSearchUpstreamProviderStub(
+        DirectSearchUpstreamResult(
+            beatmapsets=(_beatmapset(20, status=BeatmapRankStatus.GRAVEYARD),),
+            has_more=False,
+        )
+    )
+    request = DirectSearchRequest(
+        authenticated_user_id=1,
+        query_text="",
+        statuses=(BeatmapRankStatus.GRAVEYARD,),
+    )
+
+    result = await DirectSearchQuery(
+        store.query_repository,
+        backend,
+        upstream_provider=upstream,
+    ).execute(request)
+
+    assert upstream.requests == [request]
+    assert [beatmapset.id for beatmapset in result.beatmapsets] == [20]
 
 
 async def test_external_search_timeout_returns_local_results() -> None:
@@ -705,7 +909,9 @@ async def test_coverage_missing_triggers_external_search_for_full_local_page() -
     """
     store = InMemoryBeatmapStore()
     for beatmapset_id in (10, 20):
-        await store.save_beatmapset_snapshot(_beatmapset(beatmapset_id))
+        await store.save_beatmapset_snapshot(
+            _beatmapset(beatmapset_id, status=BeatmapRankStatus.LOVED)
+        )
     backend = DirectSearchBackendStub(
         DirectSearchBackendResult(
             candidates=(
@@ -741,13 +947,13 @@ async def test_coverage_missing_triggers_external_search_for_full_local_page() -
 
 
 async def test_upstream_search_coverage_suppresses_repeated_external_search() -> None:
-    """External検索成功coverageが同一検索条件の再取得を抑制する契約を検証する.
+    """External検索成功coverageがfull local pageの再取得を抑制する契約を検証する.
 
     初回検索でcoverageが欠落しているため外部検索を実行し、返されたcoverage recordを保存する.
-    同じ条件の2回目検索では保存済みcoverageにより外部検索しないことを確認する.
+    同じ条件の2回目検索ではlocal pageが満杯なら保存済みcoverageにより外部検索しないことを確認する.
 
     Returns:
-        None: coverage保存後のupstream再取得抑制を検証して完了する.
+        None: coverage保存後のfull local pageでupstream再取得抑制を検証して完了する.
     """
     store = InMemoryBeatmapStore()
     for beatmapset_id in (10, 20):
@@ -765,7 +971,7 @@ async def test_upstream_search_coverage_suppresses_repeated_external_search() ->
         authenticated_user_id=1,
         query_text="Camellia",
         page=1,
-        page_size=3,
+        page_size=2,
     )
     upstream = DirectSearchUpstreamProviderStub(
         DirectSearchUpstreamResult(beatmapsets=(_beatmapset(30),), has_more=False)
@@ -785,19 +991,74 @@ async def test_upstream_search_coverage_suppresses_repeated_external_search() ->
     second = await query.execute(request)
 
     assert upstream.requests == [request]
-    assert [beatmapset.id for beatmapset in first.beatmapsets] == [10, 20, 30]
+    assert [beatmapset.id for beatmapset in first.beatmapsets] == [10, 20]
     assert [beatmapset.id for beatmapset in second.beatmapsets] == [10, 20]
     assert second.coverage_record is None
 
 
-async def test_completed_id_range_coverage_skips_external_search_for_full_page() -> None:
-    """Local候補がcoverage範囲内のfull pageなら外部検索しない契約を検証する.
+async def test_covered_short_local_page_skips_external_search() -> None:
+    """Coverage保存済みのpage 1以降はlocal pageが短くてもexternal検索しない契約を検証する.
 
-    完了済みID range coverageがlocal候補IDを含む条件で、local pageが満たされている場合は
+    Loved listingのようにlocal catalogがpage size未満しか返せない条件でも、同じ検索範囲の
+    upstream coverage保存後は再度外部候補を取りに行かないことを確認する.
+
+    Returns:
+        None: short local pageでcoverageがupstream再取得を抑制することを検証して完了する.
+    """
+    store = InMemoryBeatmapStore()
+    for beatmapset_id in (10, 20):
+        await store.save_beatmapset_snapshot(
+            _beatmapset(beatmapset_id, status=BeatmapRankStatus.LOVED)
+        )
+    backend = DirectSearchBackendStub(
+        DirectSearchBackendResult(
+            candidates=(
+                DirectSearchCandidate(beatmapset_id=10, score=2.0),
+                DirectSearchCandidate(beatmapset_id=20, score=1.0),
+            ),
+            has_more=False,
+        )
+    )
+    upstream = DirectSearchUpstreamProviderStub(
+        DirectSearchUpstreamResult(
+            beatmapsets=(_beatmapset(30, status=BeatmapRankStatus.LOVED),),
+            has_more=False,
+        )
+    )
+    request = DirectSearchRequest(
+        authenticated_user_id=1,
+        query_text="Camellia",
+        statuses=(BeatmapRankStatus.LOVED,),
+        page=1,
+        page_size=3,
+    )
+    query = DirectSearchQuery(
+        store.query_repository,
+        backend,
+        upstream_provider=upstream,
+        coverage_reader=store.query_repository,
+    )
+
+    first = await query.execute(request)
+    assert first.coverage_record is not None
+    async with store.uow_factory() as uow:
+        await uow.beatmaps.record_direct_coverage(first.coverage_record)
+        await uow.commit()
+    second = await query.execute(request)
+
+    assert upstream.requests == [request]
+    assert [beatmapset.id for beatmapset in second.beatmapsets] == [10, 20]
+    assert second.coverage_record is None
+
+
+async def test_completed_id_range_coverage_skips_external_search_for_covered_page() -> None:
+    """Local候補がcoverage範囲内ならshort pageでも外部検索しない契約を検証する.
+
+    完了済みID range coverageがlocal候補IDを含む条件で、local pageが満たされていない場合でも
     providerを呼ばずlocal結果だけを返すことを確認する.
 
     Returns:
-        None: coverage内full pageのcache-only検索を検証して完了する.
+        None: coverage内pageのcache-only検索を検証して完了する.
     """
     store = InMemoryBeatmapStore()
     for beatmapset_id in (10, 20):
@@ -819,7 +1080,7 @@ async def test_completed_id_range_coverage_skips_external_search_for_full_page()
         authenticated_user_id=1,
         query_text="Camellia",
         page=1,
-        page_size=2,
+        page_size=3,
     )
 
     result = await DirectSearchQuery(
@@ -831,6 +1092,7 @@ async def test_completed_id_range_coverage_skips_external_search_for_full_page()
 
     assert upstream.requests == []
     assert [beatmapset.id for beatmapset in result.beatmapsets] == [10, 20]
+    assert result.stable_result_count == 2
 
 
 async def test_out_of_range_local_candidate_triggers_external_search() -> None:
@@ -1123,9 +1385,10 @@ async def test_point_lookup_resolves_known_set_by_supported_targets() -> None:
 
 
 async def test_point_lookup_omits_unusable_metadata() -> None:
-    """Point lookupがchildless,inactive,not submitted metadataを空結果へ変換する契約を検証する.
+    """Point lookupがchildless,not submitted metadataを空結果へ変換する契約を検証する.
 
-    cacheにmetadataが存在してもstable direct rowへ安全に変換できないsetは返さないことを確認する.
+    cacheにmetadataが存在してもstable direct rowへ安全に変換できないsetは返さない一方で、
+    Graveyard setはdirect表示対象として返すことを確認する.
 
     Returns:
         None: unusable metadataの除外を検証して完了する.
@@ -1146,7 +1409,11 @@ async def test_point_lookup_omits_unusable_metadata() -> None:
         for beatmapset_id in (20, 30, 40)
     ]
 
-    assert [result.beatmapset for result in results] == [None, None, None]
+    assert [result.beatmapset.id if result.beatmapset else None for result in results] == [
+        None,
+        30,
+        None,
+    ]
 
 
 async def test_point_lookup_miss_enqueues_metadata_and_returns_empty_after_timeout() -> None:

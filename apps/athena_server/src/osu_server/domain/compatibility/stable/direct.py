@@ -13,11 +13,11 @@ STABLE_DIRECT_MORE_RESULTS_SENTINEL: Final = 101
 _ALL_STATUS_FILTER = 4
 _ALL_MODE_FILTER = -1
 _STATUS_FILTERS: Final[dict[int, tuple[BeatmapRankStatus, ...]]] = {
-    0: (BeatmapRankStatus.RANKED, BeatmapRankStatus.APPROVED),
+    0: (BeatmapRankStatus.RANKED,),
     2: (BeatmapRankStatus.PENDING,),
     3: (BeatmapRankStatus.QUALIFIED,),
     5: (BeatmapRankStatus.GRAVEYARD,),
-    7: (BeatmapRankStatus.RANKED, BeatmapRankStatus.APPROVED),
+    7: (BeatmapRankStatus.RANKED,),
     8: (BeatmapRankStatus.LOVED,),
 }
 _MODE_FILTERS: Final[dict[int, BeatmapMode]] = {

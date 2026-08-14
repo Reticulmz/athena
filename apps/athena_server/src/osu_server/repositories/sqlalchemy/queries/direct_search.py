@@ -67,7 +67,12 @@ _PARADEDB_MATCH_ANY = cast(
     search.match_any,
 )
 _REQUIRED_BM25_FIELDS: Final = ("id", _DIRECT_SEARCH_TEXT_FIELD)
-_REQUIRED_TSVECTOR_FIELDS: Final = ("id", "official_status", _DIRECT_SEARCH_TEXT_FIELD)
+_REQUIRED_TSVECTOR_FIELDS: Final = (
+    "id",
+    "official_status",
+    "official_last_updated_at",
+    _DIRECT_SEARCH_TEXT_FIELD,
+)
 
 logger: structlog.stdlib.BoundLogger = cast(
     "structlog.stdlib.BoundLogger",
@@ -760,25 +765,35 @@ def _difficulty_name_search_filter(query_text: str, *, mode: str | None) -> Colu
 def _last_update_at_expression(
     beatmapset_id: ColumnElement[int] | None = None,
 ) -> ColumnElement[object]:
-    """Child beatmapの最新official更新時刻を返す相関subqueryを構築する.
+    """Beatmapsetのofficial更新時刻をset-level優先で返す式を構築する.
 
     Args:
         beatmapset_id (ColumnElement[int] | None): 更新時刻を読むbeatmapset ID式.
             Noneなら外側のBeatmapSetModel.idへ相関する.
 
     Returns:
-        ColumnElement[object]: beatmapsetに属するchildのmax official_last_updated_at.
+        ColumnElement[object]: set-level official_last_updated_atまたはchild max日時.
     """
     target_beatmapset_id = (
         beatmapset_id
         if beatmapset_id is not None
         else cast("ColumnElement[int]", cast("object", BeatmapSetModel.id))
     )
-    return cast(
-        "ColumnElement[object]",
+    set_last_updated_at = (
+        BeatmapSetModel.official_last_updated_at
+        if beatmapset_id is None
+        else select(BeatmapSetModel.official_last_updated_at)
+        .where(BeatmapSetModel.id == target_beatmapset_id)
+        .scalar_subquery()
+    )
+    child_last_updated_at = (
         select(func.max(BeatmapModel.official_last_updated_at))
         .where(BeatmapModel.beatmapset_id == target_beatmapset_id)
-        .scalar_subquery(),
+        .scalar_subquery()
+    )
+    return cast(
+        "ColumnElement[object]",
+        func.coalesce(set_last_updated_at, child_last_updated_at),
     )
 
 

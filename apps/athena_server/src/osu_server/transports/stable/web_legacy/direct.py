@@ -46,11 +46,11 @@ _DIRECT_STATUS_TO_WIRE: Final[dict[BeatmapRankStatus, int | None]] = {
     BeatmapRankStatus.UNKNOWN: None,
     BeatmapRankStatus.PENDING: 0,
     BeatmapRankStatus.WIP: 0,
-    BeatmapRankStatus.GRAVEYARD: 0,
-    BeatmapRankStatus.RANKED: 2,
-    BeatmapRankStatus.APPROVED: 3,
-    BeatmapRankStatus.QUALIFIED: 4,
-    BeatmapRankStatus.LOVED: 5,
+    BeatmapRankStatus.GRAVEYARD: -2,
+    BeatmapRankStatus.RANKED: 1,
+    BeatmapRankStatus.APPROVED: 2,
+    BeatmapRankStatus.QUALIFIED: 3,
+    BeatmapRankStatus.LOVED: 4,
 }
 _MODE_TO_WIRE: Final[dict[BeatmapMode, int]] = {
     BeatmapMode.OSU: StableMode.Osu.value,
@@ -282,7 +282,7 @@ def format_direct_point_lookup_response(result: DirectPointLookupQueryResult) ->
 
 
 def _format_beatmapset_row(beatmapset: BeatmapSet) -> str | None:
-    """Beatmapset metadataをstable directの15 field rowへ変換する.
+    """Beatmapset metadataをstable directの14 field rowへ変換する.
 
     Args:
         beatmapset (BeatmapSet): stable direct bodyへ出力するmetadata.
@@ -303,13 +303,13 @@ def _format_beatmapset_row(beatmapset: BeatmapSet) -> str | None:
     title = _sanitize(beatmapset.title)
     creator = _sanitize(beatmapset.creator)
     fields = (
-        f"{beatmapset.id} {artist} - {title}.osz",
+        f"{beatmapset.id}.osz",
         artist,
         title,
         creator,
         str(status),
-        "0.0",
-        _last_update_text(beatmapset.beatmaps),
+        "10.00",
+        _last_update_text(beatmapset),
         str(beatmapset.id),
         "0",
         "0",
@@ -317,53 +317,70 @@ def _format_beatmapset_row(beatmapset: BeatmapSet) -> str | None:
         "0",
         "0",
         difficulty_summaries,
-        "0",
     )
     return "|".join(fields)
 
 
 def _format_difficulty_summaries(beatmaps: tuple[Beatmap, ...]) -> str:
-    """Child beatmap列を`version@mode`のstable direct summaryへ変換する.
+    """Child beatmap列を`version ★stars@mode`のstable direct summaryへ変換する.
 
     Args:
         beatmaps (tuple[Beatmap, ...]): beatmapsetに属するchild beatmap列.
 
     Returns:
-        str: difficulty_rating順のsummary. 対応modeがないchildは除外する.
+        str: mode, difficulty_rating順のsummary. 対応modeがないchildは除外する.
     """
     summaries: list[str] = []
     for beatmap in sorted(beatmaps, key=_difficulty_sort_key):
         mode = _MODE_TO_WIRE.get(beatmap.mode)
         if mode is not None:
-            summaries.append(f"{_sanitize(beatmap.version)}@{mode}")
+            summaries.append(
+                f"{_sanitize(beatmap.version)} ★{_difficulty_rating_text(beatmap)}@{mode}"
+            )
     return ",".join(summaries)
 
 
-def _difficulty_sort_key(beatmap: Beatmap) -> tuple[float, int]:
+def _difficulty_sort_key(beatmap: Beatmap) -> tuple[int, float, int]:
     """Stable direct rowのchild表示順を決めるsort keyを返す.
 
     Args:
         beatmap (Beatmap): 並び替えるchild beatmap.
 
     Returns:
-        tuple[float, int]: difficulty ratingを優先し, 同値ではbeatmap IDで安定化したkey.
+        tuple[int, float, int]: mode, difficulty ratingを優先し, 同値ではbeatmap IDで安定化したkey.
     """
+    mode = _MODE_TO_WIRE.get(beatmap.mode, 999)
     rating = beatmap.difficulty_rating if beatmap.difficulty_rating is not None else 0.0
-    return (rating, beatmap.id)
+    return (mode, rating, beatmap.id)
 
 
-def _last_update_text(beatmaps: tuple[Beatmap, ...]) -> str:
-    """Child metadataからstable direct row用の最終更新時刻を返す.
+def _difficulty_rating_text(beatmap: Beatmap) -> str:
+    """Child beatmapの星数をstable direct表示文字列へ変換する.
 
     Args:
-        beatmaps (tuple[Beatmap, ...]): last updateを抽出するchild beatmap列.
+        beatmap (Beatmap): difficulty summaryへ出力するchild beatmap.
+
+    Returns:
+        str: 小数2桁のdifficulty rating. 不明な場合は0.00.
+    """
+    rating = beatmap.difficulty_rating if beatmap.difficulty_rating is not None else 0.0
+    return f"{rating:.2f}"
+
+
+def _last_update_text(beatmapset: BeatmapSet) -> str:
+    """Stable direct row用の最終更新時刻をset-level優先で返す.
+
+    Args:
+        beatmapset (BeatmapSet): last updateを抽出するbeatmapset metadata.
 
     Returns:
         str: UTCの`YYYY-MM-DD HH:MM:SS`表記. 不明な場合は空文字列.
     """
+    if beatmapset.official_last_updated_at is not None:
+        return _utc_text(beatmapset.official_last_updated_at)
     values = tuple(
         beatmap.official_last_updated_at
-        for beatmap in beatmaps
+        for beatmap in beatmapset.beatmaps
         if beatmap.official_last_updated_at is not None
     )
     if not values:

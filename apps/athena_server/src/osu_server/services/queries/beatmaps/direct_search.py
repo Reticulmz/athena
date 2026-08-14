@@ -20,6 +20,7 @@ from osu_server.domain.beatmaps import (
     DirectCoverageRecord,
     DirectCoverageStatusScope,
     DirectPointLookupTargetKind,
+    DirectSearchListing,
     DirectSearchUpstreamProvider,
     DirectSearchUpstreamResult,
     is_direct_searchable_beatmapset,
@@ -234,8 +235,9 @@ class DirectSearchQuery:
             DirectSearchQueryResult: 利用可能なmetadata列とstable count値.
 
         Notes:
-            外部検索は設定済みproviderがあり,local結果不足,coverage欠落/範囲外,page 0 refresh
-            のいずれかでbest-effortに実行する. timeoutまたは失敗時はlocal結果だけを返す.
+            Page 0はprocess localなrefresh間隔で外部検索する. Page 1以降はcoverage欠落/範囲外,
+            またはcoverage reader未設定時のlocal結果不足でbest-effortに実行する.
+            timeoutまたは失敗時はlocal結果だけを返す.
         """
         total_start = time.perf_counter()
         backend_start = time.perf_counter()
@@ -263,11 +265,18 @@ class DirectSearchQuery:
         upstream_result_count = 0
         coverage_record: DirectCoverageRecord | None = None
         coverage_start = time.perf_counter()
-        coverage_requires_upstream = await self._coverage_requires_upstream(request, beatmapsets)
+        coverage_requires_upstream = False
+        if request.page != 0:
+            coverage_requires_upstream = await self._coverage_requires_upstream(
+                request,
+                beatmapsets,
+            )
         coverage_ms = _elapsed_ms(coverage_start)
         first_page_refresh_due = self._first_page_refresh_due(request)
         local_page_requires_upstream = (
-            len(beatmapsets) < request.page_size and self._coverage_reader is None
+            request.page != 0
+            and self._coverage_reader is None
+            and len(beatmapsets) < request.page_size
         )
         upstream_requested = (
             local_page_requires_upstream or coverage_requires_upstream or first_page_refresh_due
@@ -446,7 +455,7 @@ class DirectSearchQuery:
         upstream_result: DirectSearchUpstreamResult,
         request: DirectSearchRequest,
     ) -> None:
-        """External search候補をlocal候補の後ろへ重複なしで追加する.
+        """External search候補をlocal候補へ重複なしでmergeする.
 
         Args:
             beatmapsets (list[BeatmapSet]): 既にhydrate済みのlocal候補. このlistを更新する.
@@ -458,6 +467,18 @@ class DirectSearchQuery:
         """
         local_beatmapsets = tuple(beatmapsets)
         beatmapsets.clear()
+        if request.listing is DirectSearchListing.NEWEST:
+            await self._append_external_beatmapsets(beatmapsets, upstream_result, request)
+            seen_ids = {beatmapset.id for beatmapset in beatmapsets}
+            for beatmapset in local_beatmapsets:
+                if len(beatmapsets) >= request.page_size:
+                    break
+                if beatmapset.id in seen_ids:
+                    continue
+                beatmapsets.append(beatmapset)
+                seen_ids.add(beatmapset.id)
+            return
+
         beatmapsets.extend(local_beatmapsets)
         await self._append_external_beatmapsets(beatmapsets, upstream_result, request)
 

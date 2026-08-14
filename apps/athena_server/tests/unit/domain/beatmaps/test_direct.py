@@ -42,6 +42,23 @@ def test_search_document_activates_complete_usable_beatmapset() -> None:
     assert document.last_update_at == _UPDATED_AT
 
 
+def test_search_document_prefers_set_level_last_updated_at() -> None:
+    """Set-level更新日時がchild更新日時より優先されるdirect projection契約を検証する.
+
+    Returns:
+        None: BeatmapSet.official_last_updated_atがdocumentへ入ることを確認して完了する.
+    """
+    set_updated_at = datetime(2026, 8, 11, 12, 0, 0, tzinfo=UTC)
+    beatmapset = _beatmapset(
+        beatmaps=(_beatmap(),),
+        official_last_updated_at=set_updated_at,
+    )
+
+    document = build_beatmapset_search_document(beatmapset, updated_at=_UPDATED_AT)
+
+    assert document.last_update_at == set_updated_at
+
+
 def test_search_document_disables_childless_beatmapset() -> None:
     """ChildlessなBeatmapSetがinactive検索projectionになる契約を検証する.
 
@@ -61,14 +78,13 @@ def test_search_document_disables_childless_beatmapset() -> None:
 @pytest.mark.parametrize(
     "status",
     [
-        BeatmapRankStatus.GRAVEYARD,
         BeatmapRankStatus.NOT_SUBMITTED,
         map_external_status("deleted"),
     ],
-    ids=["inactive", "not-submitted", "deleted"],
+    ids=["not-submitted", "deleted"],
 )
 def test_search_document_disables_unusable_statuses(status: BeatmapRankStatus) -> None:
-    """Inactive, deleted, not submitted状態がinactive projectionになる契約を検証する.
+    """Deleted, not submitted状態がinactive projectionになる契約を検証する.
 
     Args:
         status (BeatmapRankStatus): 検証対象のcanonical BeatmapSet status.
@@ -85,16 +101,39 @@ def test_search_document_disables_unusable_statuses(status: BeatmapRankStatus) -
     assert document.status is status
 
 
+def test_search_document_activates_graveyard_beatmapset() -> None:
+    """GraveyardのBeatmapSetがdirect検索projectionに残る契約を検証する.
+
+    Stable directにはGraveyard filterがあるため、usable childを持つgraveyard setは検索対象として
+    `is_active`を維持することを確認する.
+
+    Returns:
+        None: Graveyard setのactive状態とstatusを検証して完了する.
+    """
+    beatmapset = _beatmapset(
+        status=BeatmapRankStatus.GRAVEYARD,
+        beatmaps=(_beatmap(status=BeatmapRankStatus.GRAVEYARD),),
+    )
+
+    document = build_beatmapset_search_document(beatmapset, updated_at=_UPDATED_AT)
+
+    assert is_direct_searchable_beatmapset(beatmapset) is True
+    assert document.is_active is True
+    assert document.status is BeatmapRankStatus.GRAVEYARD
+
+
 def _beatmapset(
     *,
     status: BeatmapRankStatus = BeatmapRankStatus.RANKED,
     beatmaps: tuple[Beatmap, ...],
+    official_last_updated_at: datetime | None = None,
 ) -> BeatmapSet:
     """Projection test用のBeatmapSetを作る.
 
     Args:
         status (BeatmapRankStatus): BeatmapSetへ設定する公式公開状態.
         beatmaps (tuple[Beatmap, ...]): BeatmapSetに含めるchild beatmap列.
+        official_last_updated_at (datetime | None): set-level更新日時. 未提供ならNone.
 
     Returns:
         BeatmapSet: 指定statusとchild構成を持つmetadata snapshot.
@@ -112,6 +151,7 @@ def _beatmapset(
         beatmaps=beatmaps,
         last_fetched_at=_UPDATED_AT,
         next_refresh_at=None,
+        official_last_updated_at=official_last_updated_at,
     )
 
 

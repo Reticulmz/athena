@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final, cast
 from urllib.parse import urlencode
 
@@ -48,6 +49,18 @@ _CHEESEGULL_STATUS_QUERY_VALUES: Final[dict[BeatmapRankStatus, str]] = {
     BeatmapRankStatus.QUALIFIED: "3",
     BeatmapRankStatus.LOVED: "4",
 }
+_CHEESEGULL_ALL_STATUS_QUERY_VARIANTS: Final = (
+    BeatmapRankStatus.PENDING,
+    BeatmapRankStatus.RANKED,
+    BeatmapRankStatus.APPROVED,
+    BeatmapRankStatus.QUALIFIED,
+    BeatmapRankStatus.LOVED,
+)
+_CHEESEGULL_SORT_QUERY_VALUES: Final[dict[DirectSearchListing, str]] = {
+    DirectSearchListing.NEWEST: "ranked_desc",
+    DirectSearchListing.TOP_RATED: "favourites_desc",
+    DirectSearchListing.MOST_PLAYED: "plays_desc",
+}
 _STATUS_TEXT_VALUES: Final[dict[int, str]] = {
     -2: "graveyard",
     -1: "wip",
@@ -58,6 +71,7 @@ _STATUS_TEXT_VALUES: Final[dict[int, str]] = {
     4: "loved",
 }
 _ROW_KEYS: Final = ("beatmapsets", "BeatmapSets", "results", "Results", "data")
+_EARLIEST_DATETIME: Final = datetime.min.replace(tzinfo=UTC)
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
@@ -116,7 +130,12 @@ class CheeseGullDirectSearchUpstreamProvider:
         Returns:
             DirectSearchUpstreamResult: domain beatmapsetへ変換済みの外部候補.
         """
-        return await _search_status_variants(request, search_one=self._search_one)
+        return await _search_status_variants(
+            request,
+            statuses=_cheesegull_status_variants(request),
+            sort_key=_beatmapset_last_update_sort_key if not request.statuses else None,
+            search_one=self._search_one,
+        )
 
     async def _search_one(
         self,
@@ -138,7 +157,12 @@ class CheeseGullDirectSearchUpstreamProvider:
             headers=self._headers,
         )
         rows = _extract_rows(data)
-        return _map_rows(rows, request.page_size, _cheesegull_row_to_beatmapset)
+        status_override = _cheesegull_status_override(request)
+        return _map_rows(
+            rows,
+            request.page_size,
+            lambda row: _cheesegull_row_to_beatmapset(row, status_override=status_override),
+        )
 
 
 class NerinyanDirectSearchUpstreamProvider:
@@ -273,7 +297,7 @@ def _cheesegull_params(request: DirectSearchRequest) -> dict[str, str]:
         dict[str, str]: query parameter名と値.
     """
     params = {
-        "query": request.query_text,
+        "query": _cheesegull_query_text(request),
         "mode": _mode_query_value(request.mode),
         "amount": str(request.page_size),
         "offset": str(request.page * request.page_size),
@@ -281,7 +305,56 @@ def _cheesegull_params(request: DirectSearchRequest) -> dict[str, str]:
     status = _single_status(request.statuses)
     if status is not None and status in _CHEESEGULL_STATUS_QUERY_VALUES:
         params["status"] = _CHEESEGULL_STATUS_QUERY_VALUES[status]
+    sort = _CHEESEGULL_SORT_QUERY_VALUES.get(request.listing)
+    if sort is not None:
+        params["sort"] = sort
     return params
+
+
+def _cheesegull_query_text(request: DirectSearchRequest) -> str:
+    """CheeseGull互換検索へ渡すtext queryをlisting種別から返す.
+
+    Args:
+        request (DirectSearchRequest): stable inputから導出された検索条件.
+
+    Returns:
+        str: 通常検索ではquery text, special listingでは空文字列.
+    """
+    if request.listing is DirectSearchListing.SEARCH:
+        return request.query_text
+    return ""
+
+
+def _cheesegull_status_override(request: DirectSearchRequest) -> BeatmapRankStatus | None:
+    """CheeseGull row statusをrequest条件から補正するstatusを返す.
+
+    Args:
+        request (DirectSearchRequest): stable inputから導出された検索条件.
+
+    Returns:
+        BeatmapRankStatus | None: v1 rowだけでは表現できないstatus補正. 補正不要ならNone.
+    """
+    status = _single_status(request.statuses)
+    if status is BeatmapRankStatus.GRAVEYARD:
+        return status
+    return None
+
+
+def _cheesegull_status_variants(
+    request: DirectSearchRequest,
+) -> tuple[BeatmapRankStatus, ...]:
+    """CheeseGull v1へ送るstatus検索列を返す.
+
+    Args:
+        request (DirectSearchRequest): stable inputから導出された検索条件.
+
+    Returns:
+        tuple[BeatmapRankStatus, ...]: 明示filterがある場合はそのfilter. Allではv1が
+            documented statusとして扱う公開status列.
+    """
+    if request.statuses:
+        return request.statuses
+    return _CHEESEGULL_ALL_STATUS_QUERY_VARIANTS
 
 
 def _nerinyan_params(request: DirectSearchRequest) -> dict[str, str]:
@@ -318,43 +391,130 @@ def _single_status(statuses: tuple[BeatmapRankStatus, ...]) -> BeatmapRankStatus
 
 
 type _StatusVariantSearch = Callable[[DirectSearchRequest], Awaitable[DirectSearchUpstreamResult]]
+type _StatusVariantSortKey = Callable[[BeatmapSet], tuple[datetime, int]]
 
 
 async def _search_status_variants(
     request: DirectSearchRequest,
     *,
     search_one: _StatusVariantSearch,
+    statuses: tuple[BeatmapRankStatus, ...] | None = None,
+    sort_key: _StatusVariantSortKey | None = None,
 ) -> DirectSearchUpstreamResult:
     """複合status検索をproviderが表現できる単一status検索へ分解する.
 
     Args:
         request (DirectSearchRequest): stable inputから導出された検索条件.
         search_one (_StatusVariantSearch): 単一status条件で実行するprovider検索.
+        statuses (tuple[BeatmapRankStatus, ...] | None): request statusの代わりに検索する
+            status列. Noneならrequest.statusesを使う.
+        sort_key (_StatusVariantSortKey | None): 複合結果を再整列するkey. Noneならprovider
+            status列の順序を維持する.
 
     Returns:
         DirectSearchUpstreamResult: status別結果を重複排除してpage上限へ収めた候補.
     """
-    if len(request.statuses) <= 1:
-        return await search_one(request)
+    variant_statuses = request.statuses if statuses is None else statuses
+    if sort_key is not None and len(variant_statuses) > 1:
+        return await _search_sorted_status_variants(
+            request,
+            variant_statuses,
+            search_one=search_one,
+            sort_key=sort_key,
+        )
+    if len(variant_statuses) <= 1:
+        if variant_statuses == request.statuses:
+            return await search_one(request)
+        return await search_one(replace(request, statuses=variant_statuses))
 
     beatmapsets: list[BeatmapSet] = []
     seen_ids: set[int] = set()
     has_more = False
-    for status in request.statuses:
+    should_collect_all = sort_key is not None
+    for status in variant_statuses:
         result = await search_one(replace(request, statuses=(status,)))
         has_more = has_more or result.has_more
         for beatmapset in result.beatmapsets:
-            if len(beatmapsets) >= request.page_size:
-                return DirectSearchUpstreamResult(beatmapsets=tuple(beatmapsets), has_more=True)
             if beatmapset.id in seen_ids:
                 continue
             beatmapsets.append(beatmapset)
             seen_ids.add(beatmapset.id)
+            if not should_collect_all and len(beatmapsets) >= request.page_size:
+                return DirectSearchUpstreamResult(
+                    beatmapsets=tuple(beatmapsets),
+                    has_more=True,
+                )
+
+    if sort_key is not None:
+        beatmapsets.sort(key=sort_key, reverse=True)
 
     return DirectSearchUpstreamResult(
-        beatmapsets=tuple(beatmapsets),
-        has_more=has_more,
+        beatmapsets=tuple(beatmapsets[: request.page_size]),
+        has_more=has_more or len(beatmapsets) > request.page_size,
     )
+
+
+async def _search_sorted_status_variants(
+    request: DirectSearchRequest,
+    statuses: tuple[BeatmapRankStatus, ...],
+    *,
+    search_one: _StatusVariantSearch,
+    sort_key: _StatusVariantSortKey,
+) -> DirectSearchUpstreamResult:
+    """Status別pageをglobal sort後のpageとして統合する.
+
+    Args:
+        request (DirectSearchRequest): stable inputから導出された検索条件.
+        statuses (tuple[BeatmapRankStatus, ...]): 単一status queryへ分解するstatus列.
+        search_one (_StatusVariantSearch): 単一status条件で実行するprovider検索.
+        sort_key (_StatusVariantSortKey): status別結果をglobal順へ並べるkey.
+
+    Returns:
+        DirectSearchUpstreamResult: global offsetで切り出したstatus混在page.
+    """
+    beatmapsets: list[BeatmapSet] = []
+    seen_ids: set[int] = set()
+    has_more = False
+    for status in statuses:
+        for page in range(request.page + 1):
+            result = await search_one(replace(request, statuses=(status,), page=page))
+            if page == request.page:
+                has_more = has_more or result.has_more
+            for beatmapset in result.beatmapsets:
+                if beatmapset.id in seen_ids:
+                    continue
+                beatmapsets.append(beatmapset)
+                seen_ids.add(beatmapset.id)
+
+    beatmapsets.sort(key=sort_key, reverse=True)
+    offset = request.page * request.page_size
+    end = offset + request.page_size
+    return DirectSearchUpstreamResult(
+        beatmapsets=tuple(beatmapsets[offset:end]),
+        has_more=has_more or len(beatmapsets) > end,
+    )
+
+
+def _beatmapset_last_update_sort_key(beatmapset: BeatmapSet) -> tuple[datetime, int]:
+    """Beatmapsetのofficial更新日時とIDを降順sort用keyとして返す.
+
+    Args:
+        beatmapset (BeatmapSet): CheeseGull status別結果から得たbeatmapset.
+
+    Returns:
+        tuple[datetime, int]: 更新日時がない場合は最古時刻,同時刻ではbeatmapset ID.
+    """
+    if beatmapset.official_last_updated_at is not None:
+        return (beatmapset.official_last_updated_at, beatmapset.id)
+    last_update_at = max(
+        (
+            beatmap.official_last_updated_at
+            for beatmap in beatmapset.beatmaps
+            if beatmap.official_last_updated_at is not None
+        ),
+        default=_EARLIEST_DATETIME,
+    )
+    return (last_update_at, beatmapset.id)
 
 
 def _mode_query_value(mode: BeatmapMode | None) -> str:
@@ -455,11 +615,16 @@ def _map_rows(
 type MappingFunction = Callable[[Mapping[str, object]], BeatmapSet | None]
 
 
-def _cheesegull_row_to_beatmapset(row: Mapping[str, object]) -> BeatmapSet | None:
+def _cheesegull_row_to_beatmapset(
+    row: Mapping[str, object],
+    *,
+    status_override: BeatmapRankStatus | None = None,
+) -> BeatmapSet | None:
     """CheeseGull互換rowをdomain beatmapsetへ変換する.
 
     Args:
         row (Mapping[str, object]): CheeseGull互換の検索row.
+        status_override (BeatmapRankStatus | None): rowのRankedStatusより優先するstatus.
 
     Returns:
         BeatmapSet | None: 変換できたdomain beatmapset. 必須IDがない場合はNone.
@@ -468,7 +633,11 @@ def _cheesegull_row_to_beatmapset(row: Mapping[str, object]) -> BeatmapSet | Non
     if beatmapset_id is None or beatmapset_id <= 0:
         return None
 
-    status = _status_text(row.get("RankedStatus"))
+    status = (
+        status_override.value
+        if status_override is not None
+        else _status_text(row.get("RankedStatus"))
+    )
     children = row.get("ChildrenBeatmaps")
     child_rows = cast("list[object]", children) if isinstance(children, list) else []
     normalized: dict[str, object] = {
@@ -481,7 +650,16 @@ def _cheesegull_row_to_beatmapset(row: Mapping[str, object]) -> BeatmapSet | Non
         "source": _maybe_str(row.get("Source")) or "",
         "tags": _maybe_str(row.get("Tags")) or "",
         "status": status,
-        "last_updated": _maybe_str(row.get("LastUpdate")),
+        "submitted_date": (
+            _maybe_str(row.get("SubmittedDate")) or _maybe_str(row.get("submitted_date"))
+        ),
+        "ranked_date": (
+            _maybe_str(row.get("RankedDate"))
+            or _maybe_str(row.get("ranked_date"))
+            or _maybe_str(row.get("ApprovedDate"))
+            or _maybe_str(row.get("approved_date"))
+        ),
+        "last_updated": _maybe_str(row.get("LastUpdate")) or _maybe_str(row.get("last_updated")),
         "beatmaps": [
             _cheesegull_child_to_v2_json(
                 cast("Mapping[object, object]", child),
@@ -578,6 +756,9 @@ def _snapshot_to_beatmapset(snapshot: BeatmapsetSnapshot) -> BeatmapSet:
         beatmaps=tuple(_snapshot_to_beatmap(beatmap) for beatmap in snapshot.beatmaps),
         last_fetched_at=snapshot.last_fetched_at,
         next_refresh_at=snapshot.next_refresh_at,
+        official_submitted_at=snapshot.official_submitted_at,
+        official_ranked_at=snapshot.official_ranked_at,
+        official_last_updated_at=snapshot.official_last_updated_at,
         source_text=snapshot.source_text,
         tags=snapshot.tags,
     )

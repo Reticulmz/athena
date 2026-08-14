@@ -767,6 +767,9 @@ def _snapshot_to_beatmapset(snapshot: BeatmapsetSnapshot) -> BeatmapSet:
         beatmaps=beatmaps,
         last_fetched_at=snapshot.last_fetched_at,
         next_refresh_at=snapshot.next_refresh_at,
+        official_submitted_at=snapshot.official_submitted_at,
+        official_ranked_at=snapshot.official_ranked_at,
+        official_last_updated_at=snapshot.official_last_updated_at,
         source_text=snapshot.source_text,
         tags=snapshot.tags,
     )
