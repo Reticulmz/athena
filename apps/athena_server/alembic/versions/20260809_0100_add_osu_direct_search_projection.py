@@ -133,6 +133,8 @@ def upgrade() -> None:
     Raises:
         SQLAlchemyError: pg_search利用可能環境でextension有効化またはBM25 index作成に失敗した場合.
     """
+    _prepare_optional_paradedb_index_dependencies()
+
     op.add_column(
         _BEATMAPSET_TABLE,
         sa.Column("source", sa.Text(), nullable=False, server_default=""),
@@ -307,7 +309,6 @@ def _create_search_document_bm25_index() -> None:
     create_index_sql = f"CREATE INDEX CONCURRENTLY {_SEARCH_DOCUMENT_BM25_INDEX} "
     create_index_sql += f"ON {_BEATMAPSET_TABLE} USING paradedb ({fields}) WITH (key_field='id')"
     with op.get_context().autocommit_block():
-        _ensure_paradedb_extensions_created()
         op.execute(sa.text(create_index_sql))
 
 
@@ -338,6 +339,24 @@ def _postgres_extension_available(extension_name: str) -> bool:
         .limit(1)
     )
     return bool(op.get_bind().execute(statement).scalar_one_or_none())
+
+
+def _prepare_optional_paradedb_index_dependencies() -> None:
+    """Optional ParadeDB indexに必要なextensionをschema DDL前に有効化する.
+
+    Returns:
+        None: extension未導入環境では何もせず,利用可能環境では有効化を完了する.
+
+    Raises:
+        SQLAlchemyError: extension作成権限不足またはDDL失敗が発生した場合.
+
+    Notes:
+        extension作成失敗時にrevisionをclean retryできるよう, column追加やindex作成より先に行う.
+    """
+    if not _paradedb_extensions_available():
+        return
+    with op.get_context().autocommit_block():
+        _ensure_paradedb_extensions_created()
 
 
 def _postgres_extension_created(extension_name: str) -> bool:
