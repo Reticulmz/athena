@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, cast
 
 import httpx
+import pytest
 
 from osu_server.domain.beatmaps import (
     BeatmapMetadataSource,
@@ -497,8 +498,67 @@ async def test_sequential_provider_uses_next_provider_after_failure() -> None:
     assert succeeding.requests == [request]
 
 
+async def test_sequential_provider_raises_last_error_when_all_providers_fail() -> None:
+    """全upstream provider失敗時に最後の例外を伝播する契約を検証する.
+
+    Returns:
+        None: 空結果を成功扱いせずRuntimeErrorを送出することを確認する.
+    """
+    request = DirectSearchRequest(authenticated_user_id=1, query_text="camellia", page_size=1)
+    provider = SequentialDirectSearchUpstreamProvider(
+        (_FailingUpstreamProvider("first failed"), _FailingUpstreamProvider("last failed"))
+    )
+
+    with pytest.raises(RuntimeError, match="last failed"):
+        _ = await provider.search(request)
+
+
+async def test_cheesegull_provider_marks_has_more_at_page_size_plus_one_boundary() -> None:
+    """page_sizeより1件多いresponseで次pageありと判定する契約を検証する.
+
+    Returns:
+        None: 余分な1件を返却から落としhas_moreだけをTrueにすることを確認する.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """MockTransportで境界件数のCheeseGull responseを返す.
+
+        Args:
+            request (httpx.Request): providerが送信したHTTP request.
+
+        Returns:
+            httpx.Response: page_size + 1件のCheeseGull互換検索結果JSON.
+        """
+        assert _mock_transport_request(request).url.params["amount"] == "2"
+        return httpx.Response(200, json=[_cheesegull_row(1000), _cheesegull_row(1001)])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = CheeseGullDirectSearchUpstreamProvider(
+            http_client=BeatmapHttpClient(client),
+            search_url="https://mirror.hinamizawa.ai/api/v1/hinai/search",
+            source_label="hinamizawa",
+        )
+
+        result = await provider.search(
+            DirectSearchRequest(authenticated_user_id=1, query_text="camellia", page_size=1)
+        )
+
+    assert [beatmapset.id for beatmapset in result.beatmapsets] == [1000]
+    assert result.has_more is True
+
+
 class _FailingUpstreamProvider:
     """常に失敗するupstream provider test doubleを提供する."""
+
+    _message: str
+
+    def __init__(self, message: str = "upstream failed") -> None:
+        """送出するRuntimeError messageを保持する.
+
+        Args:
+            message (str): searchで送出するRuntimeError message.
+        """
+        self._message = message
 
     async def search(self, request: DirectSearchRequest) -> DirectSearchUpstreamResult:
         """受け取ったrequestに関係なくRuntimeErrorを送出する.
@@ -510,7 +570,7 @@ class _FailingUpstreamProvider:
             RuntimeError: fallback動作を検証するため常に送出する.
         """
         _ = request
-        raise RuntimeError("upstream failed")
+        raise RuntimeError(self._message)
 
 
 class _SucceedingUpstreamProvider:

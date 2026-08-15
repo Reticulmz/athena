@@ -141,6 +141,17 @@ class DirectRangeCrawlFetchResult:
 class DirectRangeCrawlFetcher(Protocol):
     """ID range chunkからbeatmapset metadata snapshotを取得するportを定義する."""
 
+    def request_count_for_chunk(self, chunk: DirectRangeCrawlChunk) -> int:
+        """指定chunkで消費しうるupstream request数を返す.
+
+        Args:
+            chunk (DirectRangeCrawlChunk): budget予約対象のid range chunk.
+
+        Returns:
+            int: schedulerへ予約するupstream request数.
+        """
+        ...
+
     async def fetch_id_range(
         self,
         chunk: DirectRangeCrawlChunk,
@@ -220,6 +231,13 @@ class DirectCatalogScheduler:
         if request_count <= 0:
             msg = "request_count must be positive"
             raise ValueError(msg)
+        if request_count > self._request_budget_per_minute:
+            return DirectCatalogScheduleResult(
+                work_kind=work_kind,
+                outcome=DirectCatalogScheduleOutcome.FAILED,
+                retry_eligible=False,
+                failure_reason="request_count exceeds upstream budget",
+            )
         if _is_catalog_work(work_kind):
             # ponytail: one event-loop tick is enough priority for current worker concurrency.
             await asyncio.sleep(0)
@@ -522,7 +540,7 @@ class DirectRangeCrawl:
         result = await self._scheduler.run(
             DirectCatalogWorkKind.ID_RANGE_CRAWL,
             work,
-            request_count=chunk.to_beatmapset_id - chunk.from_beatmapset_id + 1,
+            request_count=self._range_crawl_fetcher.request_count_for_chunk(chunk),
         )
         if result.outcome is DirectCatalogScheduleOutcome.FAILED:
             await self._record_failed_coverage(

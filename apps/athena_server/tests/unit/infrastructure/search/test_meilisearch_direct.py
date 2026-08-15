@@ -241,6 +241,7 @@ async def test_apply_settings_uses_shared_field_declaration() -> None:
     ]
     assert settings.sortable_attributes == list(DIRECT_SEARCH_INDEX_DEFINITION.sortable_fields)
     assert settings.displayed_attributes == ["beatmapset_id", "document_version", "is_active"]
+    assert client.waited_task_uids == [1]
 
 
 @pytest.mark.asyncio
@@ -298,6 +299,7 @@ async def test_index_document_sends_declared_public_fields_only() -> None:
             "beatmapset_id",
         )
     ]
+    assert client.waited_task_uids == [2]
 
 
 @pytest.mark.asyncio
@@ -355,6 +357,26 @@ async def test_search_returns_candidates_and_passes_declared_filters() -> None:
 
 
 @pytest.mark.asyncio
+async def test_validate_reads_health_and_settings_without_writing_settings() -> None:
+    """Search backend validationがread-onlyで完了することを検証する.
+
+    Returns:
+        None: health/settings確認だけを行いsettings taskを発行しないことを確認する.
+    """
+    client = FakeMeilisearchClient()
+    backend = MeilisearchDirectSearchBackend(
+        client=_sdk_client(client),
+        index_name="direct_sets",
+    )
+
+    await backend.validate()
+
+    assert client.health_calls == 1
+    assert client.index_handle.settings_updates == []
+    assert client.waited_task_uids == []
+
+
+@pytest.mark.asyncio
 async def test_validate_rejects_missing_required_meilisearch_settings() -> None:
     """Validateがactive filterに必要なsettings不足を拒否することを検証する.
 
@@ -378,6 +400,7 @@ async def test_validate_rejects_missing_required_meilisearch_settings() -> None:
         match=r"filterableAttributes\.is_active",
     ):
         await backend.validate()
+    assert client.index_handle.settings_updates == []
 
 
 @pytest.mark.asyncio

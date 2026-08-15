@@ -75,7 +75,7 @@ class DuplicateQuerySummary:
         fingerprint (str): redacted SQL template から算出した短縮 fingerprint.
         count (int): この template が scope 内で観測された回数.
         sql_prefix (str): literal 値を ? に置換した SQL template の先頭部分.
-        traceback (tuple[str, ...]): 最初に観測した同一 template の呼び出し元 stack.
+        traceback (tuple[str, ...]): duplicate thresholdへ初めて到達した呼び出し元 stack.
     """
 
     fingerprint: str
@@ -116,7 +116,7 @@ class QueryDiagnosticCollector:
         duplicate_threshold (int): duplicate として扱う同一 template の最小回数.
         _query_count (int): scope 内で記録した SQL query 数.
         _template_counts (Counter[str]): redacted SQL template ごとの出現回数.
-        _template_tracebacks (dict[str, tuple[str, ...]]): template ごとの最初の呼び出し元 stack.
+        _template_tracebacks (dict[str, tuple[str, ...]]): threshold到達時の呼び出し元 stack.
     """
 
     scope_kind: str

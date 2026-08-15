@@ -201,6 +201,35 @@ class DirectSearchUpstreamProviderStub:
         return self.result
 
 
+class FailingDirectSearchUpstreamProviderStub:
+    """External search失敗を返すtest double.
+
+    Attributes:
+        requests (list[DirectSearchRequest]): searchへ渡されたrequestの記録.
+    """
+
+    requests: list[DirectSearchRequest]
+
+    def __init__(self) -> None:
+        """空のrequest記録を持つ失敗providerを初期化する."""
+        self.requests = []
+
+    async def search(self, request: DirectSearchRequest) -> DirectSearchUpstreamResult:
+        """受信requestを記録して外部検索失敗を送出する.
+
+        Args:
+            request (DirectSearchRequest): query use-caseから渡された検索条件.
+
+        Returns:
+            DirectSearchUpstreamResult: 常に例外を送出するため返らない.
+
+        Raises:
+            RuntimeError: upstream全失敗時のdegrade動作を検証するため常に発生する.
+        """
+        self.requests.append(request)
+        raise RuntimeError("upstream unavailable")
+
+
 class BatchBeatmapQueryRepositoryStub:
     """Direct search hydrateのrepository呼び出し形を記録するtest double.
 
@@ -896,6 +925,37 @@ async def test_external_search_timeout_returns_local_results() -> None:
 
     assert [beatmapset.id for beatmapset in result.beatmapsets] == [10]
     assert result.stable_result_count == 1
+
+
+async def test_external_search_failure_does_not_record_completed_empty_coverage() -> None:
+    """External search失敗時にsynthetic empty coverageを返さないことを検証する.
+
+    Local page不足でupstream検索が必要な条件を作り, provider失敗時はlocal empty結果へdegradeしても
+    coverage_recordがNoneのままになることを確認する.
+
+    Returns:
+        None: 失敗したexternal searchが完了coverageとして保存されないことを検証する.
+    """
+    store = InMemoryBeatmapStore()
+    backend = DirectSearchBackendStub(
+        DirectSearchBackendResult(candidates=(), has_more=False),
+    )
+    upstream = FailingDirectSearchUpstreamProviderStub()
+    request = DirectSearchRequest(
+        authenticated_user_id=1,
+        query_text="Camellia",
+        page=1,
+    )
+
+    result = await DirectSearchQuery(
+        store.query_repository,
+        backend,
+        upstream_provider=upstream,
+    ).execute(request)
+
+    assert upstream.requests == [request]
+    assert result.beatmapsets == ()
+    assert result.coverage_record is None
 
 
 async def test_coverage_missing_triggers_external_search_for_full_local_page() -> None:

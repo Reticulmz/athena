@@ -33,7 +33,7 @@ _SEARCH_DOCUMENT_PARADEDB_FIELDS = (
     "id",
     "direct_search_text",
 )
-_PG_EXTENSION = sa.table("pg_extension", sa.column("extname", sa.String()))
+_PG_AVAILABLE_EXTENSION = sa.table("pg_available_extensions", sa.column("name", sa.String()))
 _PARADEDB_EXTENSION = "pg_search"
 _VECTOR_EXTENSION = "vector"
 _SEARCH_DOCUMENT_VERSION_COLUMN = sa.column("search_document_version", sa.Integer())
@@ -161,11 +161,7 @@ def upgrade() -> None:
         _SEARCH_DOCUMENT_VERSION_CONSTRAINT,
         _BEATMAPSET_TABLE,
         _SEARCH_DOCUMENT_VERSION_COLUMN > 0,
-        postgresql_not_valid=True,
     )
-    validate_constraint_sql = f"ALTER TABLE {_BEATMAPSET_TABLE} "
-    validate_constraint_sql += f"VALIDATE CONSTRAINT {_SEARCH_DOCUMENT_VERSION_CONSTRAINT}"
-    op.execute(sa.text(validate_constraint_sql))
     with op.get_context().autocommit_block():
         op.create_index(
             _SEARCH_DOCUMENT_ACTIVE_STATUS_INDEX,
@@ -303,43 +299,57 @@ def _create_search_document_bm25_index() -> None:
     Returns:
         None: pg_search利用可能時だけmaterialized検索入力を含むParadeDB indexを作成したことを示す.
     """
-    if not _paradedb_extensions_created():
+    if not _paradedb_extensions_available():
         return
 
     fields = ", ".join(_SEARCH_DOCUMENT_PARADEDB_FIELDS)
     create_index_sql = f"CREATE INDEX CONCURRENTLY {_SEARCH_DOCUMENT_BM25_INDEX} "
     create_index_sql += f"ON {_BEATMAPSET_TABLE} USING paradedb ({fields}) WITH (key_field='id')"
     with op.get_context().autocommit_block():
+        _create_extension_if_missing(_VECTOR_EXTENSION)
+        _create_extension_if_missing(_PARADEDB_EXTENSION)
         op.execute(sa.text(create_index_sql))
 
 
-def _paradedb_extensions_created() -> bool:
-    """ParadeDB依存extensionがこのdatabaseで作成済みか返す.
+def _paradedb_extensions_available() -> bool:
+    """ParadeDB依存extensionをこのdatabaseで作成できるか返す.
 
     Returns:
-        bool: 管理者がvectorとpg_searchをpre-create済みならTrue.
+        bool: vectorとpg_searchがPostgreSQL installationへ存在する場合はTrue.
     """
-    return _postgres_extension_created(_VECTOR_EXTENSION) and _postgres_extension_created(
+    return _postgres_extension_available(_VECTOR_EXTENSION) and _postgres_extension_available(
         _PARADEDB_EXTENSION
     )
 
 
-def _postgres_extension_created(extension_name: str) -> bool:
-    """PostgreSQL databaseで指定extensionが作成済みか返す.
+def _postgres_extension_available(extension_name: str) -> bool:
+    """PostgreSQL installationで指定extensionが利用可能か返す.
 
     Args:
-        extension_name (str): `pg_extension`で確認するextension名.
+        extension_name (str): `pg_available_extensions`で確認するextension名.
 
     Returns:
-        bool: 指定extensionが現在databaseに作成済みの場合はTrue.
+        bool: 指定extensionが現在databaseで作成可能な場合はTrue.
     """
     statement = (
         sa.select(sa.literal(True))
-        .select_from(_PG_EXTENSION)
-        .where(_PG_EXTENSION.c.extname == extension_name)
+        .select_from(_PG_AVAILABLE_EXTENSION)
+        .where(_PG_AVAILABLE_EXTENSION.c.name == extension_name)
         .limit(1)
     )
     return bool(op.get_bind().execute(statement).scalar_one_or_none())
+
+
+def _create_extension_if_missing(extension_name: str) -> None:
+    """指定extensionをdatabaseへ作成済みにする.
+
+    Args:
+        extension_name (str): `CREATE EXTENSION IF NOT EXISTS`へ渡すextension名.
+
+    Returns:
+        None: extension作成DDLを発行して完了する.
+    """
+    op.execute(sa.text(f"CREATE EXTENSION IF NOT EXISTS {extension_name}"))
 
 
 def _drop_search_document_bm25_index() -> None:

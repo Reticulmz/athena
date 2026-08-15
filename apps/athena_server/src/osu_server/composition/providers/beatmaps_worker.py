@@ -65,37 +65,57 @@ _DISHKA_RUNTIME_HINTS = (
 )
 
 
-class _DirectCatalogFetcher:
+class DirectCatalogFetcher:
     """worker catalog sync use-caseへupstream metadata fetchを提供するadapter.
 
     Attributes:
-        _metadata_provider (BeatmapMetadataProvider): range crawl fallbackで使う既存provider.
         _official_provider (OsuApiMetadataProviderService | None): feed windowで使う公式検索
             provider.
         _mirror_provider (BeatmapMetadataProvider): mirror range crawlで使うprovider.
+        _mirror_lookup_request_count (int): mirror ID lookup 1件で試行しうるHTTP request数.
     """
 
-    _metadata_provider: BeatmapMetadataProvider
     _official_provider: OsuApiMetadataProviderService | None
     _mirror_provider: BeatmapMetadataProvider
+    _mirror_lookup_request_count: int
 
     def __init__(
         self,
         *,
-        metadata_provider: BeatmapMetadataProvider,
         official_provider: OsuApiMetadataProviderService | None,
         mirror_provider: BeatmapMetadataProvider,
+        mirror_lookup_request_count: int = 1,
     ) -> None:
         """Catalog fetch adapterの参照を保持する.
 
         Args:
-            metadata_provider (BeatmapMetadataProvider): id range lookupのfallback provider.
             official_provider (OsuApiMetadataProviderService | None): feed search用provider.
             mirror_provider (BeatmapMetadataProvider): mirror source指定時のprovider.
+            mirror_lookup_request_count (int): mirror fallbackを含む1 IDあたりの最大試行数.
+
+        Raises:
+            ValueError: mirror_lookup_request_countが正でない場合.
         """
-        self._metadata_provider = metadata_provider
+        if mirror_lookup_request_count <= 0:
+            msg = "mirror_lookup_request_count must be positive"
+            raise ValueError(msg)
         self._official_provider = official_provider
         self._mirror_provider = mirror_provider
+        self._mirror_lookup_request_count = mirror_lookup_request_count
+
+    def request_count_for_chunk(self, chunk: DirectRangeCrawlChunk) -> int:
+        """ID range crawlが消費しうるupstream request数を返す.
+
+        Args:
+            chunk (DirectRangeCrawlChunk): crawl対象のid range chunk.
+
+        Returns:
+            int: mirror fallbackではbase URL数を掛けた最大HTTP試行数.
+        """
+        range_size = chunk.to_beatmapset_id - chunk.from_beatmapset_id + 1
+        if chunk.source is BeatmapMetadataSource.MIRROR:
+            return range_size * self._mirror_lookup_request_count
+        return range_size
 
     async def fetch_feed_window(
         self,
@@ -197,18 +217,16 @@ class BeatmapWorkerProviderSet(Provider):
     def direct_catalog_fetcher(
         self,
         config: AppConfig,
-        metadata_provider: BeatmapMetadataProvider,
         http_client: httpx.AsyncClient,
-    ) -> _DirectCatalogFetcher:
+    ) -> DirectCatalogFetcher:
         """Worker catalog sync用のfeed/range fetch adapterを構成する.
 
         Args:
             config (AppConfig): 公式API credentialとsource availabilityを持つ設定.
-            metadata_provider (BeatmapMetadataProvider): id range crawlで使う既存provider.
             http_client (httpx.AsyncClient): 公式API検索で再利用するHTTP client.
 
         Returns:
-            _DirectCatalogFetcher: feed windowとid rangeを取得するadapter.
+            DirectCatalogFetcher: feed windowとid rangeを取得するadapter.
         """
         official_provider = (
             OsuApiMetadataProviderService(
@@ -223,10 +241,10 @@ class BeatmapWorkerProviderSet(Provider):
             http_client=ConcreteBeatmapHttpClient(http_client),
             base_urls=config.beatmap_metadata_mirror_base_urls,
         )
-        return _DirectCatalogFetcher(
-            metadata_provider=metadata_provider,
+        return DirectCatalogFetcher(
             official_provider=official_provider,
             mirror_provider=mirror_provider,
+            mirror_lookup_request_count=max(1, len(config.beatmap_metadata_mirror_base_urls)),
         )
 
     @provide
@@ -234,14 +252,14 @@ class BeatmapWorkerProviderSet(Provider):
         self,
         unit_of_work_factory: UnitOfWorkFactory,
         scheduler: DirectCatalogScheduler,
-        fetcher: _DirectCatalogFetcher,
+        fetcher: DirectCatalogFetcher,
     ) -> DirectFeedSync:
         """Feed window catalog sync use-caseをworker用に構成する.
 
         Args:
             unit_of_work_factory (UnitOfWorkFactory): metadataとcoverage保存用factory.
             scheduler (DirectCatalogScheduler): shared upstream budget scheduler.
-            fetcher (_DirectCatalogFetcher): feed window metadata fetch adapter.
+            fetcher (DirectCatalogFetcher): feed window metadata fetch adapter.
 
         Returns:
             DirectFeedSync: worker jobから実行するfeed sync use-case.
@@ -257,14 +275,14 @@ class BeatmapWorkerProviderSet(Provider):
         self,
         unit_of_work_factory: UnitOfWorkFactory,
         scheduler: DirectCatalogScheduler,
-        fetcher: _DirectCatalogFetcher,
+        fetcher: DirectCatalogFetcher,
     ) -> DirectRangeCrawl:
         """ID range catalog crawl use-caseをworker用に構成する.
 
         Args:
             unit_of_work_factory (UnitOfWorkFactory): metadataとcoverage保存用factory.
             scheduler (DirectCatalogScheduler): shared upstream budget scheduler.
-            fetcher (_DirectCatalogFetcher): id range metadata fetch adapter.
+            fetcher (DirectCatalogFetcher): id range metadata fetch adapter.
 
         Returns:
             DirectRangeCrawl: worker jobから実行するrange crawl use-case.

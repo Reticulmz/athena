@@ -160,8 +160,11 @@ def test_osu_direct_search_migration_creates_tables_indexes_and_rollback() -> No
     assert "op.create_table(\n        _COVERAGE_TABLE" in migration
     assert "op.create_table(\n        _EXTERNAL_INDEX_STATE_TABLE" in migration
     assert "idx_beatmapsets_direct_search_bm25" in migration
-    assert "pg_extension" in migration
-    assert "if not _paradedb_extensions_created()" in migration
+    assert "pg_available_extensions" in migration
+    assert '_VECTOR_EXTENSION = "vector"' in migration
+    assert '_PARADEDB_EXTENSION = "pg_search"' in migration
+    assert "CREATE EXTENSION IF NOT EXISTS {extension_name}" in migration
+    assert "if not _paradedb_extensions_available()" in migration
     assert "CREATE INDEX CONCURRENTLY" in migration
     assert "USING paradedb" in migration
     assert "WITH (key_field='id')" in migration

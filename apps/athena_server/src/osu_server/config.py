@@ -798,7 +798,7 @@ class AppConfig(BaseSettings):
             self.osu_direct_upstream_search_wait_seconds,
             self.osu_direct_upstream_search_first_page_refresh_seconds,
         )
-        if any(not math.isfinite(value) or value <= 0 for value in osu_direct_runtime_values):
+        if _has_invalid_positive_finite_value(osu_direct_runtime_values):
             msg = "osu_direct runtime values must be finite values greater than 0"
             raise ValueError(msg)
         self._validate_osu_direct_upstream_search_config(environment)
@@ -1111,6 +1111,21 @@ class AppConfig(BaseSettings):
         )
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_prefix="")
+
+
+def _has_invalid_positive_finite_value(values: tuple[int | float, ...]) -> bool:
+    """正で有限な数値だけを含むか検証する.
+
+    Args:
+        values (tuple[int | float, ...]): runtime設定から集めた数値列.
+
+    Returns:
+        bool: 0以下, 非有限float, またはfloat変換不能な巨大整数を含む場合はTrue.
+    """
+    try:
+        return any(not math.isfinite(value) or value <= 0 for value in values)
+    except OverflowError:
+        return True
 
 
 class RoutingConfig(BaseSettings):

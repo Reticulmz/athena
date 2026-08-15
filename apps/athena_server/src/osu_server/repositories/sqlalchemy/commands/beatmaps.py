@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from sqlalchemy.sql.dml import ReturningInsert
 
 logger = cast("structlog.stdlib.BoundLogger", structlog.get_logger(__name__))
+_BEATMAP_CHILD_LOOKUP_BATCH_SIZE = 1_000
 
 
 class DuplicateBeatmapChecksumError(ValueError):
@@ -559,7 +560,7 @@ class SQLAlchemyBeatmapCommandRepository:
             state (DirectExternalIndexState): 保存するsuccessまたはfailure state.
 
         Returns:
-            None: sessionへ同期状態をmergeしてflushしたことを示す.
+            None: 同期状態をupsertしてflushしたことを示す.
         """
         insert_statement = insert(BeatmapDirectExternalIndexStateModel).values(
             backend=state.backend.value,
@@ -877,17 +878,22 @@ class SQLAlchemyBeatmapCommandRepository:
         """
         if not beatmapset_ids:
             return {}
-        models = (
-            (
-                await self._session.execute(
-                    select(BeatmapModel)
-                    .where(BeatmapModel.beatmapset_id.in_(beatmapset_ids))
-                    .order_by(BeatmapModel.beatmapset_id.asc(), BeatmapModel.id.asc())
+        models: list[BeatmapModel] = []
+        for start_index in range(0, len(beatmapset_ids), _BEATMAP_CHILD_LOOKUP_BATCH_SIZE):
+            batch_ids = beatmapset_ids[
+                start_index : start_index + _BEATMAP_CHILD_LOOKUP_BATCH_SIZE
+            ]
+            models.extend(
+                (
+                    await self._session.execute(
+                        select(BeatmapModel)
+                        .where(BeatmapModel.beatmapset_id.in_(batch_ids))
+                        .order_by(BeatmapModel.beatmapset_id.asc(), BeatmapModel.id.asc())
+                    )
                 )
+                .scalars()
+                .all()
             )
-            .scalars()
-            .all()
-        )
         models_by_set_id: defaultdict[int, list[BeatmapModel]] = defaultdict(list)
         for model in models:
             models_by_set_id[model.beatmapset_id].append(model)

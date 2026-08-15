@@ -264,8 +264,6 @@ class MeilisearchDirectSearchBackend:
         """
         try:
             health = await self._client.health()
-            task = await self._index().update_settings(_settings_payload(self._index_definition))
-            await _wait_for_task(self._client, task)
             settings = await self._index().get_settings()
         except MeilisearchError as exc:
             msg = f"{_BACKEND_NAME} search backend is unavailable"

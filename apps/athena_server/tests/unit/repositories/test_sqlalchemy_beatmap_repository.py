@@ -1158,6 +1158,34 @@ async def test_rebuild_search_projection_orders_child_beatmaps_for_idempotency()
     assert "ORDER BY beatmaps.beatmapset_id ASC, beatmaps.id ASC" in statement_text
 
 
+async def test_rebuild_search_projection_batches_child_lookup_ids() -> None:
+    """Projection rebuildがchild lookupのID列をbounded batchへ分割することを検証する.
+
+    1001件のBeatmapSetを再構築し, child lookupがPostgreSQL bind上限に近づく単一IN queryに
+    ならず2回へ分かれることを確認する.
+
+    Returns:
+        None: beatmapset取得1回とchild取得2回のexecute回数を検証して完了する.
+    """
+    session = FakeSession(
+        execute_results=[
+            FakeResult(
+                values=[
+                    _beatmapset_model(beatmapset_id=beatmapset_id)
+                    for beatmapset_id in range(1, 1_002)
+                ]
+            ),
+            FakeResult(values=[]),
+            FakeResult(values=[]),
+        ]
+    )
+
+    rebuilt_count = await _repo(session).rebuild_search_projection(now=_NOW)
+
+    assert rebuilt_count == 1_001
+    assert len(session.executed) == 3
+
+
 async def test_record_index_state_upserts_external_index_state() -> None:
     """External indexの成功時刻を保ちながらstateをupsertすることを検証する.
 

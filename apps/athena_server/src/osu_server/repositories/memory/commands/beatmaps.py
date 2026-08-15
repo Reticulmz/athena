@@ -229,12 +229,16 @@ class InMemoryBeatmapCommandRepository:
         Returns:
             tuple[BeatmapSetSearchDocument, ...]: 保存済み検索projection列.
         """
-        documents = tuple(
-            self._state.search_documents_by_beatmapset_id[beatmapset_id]
-            for beatmapset_id in sorted(self._state.search_documents_by_beatmapset_id)
-            if beatmapset_id > after_beatmapset_id
-        )
-        return documents if limit is None else documents[:limit]
+        if limit is not None and limit <= 0:
+            return ()
+        documents: list[BeatmapSetSearchDocument] = []
+        for beatmapset_id in sorted(self._state.search_documents_by_beatmapset_id):
+            if beatmapset_id <= after_beatmapset_id:
+                continue
+            documents.append(self._state.search_documents_by_beatmapset_id[beatmapset_id])
+            if limit is not None and len(documents) >= limit:
+                break
+        return tuple(documents)
 
     async def rebuild_search_projection(self, *, now: datetime) -> int:
         """保存済みmetadataから検索projectionを再構築する.

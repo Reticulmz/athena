@@ -19,6 +19,9 @@ from osu_server.domain.beatmaps import (
     BeatmapRankStatus,
     BeatmapSet,
     BeatmapSourceVerification,
+    DirectExternalIndexBackend,
+    DirectExternalIndexState,
+    DirectExternalIndexStatus,
     LocalBeatmapStatus,
 )
 from osu_server.repositories.interfaces.commands.beatmaps import BeatmapCommandRepository
@@ -254,6 +257,35 @@ async def test_save_disables_direct_search_projection_for_not_submitted_set() ->
     assert document.document_version == 1
 
 
+async def test_list_search_documents_returns_bounded_page_after_beatmapset_id() -> None:
+    """External index rebuild用projection一覧がID順page境界を守ることを検証する.
+
+    複数BeatmapSetを保存し, after_beatmapset_idより大きいprojectionをlimit件だけ返すことを確認する.
+
+    Returns:
+        None: pagination条件とlimit 0の空結果を検証して完了する.
+    """
+    repo = _repo()
+    for beatmapset_id in (1_000, 2_000, 3_000):
+        await repo.save_beatmapset_snapshot(
+            replace(
+                _make_beatmapset(
+                    _make_beatmap(
+                        beatmap_id=beatmapset_id + 100_000,
+                        beatmapset_id=beatmapset_id,
+                        checksum_md5=f"{beatmapset_id:032x}",
+                    )
+                ),
+                id=beatmapset_id,
+            )
+        )
+
+    documents = await repo.list_search_documents(after_beatmapset_id=1_000, limit=1)
+
+    assert [document.beatmapset_id for document in documents] == [2_000]
+    assert await repo.list_search_documents(limit=0) == ()
+
+
 async def test_unit_of_work_commit_publishes_direct_search_projection_state() -> None:
     """In-memory UoW commitがmetadataと検索projectionを同時に公開することを検証する.
 
@@ -272,6 +304,33 @@ async def test_unit_of_work_commit_publishes_direct_search_projection_state() ->
     snapshot = factory.snapshot()
     assert 1_000 in snapshot.beatmapsets_by_id
     assert snapshot.search_documents_by_beatmapset_id[1_000].is_active is True
+
+
+async def test_local_status_override_refreshes_direct_search_projection() -> None:
+    """Local status override更新が検索projectionも再構築することを検証する.
+
+    PENDINGとして保存したBeatmapへlocal UNKNOWN overrideを設定する.
+    child更新後のprojectionがeffective status由来のactive判定を反映することを確認する.
+
+    Returns:
+        None: in-memory stateのprojection更新を検証して完了する.
+    """
+    state = InMemoryCommandRepositoryState()
+    repo = InMemoryBeatmapCommandRepository(state)
+    await repo.save_beatmapset_snapshot(
+        _make_beatmapset(
+            _make_beatmap(official_status=BeatmapRankStatus.PENDING),
+            status=BeatmapRankStatus.PENDING,
+        )
+    )
+    previous = state.search_documents_by_beatmapset_id[1_000]
+
+    _ = await repo.set_local_status_override(2_000, LocalBeatmapStatus.UNKNOWN)
+
+    document = state.search_documents_by_beatmapset_id[1_000]
+    assert document.status is BeatmapRankStatus.PENDING
+    assert document.is_active is False
+    assert document.document_version == previous.document_version + 1
 
 
 async def test_save_rejects_checksum_reuse_for_different_beatmap() -> None:
@@ -575,6 +634,47 @@ async def test_failed_fetch_state_is_observable() -> None:
     assert state.status is BeatmapFetchState.FAILED
     assert state.last_error == "timeout"
     assert state.last_attempted_at == _NOW + timedelta(seconds=5)
+
+
+async def test_record_index_state_preserves_last_success_on_failure() -> None:
+    """External index失敗stateが最後の成功時刻を消さないことを検証する.
+
+    成功stateを保存した後にlast_succeeded_atなしの失敗stateを保存する.
+    同じbackend/documentのlast_succeeded_atが成功時刻のまま残ることを確認する.
+
+    Returns:
+        None: in-memory external index stateのsuccess timestamp保持を検証する.
+    """
+    state = InMemoryCommandRepositoryState()
+    repo = InMemoryBeatmapCommandRepository(state)
+    key = (DirectExternalIndexBackend.MEILISEARCH, 1_000)
+    succeeded_at = _NOW
+
+    await repo.record_index_state(
+        DirectExternalIndexState(
+            backend=DirectExternalIndexBackend.MEILISEARCH,
+            beatmapset_id=1_000,
+            document_version=1,
+            status=DirectExternalIndexStatus.SUCCEEDED,
+            last_attempted_at=succeeded_at,
+            last_succeeded_at=succeeded_at,
+            failure_reason=None,
+        )
+    )
+    await repo.record_index_state(
+        DirectExternalIndexState(
+            backend=DirectExternalIndexBackend.MEILISEARCH,
+            beatmapset_id=1_000,
+            document_version=1,
+            status=DirectExternalIndexStatus.FAILED,
+            last_attempted_at=succeeded_at + timedelta(seconds=1),
+            last_succeeded_at=None,
+            failure_reason="RuntimeError: external index update failed",
+        )
+    )
+
+    assert state.external_index_states_by_key[key].last_succeeded_at == succeeded_at
+    assert state.external_index_states_by_key[key].status is DirectExternalIndexStatus.FAILED
 
 
 # ---------------------------------------------------------------------------

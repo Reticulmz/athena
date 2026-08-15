@@ -142,6 +142,37 @@ async def test_update_external_index_failure_records_retry_state_without_project
     assert "stacktrace" not in index_state.failure_reason
 
 
+async def test_update_external_index_failure_preserves_last_success_timestamp() -> None:
+    """成功後のretry失敗が最後の成功時刻を消さない契約を検証する.
+
+    Returns:
+        None: use-case経由の失敗stateでlast_succeeded_atが維持されることを確認する.
+    """
+    state = InMemoryCommandRepositoryState()
+    factory = InMemoryUnitOfWorkFactory(state)
+    await _save_beatmapset(factory, _make_beatmapset(beatmapset_id=1_000))
+    external_index = RecordingExternalIndexBackend()
+    commands = DirectIndexingCommands(
+        unit_of_work_factory=factory,
+        external_index_backend=external_index,
+    )
+
+    success_result = await commands.update_external_index(1_000)
+    succeeded_state = factory.snapshot().external_index_states_by_key[
+        (DirectExternalIndexBackend.MEILISEARCH, 1_000)
+    ]
+    external_index.failing_beatmapset_ids.add(1_000)
+    failed_result = await commands.update_external_index(1_000)
+
+    failed_state = factory.snapshot().external_index_states_by_key[
+        (DirectExternalIndexBackend.MEILISEARCH, 1_000)
+    ]
+    assert success_result.outcome is DirectExternalIndexUpdateOutcome.SUCCEEDED
+    assert failed_result.outcome is DirectExternalIndexUpdateOutcome.FAILED
+    assert succeeded_state.last_succeeded_at is not None
+    assert failed_state.last_succeeded_at == succeeded_state.last_succeeded_at
+
+
 async def test_rebuild_external_index_replays_current_projection_documents() -> None:
     """Current projection群からexternal index stateを再構築することを検証する.
 

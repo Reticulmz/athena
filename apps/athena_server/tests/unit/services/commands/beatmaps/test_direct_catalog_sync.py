@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from structlog.testing import capture_logs
 
 from osu_server.domain.beatmaps import (
@@ -143,10 +144,25 @@ class RecordingRangeCrawlFetcher:
     Attributes:
         result (DirectRangeCrawlFetchResult): id range crawlから返すbeatmapset snapshots.
         calls (list[DirectRangeCrawlChunk]): crawl対象として受け取ったchunk列.
+        request_count_per_beatmapset (int): 1 IDあたりに予約するupstream request数.
     """
 
     result: DirectRangeCrawlFetchResult
     calls: list[DirectRangeCrawlChunk]
+    request_count_per_beatmapset: int = 1
+
+    def request_count_for_chunk(self, chunk: DirectRangeCrawlChunk) -> int:
+        """ID range chunkで予約するrequest数を返す.
+
+        Args:
+            chunk (DirectRangeCrawlChunk): crawl対象のid range chunk.
+
+        Returns:
+            int: range sizeにrequest_count_per_beatmapsetを掛けた予約数.
+        """
+        return (
+            chunk.to_beatmapset_id - chunk.from_beatmapset_id + 1
+        ) * self.request_count_per_beatmapset
 
     async def fetch_id_range(
         self,
@@ -173,6 +189,17 @@ class FailingRangeCrawlFetcher:
     """
 
     secret_value: str = "secret-token full upstream body"
+
+    def request_count_for_chunk(self, chunk: DirectRangeCrawlChunk) -> int:
+        """ID range chunkのID数をrequest予約数として返す.
+
+        Args:
+            chunk (DirectRangeCrawlChunk): crawl対象のid range chunk.
+
+        Returns:
+            int: chunkに含まれるBeatmapSet ID数.
+        """
+        return chunk.to_beatmapset_id - chunk.from_beatmapset_id + 1
 
     async def fetch_id_range(
         self,
@@ -257,6 +284,92 @@ async def test_shared_budget_delays_catalog_work_with_operator_retry_diagnostics
     assert {event["work_kind"] for event in events} == {"feed_sync", "id_range_crawl"}
     assert all(event["retry_eligible"] is True for event in events)
     assert all(event["retry_after_seconds"] > 0 for event in events)
+
+
+async def test_shared_budget_allows_request_count_that_exactly_fills_remaining_budget() -> None:
+    """request_countが残budgetを使い切る場合にworkを実行する契約を検証する.
+
+    Returns:
+        None: 予約数が残budgetと等しいcatalog workが完了することを確認する.
+    """
+    calls: list[str] = []
+    scheduler = DirectCatalogScheduler(request_budget_per_minute=3)
+    _ = await scheduler.run(
+        DirectCatalogWorkKind.POINT_LOOKUP,
+        RecordingCatalogWork("point", calls),
+    )
+
+    result = await scheduler.run(
+        DirectCatalogWorkKind.ID_RANGE_CRAWL,
+        RecordingCatalogWork("range", calls),
+        request_count=2,
+    )
+
+    assert result.outcome is DirectCatalogScheduleOutcome.COMPLETED
+    assert calls == ["point", "range"]
+
+
+async def test_shared_budget_delays_when_request_count_exceeds_remaining_budget() -> None:
+    """request_countが残budgetを超える場合にworkを実行しない契約を検証する.
+
+    Returns:
+        None: budget枯渇結果と未実行のwork記録を確認する.
+    """
+    calls: list[str] = []
+    scheduler = DirectCatalogScheduler(request_budget_per_minute=3)
+    _ = await scheduler.run(
+        DirectCatalogWorkKind.POINT_LOOKUP,
+        RecordingCatalogWork("point", calls),
+    )
+
+    result = await scheduler.run(
+        DirectCatalogWorkKind.ID_RANGE_CRAWL,
+        RecordingCatalogWork("range", calls),
+        request_count=3,
+    )
+
+    assert result.outcome is DirectCatalogScheduleOutcome.DELAYED
+    assert result.retry_eligible is True
+    assert calls == ["point"]
+
+
+async def test_shared_budget_rejects_non_positive_request_count() -> None:
+    """request_countが正でない呼び出しを拒否する契約を検証する.
+
+    Returns:
+        None: ValueErrorが発生しworkが実行されないことを確認する.
+    """
+    calls: list[str] = []
+    scheduler = DirectCatalogScheduler(request_budget_per_minute=3)
+
+    with pytest.raises(ValueError, match="request_count must be positive"):
+        _ = await scheduler.run(
+            DirectCatalogWorkKind.ID_RANGE_CRAWL,
+            RecordingCatalogWork("range", calls),
+            request_count=0,
+        )
+    assert calls == []
+
+
+async def test_shared_budget_rejects_range_larger_than_window_budget_without_retry() -> None:
+    """Window上限より大きいrequest_countを非retry失敗として返す契約を検証する.
+
+    Returns:
+        None: oversized workがdelay retryにならずworkを実行しないことを確認する.
+    """
+    calls: list[str] = []
+    scheduler = DirectCatalogScheduler(request_budget_per_minute=3)
+
+    result = await scheduler.run(
+        DirectCatalogWorkKind.ID_RANGE_CRAWL,
+        RecordingCatalogWork("range", calls),
+        request_count=4,
+    )
+
+    assert result.outcome is DirectCatalogScheduleOutcome.FAILED
+    assert result.retry_eligible is False
+    assert result.failure_reason == "request_count exceeds upstream budget"
+    assert calls == []
 
 
 async def test_catalog_failure_returns_sanitized_retry_diagnostics() -> None:
@@ -426,6 +539,41 @@ async def test_range_crawl_saves_metadata_and_completed_id_range_coverage() -> N
     assert coverage.completed_at is not None
     assert coverage.failed_at is None
     assert coverage.failure_reason is None
+
+
+async def test_range_crawl_reserves_reported_upstream_request_count() -> None:
+    """Range crawlがfetcher報告のrequest数でbudget予約する契約を検証する.
+
+    Mirror fallbackのように1 IDあたり複数HTTP試行がありうる条件で、range sizeでは残budget内でも
+    報告request数では枯渇するchunkがfetchされないことを確認する.
+
+    Returns:
+        None: request_count_for_chunkの値がscheduler予約に使われることを検証する.
+    """
+    factory = InMemoryUnitOfWorkFactory(InMemoryCommandRepositoryState())
+    chunk = _make_range_chunk(from_beatmapset_id=2_000, to_beatmapset_id=2_004)
+    scheduler = DirectCatalogScheduler(request_budget_per_minute=10)
+    _ = await scheduler.run(
+        DirectCatalogWorkKind.POINT_LOOKUP,
+        RecordingCatalogWork("point", []),
+    )
+    fetcher = RecordingRangeCrawlFetcher(
+        result=DirectRangeCrawlFetchResult(beatmapsets=()),
+        calls=[],
+        request_count_per_beatmapset=2,
+    )
+    crawl = DirectRangeCrawl(
+        unit_of_work_factory=factory,
+        scheduler=scheduler,
+        range_crawl_fetcher=fetcher,
+    )
+
+    result = await crawl.execute(chunk)
+
+    assert result.outcome is DirectCatalogScheduleOutcome.DELAYED
+    assert result.retry_eligible is True
+    assert fetcher.calls == []
+    assert factory.snapshot().direct_coverage_records_by_scope == {}
 
 
 async def test_range_crawl_failure_records_failed_chunk_without_metadata() -> None:

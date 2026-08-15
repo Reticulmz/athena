@@ -1529,6 +1529,7 @@ class TestOsuDirectConfig:
             ("osu_direct_upstream_search_first_page_refresh_seconds", 0),
             ("osu_direct_ranked_sync_interval_seconds", 0),
             ("osu_direct_shared_upstream_budget_per_minute", 0),
+            ("osu_direct_shared_upstream_budget_per_minute", 10**500),
         ],
     )
     def test_rejects_non_positive_osu_direct_runtime_values(
