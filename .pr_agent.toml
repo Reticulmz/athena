@@ -1,0 +1,83 @@
+[config]
+model = "gpt-5.6-sol"
+fallback_models = ["gpt-5.6-luna", "gpt-5.5"]
+model_reasoning = "gpt-5.6-sol"
+model_weak = "gpt-5.6-luna"
+reasoning_effort = "xhigh"
+max_model_tokens = 128000
+custom_model_max_tokens = 128000
+response_language = "ja-JP"
+repo_context_files = [
+    "AGENTS.md",
+    "apps/athena_server/AGENTS.md",
+    "packages/athena_crypto/AGENTS.md",
+    ".agents/skills/athena-python-style/SKILL.md",
+    "docs/agent-python.md",
+]
+repo_context_max_lines = 1000
+restricted_mode = true
+output_run_details = true
+
+[ignore]
+glob = [
+    ".direnv/**",
+    ".gitnexus/**",
+    ".mypy_cache/**",
+    ".pyright/**",
+    ".pytest_cache/**",
+    ".ruff_cache/**",
+    ".serena/**",
+    ".state/**",
+    ".venv/**",
+    "apps/athena_server/.data/**",
+    "build/**",
+    "dist/**",
+    "htmlcov/**",
+    "logs/**",
+    "tmp/**",
+]
+
+[pr_description]
+publish_labels = false
+generate_ai_title = true
+final_update_message = true
+add_original_user_description = true
+extra_instructions = """\
+必ず日本語で回答してください。
+PRタイトルを更新する場合は、Conventional Commits形式のtype接頭辞を使ってください。
+既存のPR本文に人間が書いた検証結果や注意点がある場合は消さずに残してください。
+"""
+
+[pr_reviewer]
+num_max_findings = 6
+require_score_review = true
+require_tests_review = true
+require_security_review = true
+require_ticket_analysis_review = true
+require_can_be_split_review = true
+require_todo_scan = true
+inline_code_comments = true
+remove_previous_review_comment = true
+extra_instructions = """\
+AGENTS.md と scoped guidance を尊重してください。
+必ず日本語で回答してください。
+正確性、テスト不足、セキュリティ、runtime failure、stable/lazer/API 互換性の回帰を優先してください。
+推測ではなく、再現可能な問題だけを対象ファイルと具体的な条件付きで指摘してください。
+抽象的なラベルだけの指摘は避け、対象箇所、観測される挙動、影響、最小修正案を具体的に書いてください。
+styleのみ、任意リファクタ、広すぎる設計変更の指摘は、実際の不具合や回帰を防ぐ場合だけにしてください。
+外部システム、プロトコル、DB、フレームワーク連携では、自前実装より公式または保守されたアダプタが使えるかを確認してください。
+"""
+
+[pr_code_suggestions]
+suggestions_score_threshold = 5
+num_code_suggestions_per_chunk = 4
+max_number_of_calls = 3
+commitable_code_suggestions = true
+focus_only_on_problems = true
+extra_instructions = """\
+必ず日本語で回答してください。
+問題を解消する最小差分だけを提案してください。
+styleのみの提案や任意のリファクタは避けてください。
+抽象的な説明で終わらせず、何が壊れるか、なぜその差分で直るかを具体的に書いてください。
+既存依存、標準ライブラリ、公式または保守されたライブラリで解決できる問題は、自前実装を提案しないでください。
+"""
