@@ -272,8 +272,8 @@ class SequentialDirectSearchUpstreamProvider:
         Returns:
             DirectSearchUpstreamResult: 最初に候補を返したprovider結果. 全て空なら空結果.
 
-        Raises:
-            Exception: 全providerが失敗した場合は最後のprovider失敗を伝播する.
+        Notes:
+            全providerが失敗した場合は最後のprovider失敗を伝播する.
         """
         last_error: Exception | None = None
         has_response = False
