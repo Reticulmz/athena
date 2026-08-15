@@ -295,7 +295,7 @@ class OsuApiMetadataProviderService:
                 )
             try:
                 snapshots.append(beatmap_json_to_snapshot(cast("dict[str, object]", item)))
-            except (KeyError, TypeError, ValueError) as exc:
+            except (AttributeError, KeyError, TypeError, ValueError) as exc:
                 raise BeatmapSourceError(
                     category=BeatmapSourceErrorCategory.INVALID_RESPONSE,
                     source=source_label,
