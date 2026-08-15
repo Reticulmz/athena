@@ -133,9 +133,9 @@ class LoginResponseBuilder:
         """
         user = login_response.user
         authorization_output = map_stable_bancho_authorization(login_response.privileges)
-        login_permission_flags = authorization_output.login_permissions
-        if self._grant_stable_supporter_feature_bit:
-            login_permission_flags |= BanchoClientPermission.SUPPORTER
+        login_permission_flags = self._build_login_permissions(
+            authorization_output.login_permissions
+        )
         channel_query_input = ChannelCatalogQueryInput(
             user_privileges=int(login_response.privileges),
             user_role_ids=login_response.role_ids,
@@ -198,6 +198,22 @@ class LoginResponseBuilder:
         )
 
         return b"".join(packets)
+
+    def _build_login_permissions(
+        self,
+        login_permissions: BanchoClientPermission,
+    ) -> BanchoClientPermission:
+        """Login responseへ出すstable client permission flagsを返す.
+
+        Args:
+            login_permissions (BanchoClientPermission): authorizationから導出したpermission.
+
+        Returns:
+            BanchoClientPermission: feature flagによる表示bitを反映したpermission.
+        """
+        if self._grant_stable_supporter_feature_bit:
+            return login_permissions | BanchoClientPermission.SUPPORTER
+        return login_permissions
 
     async def _current_stats_by_user_id(
         self,

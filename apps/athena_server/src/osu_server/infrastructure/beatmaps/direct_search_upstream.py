@@ -271,19 +271,28 @@ class SequentialDirectSearchUpstreamProvider:
 
         Returns:
             DirectSearchUpstreamResult: 最初に候補を返したprovider結果. 全て空なら空結果.
+
+        Raises:
+            Exception: 全providerが失敗した場合は最後のprovider失敗を伝播する.
         """
+        last_error: Exception | None = None
+        has_response = False
         for provider in self._providers:
             try:
                 result = await provider.search(request)
             except Exception as exc:
+                last_error = exc
                 logger.warning(
                     "osu_direct_search_upstream_provider_failed",
                     provider=type(provider).__name__,
                     exception_type=type(exc).__name__,
                 )
                 continue
+            has_response = True
             if result.beatmapsets or result.has_more:
                 return result
+        if not has_response and last_error is not None:
+            raise last_error
         return DirectSearchUpstreamResult(beatmapsets=(), has_more=False)
 
 
@@ -299,7 +308,7 @@ def _cheesegull_params(request: DirectSearchRequest) -> dict[str, str]:
     params = {
         "query": _cheesegull_query_text(request),
         "mode": _mode_query_value(request.mode),
-        "amount": str(request.page_size),
+        "amount": str(request.page_size + 1),
         "offset": str(request.page * request.page_size),
     }
     status = _single_status(request.statuses)
@@ -370,7 +379,7 @@ def _nerinyan_params(request: DirectSearchRequest) -> dict[str, str]:
         "q": request.query_text,
         "m": _mode_query_value(request.mode),
         "p": str(request.page + 1),
-        "ps": str(request.page_size),
+        "ps": str(request.page_size + 1),
     }
     status = _single_status(request.statuses)
     if status is not None:
@@ -608,7 +617,7 @@ def _map_rows(
             beatmapsets.append(beatmapset)
     return DirectSearchUpstreamResult(
         beatmapsets=tuple(beatmapsets[:page_size]),
-        has_more=len(rows) >= page_size or len(beatmapsets) > page_size,
+        has_more=len(rows) > page_size or len(beatmapsets) > page_size,
     )
 
 

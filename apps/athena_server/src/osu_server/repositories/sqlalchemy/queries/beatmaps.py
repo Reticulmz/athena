@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 
 from osu_server.domain.beatmaps import (
     BeatmapMetadataSource,
@@ -448,25 +448,31 @@ class SQLAlchemyBeatmapQueryRepository:
         """
         if not beatmap_ids:
             return {}
+        ranked_attachments = select(
+            BeatmapFileAttachmentModel.id.label("id"),
+            func.row_number()
+            .over(
+                partition_by=BeatmapFileAttachmentModel.beatmap_id,
+                order_by=BeatmapFileAttachmentModel.id.desc(),
+            )
+            .label("row_number"),
+        ).where(BeatmapFileAttachmentModel.beatmap_id.in_(beatmap_ids))
+        ranked_attachments_subquery = ranked_attachments.subquery()
+        latest_attachment_ids = select(ranked_attachments_subquery.c.id).where(
+            ranked_attachments_subquery.c.row_number == 1
+        )
         rows = (
             (
                 await session.execute(
-                    select(BeatmapFileAttachmentModel)
-                    .where(BeatmapFileAttachmentModel.beatmap_id.in_(beatmap_ids))
-                    .order_by(
-                        BeatmapFileAttachmentModel.beatmap_id.asc(),
-                        BeatmapFileAttachmentModel.id.desc(),
+                    select(BeatmapFileAttachmentModel).where(
+                        BeatmapFileAttachmentModel.id.in_(latest_attachment_ids)
                     )
                 )
             )
             .scalars()
             .all()
         )
-        attachments: dict[int, BeatmapFileAttachmentModel] = {}
-        for model in rows:
-            if model.beatmap_id not in attachments:
-                attachments[model.beatmap_id] = model
-        return attachments
+        return {model.beatmap_id: model for model in rows}
 
     @staticmethod
     async def _get_current_file_attachment_model(

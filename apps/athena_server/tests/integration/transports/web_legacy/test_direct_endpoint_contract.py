@@ -214,7 +214,7 @@ def test_direct_search_route_returns_count_and_stable_rows_for_authenticated_use
     lines = response.text.splitlines()
     row_fields = lines[1].split("|")
     assert lines[0] == "1"
-    assert len(row_fields) == 14
+    assert len(row_fields) == 15
     assert row_fields[0] == f"{_BEATMAPSET_ID}.osz"
     assert row_fields[7] == str(_BEATMAPSET_ID)
     assert row_fields[13] == "Normal ★2.50@0"
@@ -621,7 +621,7 @@ def _stable_row_text() -> str:
         "|0"
         "|0"
         "|0"
-        "|Normal ★2.50@0"
+        "|Normal ★2.50@0|0"
     )
 
 

@@ -28,7 +28,7 @@ _FINGERPRINT_LENGTH = 16
 _DUPLICATE_SUMMARY_LIMIT = 10
 _TRACEBACK_CAPTURE_LIMIT = 120
 _TRACEBACK_SUMMARY_LIMIT = 8
-_PROJECT_PATH_MARKERS = ("apps/athena_server/", "tests/")
+_PROJECT_PATH_MARKERS = ("apps/athena_server/", "tests/", "/osu_server/")
 _INTERNAL_TRACEBACK_SUFFIXES = (
     "/shared/query_diagnostics.py",
     "/infrastructure/database/query_diagnostics.py",
@@ -142,8 +142,9 @@ class QueryDiagnosticCollector:
         if not template:
             return
         self._query_count += 1
-        self._template_counts[template] += 1
-        if template not in self._template_tracebacks:
+        count = self._template_counts[template] + 1
+        self._template_counts[template] = count
+        if count == self.duplicate_threshold:
             self._template_tracebacks[template] = _query_traceback()
 
     def summary(self) -> QueryDiagnosticSummary:

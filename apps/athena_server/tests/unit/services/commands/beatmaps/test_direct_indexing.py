@@ -178,6 +178,31 @@ async def test_rebuild_external_index_replays_current_projection_documents() -> 
     )
 
 
+async def test_rebuild_external_index_reads_projection_documents_in_batches() -> None:
+    """External index rebuildがprojection全件を一度に保持しないことを検証する.
+
+    Returns:
+        None: batch境界を超える件数でも全documentが処理されることを確認する.
+    """
+    state = InMemoryCommandRepositoryState()
+    factory = InMemoryUnitOfWorkFactory(state)
+    for beatmapset_id in range(1_000, 1_251):
+        await _save_beatmapset(factory, _make_beatmapset(beatmapset_id=beatmapset_id))
+    external_index = RecordingExternalIndexBackend()
+    commands = DirectIndexingCommands(
+        unit_of_work_factory=factory,
+        external_index_backend=external_index,
+    )
+
+    result = await commands.rebuild_external_index()
+
+    assert result.succeeded_count == 251
+    assert result.failed_count == 0
+    assert [document.beatmapset_id for document in external_index.indexed_documents] == list(
+        range(1_000, 1_251)
+    )
+
+
 async def _save_beatmapset(
     factory: InMemoryUnitOfWorkFactory,
     beatmapset: BeatmapSet,

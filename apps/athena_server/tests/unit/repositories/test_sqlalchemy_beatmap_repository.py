@@ -47,7 +47,6 @@ from osu_server.repositories.sqlalchemy.commands.beatmaps import (
 )
 from osu_server.repositories.sqlalchemy.models.beatmap import (
     BeatmapDirectCoverageModel,
-    BeatmapDirectExternalIndexStateModel,
     BeatmapFetchStateModel,
     BeatmapFileAttachmentModel,
     BeatmapModel,
@@ -101,6 +100,18 @@ class FakeResult:
         Returns:
             object | None: scalar query結果. 値がない場合はNone.
         """
+        return self._value
+
+    def scalar_one(self) -> object:
+        """設定済みscalar値を必須値として返す.
+
+        Returns:
+            object: scalar query結果.
+
+        Raises:
+            AssertionError: 値が設定されていない場合.
+        """
+        assert self._value is not None
         return self._value
 
     def one_or_none(self) -> tuple[object, object] | None:
@@ -327,6 +338,7 @@ def _repo(session: FakeSession) -> SQLAlchemyBeatmapCommandRepository:
 def _beatmap_model(
     *,
     id: int = 2_000,  # noqa: A002
+    beatmapset_id: int = 1_000,
     checksum_md5: str = _CHECKSUM,
     version: str = "Another",
     official_status: str = "ranked",
@@ -340,6 +352,7 @@ def _beatmap_model(
 
     Args:
         id (int): beatmap永続化識別子.
+        beatmapset_id (int): 親BeatmapSetの永続化識別子.
         checksum_md5 (str): beatmapのMD5 checksum.
         version (str): difficulty名として保存するversion.
         official_status (str): upstreamから取得したrank status値.
@@ -354,7 +367,7 @@ def _beatmap_model(
     """
     return BeatmapModel(
         id=id,
-        beatmapset_id=1_000,
+        beatmapset_id=beatmapset_id,
         checksum_md5=checksum_md5,
         mode="osu",
         version=version,
@@ -504,27 +517,6 @@ def _stored_beatmap_models(session: FakeSession) -> list[BeatmapModel]:
         list[BeatmapModel]: 保存pathが保持したchild beatmap model列.
     """
     return [model for model in session.added if isinstance(model, BeatmapModel)]
-
-
-def _merged_index_state(session: FakeSession) -> BeatmapDirectExternalIndexStateModel:
-    """Session fakeがmergeしたexternal index stateを1件返す.
-
-    Args:
-        session (FakeSession): index state保存に使ったSQLAlchemy session fake.
-
-    Returns:
-        BeatmapDirectExternalIndexStateModel: 保存pathがmergeしたindex state model.
-
-    Raises:
-        AssertionError: index state modelが1件だけmergeされていない場合.
-    """
-    states = [
-        model
-        for model in session.merged
-        if isinstance(model, BeatmapDirectExternalIndexStateModel)
-    ]
-    assert len(states) == 1
-    return states[0]
 
 
 def _direct_coverage_model() -> BeatmapDirectCoverageModel:
@@ -1094,13 +1086,14 @@ async def test_list_search_documents_returns_direct_projection_domains() -> None
                     _beatmapset_model(beatmapset_id=2_000),
                 ]
             ),
-            FakeResult(values=[_beatmap_model(official_last_updated_at=_NOW)]),
             FakeResult(
                 values=[
+                    _beatmap_model(official_last_updated_at=_NOW),
                     _beatmap_model(
                         id=3_000,
+                        beatmapset_id=2_000,
                         official_last_updated_at=_NOW,
-                    )
+                    ),
                 ]
             ),
         ]
@@ -1141,13 +1134,13 @@ async def test_rebuild_search_projection_updates_search_input_from_stored_metada
 
 
 async def test_rebuild_search_projection_orders_child_beatmaps_for_idempotency() -> None:
-    """Projection rebuildがchild順序でversionを揺らさないqueryを使うことを検証する.
+    """Projection rebuildがchildを一括取得しID順でversionを揺らさないことを検証する.
 
     Returns:
-        None: child beatmap取得queryのORDER BYをassertして完了する.
+        None: child beatmap取得queryのfilterとORDER BYをassertして完了する.
 
     Raises:
-        AssertionError: child beatmap取得queryがID順を指定しない場合.
+        AssertionError: child beatmap取得queryが一括取得またはID順指定をしない場合.
     """
     session = FakeSession(
         execute_results=[
@@ -1161,17 +1154,18 @@ async def test_rebuild_search_projection_orders_child_beatmaps_for_idempotency()
     child_statement = session.executed[1]
     assert isinstance(child_statement, ClauseElement)
     statement_text = str(child_statement.compile(dialect=postgresql.dialect()))
-    assert "ORDER BY beatmaps.id ASC" in statement_text
+    assert "beatmaps.beatmapset_id IN" in statement_text
+    assert "ORDER BY beatmaps.beatmapset_id ASC, beatmaps.id ASC" in statement_text
 
 
-async def test_record_index_state_merges_external_index_state() -> None:
-    """External indexの成功/失敗stateを永続modelへmergeすることを検証する.
+async def test_record_index_state_upserts_external_index_state() -> None:
+    """External indexの成功時刻を保ちながらstateをupsertすることを検証する.
 
     Returns:
-        None: backend, version, status, reasonを保存modelで検証して完了する.
+        None: conflict updateがlast_succeeded_atを消さないことをSQLで検証して完了する.
 
     Raises:
-        AssertionError: index stateがmergeまたはflushされない場合.
+        AssertionError: index state upsertまたはflushが実行されない場合.
     """
     session = FakeSession()
     state = DirectExternalIndexState(
@@ -1186,14 +1180,13 @@ async def test_record_index_state_merges_external_index_state() -> None:
 
     await _repo(session).record_index_state(state)
 
-    model = _merged_index_state(session)
-    assert model.backend == "meilisearch"
-    assert model.beatmapset_id == 1_000
-    assert model.document_version == 3
-    assert model.status == "failed"
-    assert model.last_attempted_at == _NOW
-    assert model.last_succeeded_at is None
-    assert model.failure_reason == "RuntimeError: external index update failed"
+    assert len(session.executed) == 1
+    statement = session.executed[0]
+    assert isinstance(statement, ClauseElement)
+    statement_text = str(statement.compile(dialect=postgresql.dialect()))
+    assert "ON CONFLICT" in statement_text
+    assert "coalesce" in statement_text.lower()
+    assert "last_succeeded_at" in statement_text
     assert session.flushes == 1
 
 
@@ -1230,7 +1223,10 @@ async def test_record_direct_coverage_upserts_scope_state() -> None:
     statement_text = str(compiled)
     params = cast("dict[str, object]", compiled.construct_params())
     assert "INSERT INTO beatmap_direct_coverage" in statement_text
-    assert "ON CONFLICT ON CONSTRAINT uq_beatmap_direct_coverage_scope" in statement_text
+    assert (
+        "ON CONFLICT (coverage_kind, source, status_scope, sort_key, window_key" in statement_text
+    )
+    assert "from_beatmapset_id, to_beatmapset_id)" in statement_text
     assert params["coverage_kind"] == "feed_window"
     assert params["source"] == "mirror"
     assert params["status_scope"] == "ranked"
@@ -1349,7 +1345,7 @@ async def test_string_fetch_target_kind_is_normalized_for_query_and_write() -> N
     pending_session = FakeSession(execute_results=[FakeResult(1)])
     assert await _repo(pending_session).try_mark_fetch_pending(target, now=_NOW) is True
 
-    completed_session = FakeSession(execute_results=[FakeResult()])
+    completed_session = FakeSession(execute_results=[FakeResult(value=2)])
     await _repo(completed_session).mark_fetch_succeeded(target, now=_NOW)
     statement = completed_session.executed[0]
     assert isinstance(statement, ClauseElement)
@@ -1438,7 +1434,7 @@ async def test_get_beatmap_by_checksum_returns_none_when_not_found() -> None:
     Raises:
         AssertionError: 未登録checksumにbeatmapが返される場合.
     """
-    session = FakeSession(execute_results=[FakeResult()])
+    session = FakeSession(execute_results=[FakeResult(value=10)])
 
     result = await _repo(session).get_beatmap_by_checksum("nonexistentchecksum00000000000000")
 
@@ -1560,7 +1556,7 @@ async def test_mark_fetch_succeeded_transitions_state_to_fresh() -> None:
         AssertionError: fetch成功後のstate遷移または永続化が期待と異なる場合.
     """
     target = BeatmapFetchTarget.metadata_by_beatmap_id(2_000)
-    session = FakeSession(execute_results=[FakeResult()])
+    session = FakeSession(execute_results=[FakeResult(value=10)])
 
     await _repo(session).mark_fetch_succeeded(target, now=_NOW)
 
@@ -1576,6 +1572,7 @@ async def test_mark_fetch_succeeded_transitions_state_to_fresh() -> None:
     assert params["last_error"] is None
     assert params["pending_since"] is None
     assert params["last_attempted_at"] == _NOW
+    assert session.get_calls == [(BeatmapFetchStateModel, 10, True)]
     assert session.flushes == 0
 
 
@@ -1589,7 +1586,7 @@ async def test_mark_fetch_failed_records_error_and_transitions_state() -> None:
         AssertionError: fetch失敗後のstate遷移またはerror記録が期待と異なる場合.
     """
     target = BeatmapFetchTarget.file_by_beatmap_id(2_000)
-    session = FakeSession(execute_results=[FakeResult()])
+    session = FakeSession(execute_results=[FakeResult(value=11)])
 
     await _repo(session).mark_fetch_failed(target, reason="timeout", now=_NOW)
 
@@ -1600,6 +1597,7 @@ async def test_mark_fetch_failed_records_error_and_transitions_state() -> None:
     assert params["status"] == "failed"
     assert params["last_error"] == "timeout"
     assert params["pending_since"] is None
+    assert session.get_calls == [(BeatmapFetchStateModel, 11, True)]
     assert params["last_attempted_at"] == _NOW
     assert session.flushes == 0
 

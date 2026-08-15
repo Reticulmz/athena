@@ -23,7 +23,11 @@ from osu_server.jobs.beatmap_fetch import (
     get_beatmap_metadata_fetch_semaphore,
     get_osu_direct_catalog_scheduler,
 )
-from osu_server.services.commands.beatmaps.direct_catalog_sync import DirectCatalogWorkKind
+from osu_server.shared.ports import (
+    DirectCatalogScheduleOutcome,
+    DirectCatalogScheduleResult,
+    DirectCatalogWorkKind,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Coroutine
@@ -98,17 +102,28 @@ class _FakeScheduler:
 
     Attributes:
         calls (list[DirectCatalogWorkKind]): schedulerへ渡されたwork kind履歴.
+        outcome (DirectCatalogScheduleOutcome): runが返すscheduler結果.
     """
 
-    def __init__(self) -> None:
-        """空のscheduler呼び出し履歴を初期化する."""
+    outcome: DirectCatalogScheduleOutcome
+
+    def __init__(
+        self,
+        outcome: DirectCatalogScheduleOutcome = DirectCatalogScheduleOutcome.COMPLETED,
+    ) -> None:
+        """空のscheduler呼び出し履歴と返却結果を初期化する.
+
+        Args:
+            outcome (DirectCatalogScheduleOutcome): runが返すscheduler結果.
+        """
         self.calls: list[DirectCatalogWorkKind] = []
+        self.outcome = outcome
 
     async def run(
         self,
         work_kind: DirectCatalogWorkKind,
         work: Callable[[], Awaitable[None]],
-    ) -> object:
+    ) -> DirectCatalogScheduleResult:
         """Work kindを記録して渡されたworkを実行する.
 
         Args:
@@ -116,11 +131,24 @@ class _FakeScheduler:
             work (Callable[[], Awaitable[None]]): metadata fetch実行を包むcallback.
 
         Returns:
-            object: scheduler結果を検証しないため新規objectを返す.
+            DirectCatalogScheduleResult: 設定済みoutcomeを持つscheduler結果.
         """
         self.calls.append(work_kind)
-        await work()
-        return object()
+        if self.outcome is DirectCatalogScheduleOutcome.COMPLETED:
+            await work()
+        return DirectCatalogScheduleResult(
+            work_kind=work_kind,
+            outcome=self.outcome,
+            retry_eligible=self.outcome is not DirectCatalogScheduleOutcome.COMPLETED,
+            retry_after_seconds=30
+            if self.outcome is DirectCatalogScheduleOutcome.DELAYED
+            else None,
+            failure_reason=(
+                "scheduled failure"
+                if self.outcome is DirectCatalogScheduleOutcome.FAILED
+                else None
+            ),
+        )
 
 
 def _make_context(**services: object) -> Context:
@@ -424,6 +452,38 @@ class TestBeatmapFetchTaskExecution:
         assert len(fake.calls) == 1
         assert fake.calls[0].kind is BeatmapFetchTargetKind.METADATA_BY_BEATMAPSET_ID
         assert fake.calls[0].target_key == "2000"
+
+    async def test_metadata_task_direct_point_lookup_logs_scheduler_delay(self) -> None:
+        """Direct point lookupがdelayされた場合にwarning logを残すことを検証する.
+
+        Returns:
+            None: scheduler delay時にfetchせずretry情報をlogへ出すことを確認する.
+        """
+        fake = _FakeJob()
+        scheduler = _FakeScheduler(DirectCatalogScheduleOutcome.DELAYED)
+        context = _make_context(
+            beatmap_metadata_fetch=fake,
+            osu_direct_catalog_scheduler=scheduler,
+        )
+
+        with structlog.testing.capture_logs() as logs:
+            await fetch_beatmap_metadata(
+                target_type="metadata:beatmapset",
+                target_key="2000",
+                direct_point_lookup=True,
+                context=context,
+            )
+
+        entries = [
+            entry
+            for entry in logs
+            if entry.get("event") == "osu_direct_point_lookup_not_completed"
+        ]
+        assert len(entries) == 1
+        assert entries[0]["outcome"] == "delayed"
+        assert entries[0]["retry_eligible"] is True
+        assert entries[0]["retry_after_seconds"] == 30
+        assert fake.calls == []
 
     async def test_file_task_constructs_beatmap_fetch_target(self) -> None:
         """file形式payloadをbeatmap file取得対象へ変換することを検証する.

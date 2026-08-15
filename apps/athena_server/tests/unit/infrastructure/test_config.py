@@ -99,6 +99,26 @@ def test_osu_direct_upstream_search_enabled_requires_provider() -> None:
         )
 
 
+def test_disabled_osu_direct_upstream_search_ignores_unused_provider_urls() -> None:
+    """外部検索無効時は未使用provider URLを起動拒否に使わない契約を検証する.
+
+    Returns:
+        None: 無効な未使用URLを持つ設定が生成できることを確認して完了する.
+    """
+    config = AppConfig.model_validate(
+        {
+            "database_url": _TEST_DATABASE_URL,
+            "valkey_url": _TEST_VALKEY_URL,
+            "environment": "production",
+            "osu_direct_upstream_search_enabled": False,
+            "osu_direct_hinamizawa_search_url": "",
+            "osu_direct_nerinyan_search_url": "",
+        }
+    )
+
+    assert config.osu_direct_upstream_search_enabled is False
+
+
 class TestAppConfigDatabaseRuntime:
     """Database poolとworker metadata fetch制限のruntime設定契約を検証する."""
 
@@ -146,19 +166,21 @@ class TestAppConfigDatabaseRuntime:
             ("database_pool_size", 0),
             ("database_max_overflow", -1),
             ("database_pool_timeout_seconds", 0),
+            ("database_pool_timeout_seconds", float("nan")),
+            ("database_pool_timeout_seconds", float("inf")),
             ("beatmap_metadata_fetch_max_concurrency", 0),
         ],
     )
     def test_rejects_invalid_database_runtime_values(
         self,
         field: str,
-        value: int,
+        value: float,
     ) -> None:
         """DB runtime制限の不正値をvalidationが拒否することを検証する.
 
         Args:
             field (str): 不正値を入れる設定field名.
-            value (int): validationで拒否される値.
+            value (float): validationで拒否される値.
 
         Returns:
             None: ValidationErrorを検証して完了する.
@@ -1502,22 +1524,24 @@ class TestOsuDirectConfig:
         ("field_name", "value"),
         [
             ("osu_direct_point_lookup_bounded_wait_seconds", 0),
+            ("osu_direct_point_lookup_bounded_wait_seconds", float("nan")),
+            ("osu_direct_point_lookup_bounded_wait_seconds", float("inf")),
             ("osu_direct_upstream_search_first_page_refresh_seconds", 0),
             ("osu_direct_ranked_sync_interval_seconds", 0),
             ("osu_direct_shared_upstream_budget_per_minute", 0),
         ],
     )
     def test_rejects_non_positive_osu_direct_runtime_values(
-        self, field_name: str, value: int
+        self, field_name: str, value: float
     ) -> None:
-        """正数が必要なosu!direct runtime設定の0以下を拒否する契約を検証する.
+        """正数が必要なosu!direct runtime設定の不正値を拒否する契約を検証する.
 
-        対象fieldへ0を渡してAppConfigを生成する.
+        対象fieldへ0, NaN, infinityを渡してAppConfigを生成する.
         osu!direct runtime valueのValidationErrorが送出されることを確認する.
 
         Args:
             field_name (str): 0を設定するAppConfig field名.
-            value (int): validationで拒否される非正数値.
+            value (float): validationで拒否される非正数または非有限値.
 
         Returns:
             None: non-positive runtime設定拒否を検証して完了し値を返さない.

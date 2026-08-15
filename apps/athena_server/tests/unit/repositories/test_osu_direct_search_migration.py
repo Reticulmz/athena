@@ -160,19 +160,17 @@ def test_osu_direct_search_migration_creates_tables_indexes_and_rollback() -> No
     assert "op.create_table(\n        _COVERAGE_TABLE" in migration
     assert "op.create_table(\n        _EXTERNAL_INDEX_STATE_TABLE" in migration
     assert "idx_beatmapsets_direct_search_bm25" in migration
-    assert "pg_available_extensions" in migration
-    assert "if not _paradedb_extensions_available()" in migration
-    assert "CREATE EXTENSION IF NOT EXISTS vector" in migration
-    assert "CREATE EXTENSION IF NOT EXISTS pg_search" in migration
-    assert "op.invoke(" in migration
-    assert "CreateParadeDBIndexOp(" in migration
-    assert 'key_field="id"' in migration
+    assert "pg_extension" in migration
+    assert "if not _paradedb_extensions_created()" in migration
+    assert "CREATE INDEX CONCURRENTLY" in migration
+    assert "USING paradedb" in migration
+    assert "WITH (key_field='id')" in migration
     for indexed_column in (
         "id",
         "direct_search_text",
     ):
         assert indexed_column in migration
-    assert "op.drop_index(_SEARCH_DOCUMENT_BM25_INDEX" in migration
+    assert "op.drop_index(\n            _SEARCH_DOCUMENT_BM25_INDEX" in migration
     assert "op.drop_table(_EXTERNAL_INDEX_STATE_TABLE)" in migration
     assert "op.drop_table(_COVERAGE_TABLE)" in migration
     assert 'op.drop_column(_BEATMAPSET_TABLE, "direct_search_text")' in migration

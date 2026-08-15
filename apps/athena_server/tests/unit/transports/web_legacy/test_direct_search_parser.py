@@ -99,6 +99,18 @@ def test_direct_search_parser_returns_sanitized_error_without_credentials() -> N
     assert "secret-hash" not in repr(result)
 
 
+def test_direct_search_parser_rejects_unknown_numeric_status() -> None:
+    """Stable directの未対応numeric statusをRanked検索へ丸めない契約を検証する.
+
+    Returns:
+        None: 未対応のr値がmalformed statusとして拒否されることを確認して完了する.
+    """
+    result = StableDirectSearchQueryParser().parse({"r": "999"}, authenticated_user_id=42)
+
+    assert result.request is None
+    assert result.error is StableDirectSearchParseError.MALFORMED_STATUS
+
+
 def test_direct_point_lookup_parser_builds_supported_targets() -> None:
     """Stable point lookup queryをs,b,cのtarget別requestへ変換する契約を検証する.
 

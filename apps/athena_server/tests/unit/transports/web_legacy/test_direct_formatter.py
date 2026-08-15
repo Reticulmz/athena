@@ -32,7 +32,7 @@ _UPDATED_AT = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 
 
 def test_search_response_formats_count_and_stable_rows() -> None:
-    """Search結果をcount lineと14 fieldのstable direct rowへ整形する契約を検証する.
+    """Search結果をcount lineと15 fieldのstable direct rowへ整形する契約を検証する.
 
     Returns:
         None: count, row field順, difficulty summary順を検証して完了する.
@@ -47,7 +47,7 @@ def test_search_response_formats_count_and_stable_rows() -> None:
     fields = lines[1].split("|")
 
     assert lines[0] == "1"
-    assert len(fields) == 14
+    assert len(fields) == 15
     assert fields == [
         "10.osz",
         "Artist",
@@ -63,6 +63,7 @@ def test_search_response_formats_count_and_stable_rows() -> None:
         "0",
         "0",
         "Easy ★5.00@0,Insane ★6.00@0",
+        "0",
     ]
 
 
@@ -77,7 +78,7 @@ def test_point_lookup_formats_one_row_or_empty_body() -> None:
     )
     missing = format_direct_point_lookup_response(DirectPointLookupQueryResult(beatmapset=None))
 
-    assert len(_response_text(found).split("|")) == 14
+    assert len(_response_text(found).split("|")) == 15
     assert _response_text(missing) == ""
 
 
@@ -126,7 +127,7 @@ def test_formatter_sanitizes_delimiters_and_recounts_omitted_rows() -> None:
 
     assert lines[0] == "1"
     assert len(lines) == 2
-    assert len(fields) == 14
+    assert len(fields) == 15
     assert "A|B" not in row
     assert "T\rD" not in row
     assert "M|N" not in row
@@ -135,6 +136,7 @@ def test_formatter_sanitizes_delimiters_and_recounts_omitted_rows() -> None:
     assert "verified" not in row
     assert "fresh" not in row
     assert fields[13] == "Easy One Bad Extra ★6.00@0"
+    assert fields[14] == "0"
 
 
 def test_direct_status_values_follow_stable_ranked_status_mapping() -> None:

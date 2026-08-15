@@ -9,6 +9,7 @@ from dishka import Provider, Scope
 
 from osu_server.composition.providers._dishka import provide
 from osu_server.config import AppConfig
+from osu_server.domain.beatmaps import DirectAccessPolicyMode
 from osu_server.domain.identity.system_users import SystemUserIdentity
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.messaging.local import LocalEventBus
@@ -145,7 +146,10 @@ class StableBanchoProviderSet(Provider):
             current_user_stats_query=current_user_stats_query,
             stable_user_status_store=stable_user_status_store,
             bot_identity=bot_identity,
-            grant_stable_supporter_feature_bit=config.osu_direct_access_policy == "authenticated",
+            grant_stable_supporter_feature_bit=(
+                DirectAccessPolicyMode(config.osu_direct_access_policy)
+                is DirectAccessPolicyMode.AUTHENTICATED
+            ),
         )
 
     @provide

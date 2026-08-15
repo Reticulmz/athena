@@ -17,7 +17,13 @@ processes:
         printf "port = %s\n" "$PGPORT" >> "$PGDATA/postgresql.conf"
       fi
       if ! grep -Eq "^[[:space:]]*shared_preload_libraries[[:space:]]*=.*pg_search" "$PGDATA/postgresql.conf"; then
-        printf "shared_preload_libraries = 'pg_search'\n" >> "$PGDATA/postgresql.conf"
+        existing_libraries="$(sed -n "s/^[[:space:]]*shared_preload_libraries[[:space:]]*=[[:space:]]*'\([^']*\)'.*/\1/p" "$PGDATA/postgresql.conf" | tail -n1)"
+        if [ -n "$existing_libraries" ]; then
+          sed -i "/^[[:space:]]*shared_preload_libraries[[:space:]]*=/d" "$PGDATA/postgresql.conf"
+          printf "shared_preload_libraries = '%s,pg_search'\n" "$existing_libraries" >> "$PGDATA/postgresql.conf"
+        else
+          printf "shared_preload_libraries = 'pg_search'\n" >> "$PGDATA/postgresql.conf"
+        fi
       fi
       exec postgres -D "$PGDATA"
     readiness_probe:

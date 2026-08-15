@@ -9,7 +9,11 @@ from taskiq import Context, TaskiqDepends
 
 from osu_server.domain.beatmaps import BeatmapFetchTarget
 from osu_server.infrastructure.jobs.registry import jobs
-from osu_server.shared.ports import DirectCatalogWorkKind
+from osu_server.shared.ports import (
+    DirectCatalogScheduleOutcome,
+    DirectCatalogScheduleResult,
+    DirectCatalogWorkKind,
+)
 
 if TYPE_CHECKING:
     import asyncio
@@ -57,7 +61,7 @@ class WorkerDirectCatalogScheduler(Protocol):
         self,
         work_kind: DirectCatalogWorkKind,
         work: Callable[[], Awaitable[None]],
-    ) -> object:
+    ) -> DirectCatalogScheduleResult:
         """指定kindのworkをscheduler経由で実行する.
 
         Args:
@@ -65,7 +69,7 @@ class WorkerDirectCatalogScheduler(Protocol):
             work (Callable[[], Awaitable[None]]): budget取得後に実行する処理.
 
         Returns:
-            object: scheduler固有の実行結果. job adapterでは結果詳細を扱わない.
+            DirectCatalogScheduleResult: schedulerの実行結果.
         """
         ...
 
@@ -213,7 +217,17 @@ async def fetch_beatmap_metadata(
             """
             await _run_metadata_fetch(use_case, target, semaphore)
 
-        _ = await scheduler.run(DirectCatalogWorkKind.POINT_LOOKUP, work)
+        result = await scheduler.run(DirectCatalogWorkKind.POINT_LOOKUP, work)
+        if result.outcome is not DirectCatalogScheduleOutcome.COMPLETED:
+            logger.warning(
+                "osu_direct_point_lookup_not_completed",
+                outcome=result.outcome.value,
+                retry_eligible=result.retry_eligible,
+                retry_after_seconds=result.retry_after_seconds,
+                failure_reason=result.failure_reason,
+                target_type=target_type,
+                target_key=target_key,
+            )
         return
 
     await _run_metadata_fetch(use_case, target, semaphore)

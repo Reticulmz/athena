@@ -293,7 +293,16 @@ class OsuApiMetadataProviderService:
                     lookup_key="beatmapsets/search",
                     message="Search response beatmapsets entry is not an object",
                 )
-            snapshots.append(beatmap_json_to_snapshot(cast("dict[str, object]", item)))
+            try:
+                snapshots.append(beatmap_json_to_snapshot(cast("dict[str, object]", item)))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise BeatmapSourceError(
+                    category=BeatmapSourceErrorCategory.INVALID_RESPONSE,
+                    source=source_label,
+                    lookup_key="beatmapsets/search",
+                    message="Search response beatmapsets entry is malformed",
+                    original_error=exc,
+                ) from exc
 
         raw_cursor = data.get("cursor_string")
         cursor = raw_cursor if isinstance(raw_cursor, str) and raw_cursor else None

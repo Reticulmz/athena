@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -479,26 +480,36 @@ class SQLAlchemyBeatmapCommandRepository:
         """
         return await self._get_existing_search_document(beatmapset_id)
 
-    async def list_search_documents(self) -> tuple[BeatmapSetSearchDocument, ...]:
+    async def list_search_documents(
+        self,
+        *,
+        after_beatmapset_id: int = 0,
+        limit: int | None = None,
+    ) -> tuple[BeatmapSetSearchDocument, ...]:
         """External index rebuild用に検索document DTOをbeatmapset ID順で返す.
+
+        Args:
+            after_beatmapset_id (int): このBeatmapSet IDより大きいprojectionだけを返す.
+            limit (int | None): 返す最大件数. Noneなら全件を返す.
 
         Returns:
             tuple[BeatmapSetSearchDocument, ...]: 保存済みmetadataから組み立てた検索document列.
         """
-        models = (
-            (
-                await self._session.execute(
-                    select(BeatmapSetModel).order_by(BeatmapSetModel.id.asc())
-                )
-            )
-            .scalars()
-            .all()
+        statement = select(BeatmapSetModel).where(BeatmapSetModel.id > after_beatmapset_id)
+        statement = statement.order_by(BeatmapSetModel.id.asc())
+        if limit is not None:
+            statement = statement.limit(limit)
+        beatmapset_models = (await self._session.execute(statement)).scalars().all()
+        beatmap_models_by_set_id = await self._get_beatmap_models_by_set_id(
+            beatmapset_ids=tuple(model.id for model in beatmapset_models)
         )
-        documents: list[BeatmapSetSearchDocument] = []
-        for model in models:
-            beatmap_models = await self._get_beatmap_models_for_set(beatmapset_id=model.id)
-            documents.append(_search_document_from_models(model, tuple(beatmap_models)))
-        return tuple(documents)
+        return tuple(
+            _search_document_from_models(
+                model,
+                beatmap_models_by_set_id.get(model.id, ()),
+            )
+            for model in beatmapset_models
+        )
 
     async def rebuild_search_projection(self, *, now: datetime) -> int:
         """保存済みmetadataから検索projectionを再構築する.
@@ -518,15 +529,16 @@ class SQLAlchemyBeatmapCommandRepository:
             .scalars()
             .all()
         )
+        beatmap_models_by_set_id = await self._get_beatmap_models_by_set_id(
+            beatmapset_ids=tuple(model.id for model in beatmapset_models)
+        )
         rebuilt_count = 0
         for beatmapset_model in beatmapset_models:
-            beatmap_models = await self._get_beatmap_models_for_set(
-                beatmapset_id=beatmapset_model.id
-            )
+            beatmap_models = beatmap_models_by_set_id.get(beatmapset_model.id, ())
             beatmaps = tuple(
                 _beatmap_to_domain(beatmap_model, None) for beatmap_model in beatmap_models
             )
-            previous = _search_document_from_models(beatmapset_model, tuple(beatmap_models))
+            previous = _search_document_from_models(beatmapset_model, beatmap_models)
             document = build_beatmapset_search_document(
                 _beatmapset_to_domain(beatmapset_model, beatmaps),
                 previous=previous,
@@ -549,7 +561,33 @@ class SQLAlchemyBeatmapCommandRepository:
         Returns:
             None: sessionへ同期状態をmergeしてflushしたことを示す.
         """
-        _ = await self._session.merge(_index_state_to_model(state))
+        insert_statement = insert(BeatmapDirectExternalIndexStateModel).values(
+            backend=state.backend.value,
+            beatmapset_id=state.beatmapset_id,
+            document_version=state.document_version,
+            status=state.status.value,
+            last_attempted_at=state.last_attempted_at,
+            last_succeeded_at=state.last_succeeded_at,
+            failure_reason=state.failure_reason,
+        )
+        _ = await self._session.execute(
+            insert_statement.on_conflict_do_update(
+                index_elements=[
+                    BeatmapDirectExternalIndexStateModel.backend,
+                    BeatmapDirectExternalIndexStateModel.beatmapset_id,
+                ],
+                set_={
+                    "document_version": state.document_version,
+                    "status": state.status.value,
+                    "last_attempted_at": state.last_attempted_at,
+                    "last_succeeded_at": func.coalesce(
+                        insert_statement.excluded.last_succeeded_at,
+                        BeatmapDirectExternalIndexStateModel.last_succeeded_at,
+                    ),
+                    "failure_reason": state.failure_reason,
+                },
+            )
+        )
         await self._session.flush()
 
     async def record_direct_coverage(self, record: DirectCoverageRecord) -> None:
@@ -576,7 +614,15 @@ class SQLAlchemyBeatmapCommandRepository:
         )
         _ = await self._session.execute(
             insert_statement.on_conflict_do_update(
-                constraint="uq_beatmap_direct_coverage_scope",
+                index_elements=[
+                    BeatmapDirectCoverageModel.coverage_kind,
+                    BeatmapDirectCoverageModel.source,
+                    BeatmapDirectCoverageModel.status_scope,
+                    BeatmapDirectCoverageModel.sort_key,
+                    BeatmapDirectCoverageModel.window_key,
+                    BeatmapDirectCoverageModel.from_beatmapset_id,
+                    BeatmapDirectCoverageModel.to_beatmapset_id,
+                ],
                 set_={
                     "cursor": record.cursor,
                     "completed_at": record.completed_at,
@@ -780,13 +826,19 @@ class SQLAlchemyBeatmapCommandRepository:
         Returns:
             None: 新規 state の追加または既存 state の更新と flush が完了したことを示す.
         """
-        _ = await self._session.execute(
+        result = await self._session.execute(
             _mark_fetch_completed_statement(
                 target=target,
                 status=status,
                 last_error=last_error,
                 now=now,
             )
+        )
+        row_id = result.scalar_one()
+        _ = await self._session.get(
+            BeatmapFetchStateModel,
+            row_id,
+            populate_existing=True,
         )
 
     async def _get_beatmap_models_for_set(self, *, beatmapset_id: int) -> list[BeatmapModel]:
@@ -809,6 +861,40 @@ class SQLAlchemyBeatmapCommandRepository:
             .scalars()
             .all()
         )
+
+    async def _get_beatmap_models_by_set_id(
+        self,
+        *,
+        beatmapset_ids: tuple[int, ...],
+    ) -> dict[int, tuple[BeatmapModel, ...]]:
+        """複数BeatmapSetのchild modelをbeatmapset ID別にまとめて返す.
+
+        Args:
+            beatmapset_ids (tuple[int, ...]): 子beatmapを取得するBeatmapSet ID列.
+
+        Returns:
+            dict[int, tuple[BeatmapModel, ...]]: BeatmapSet IDごとのchild model列.
+        """
+        if not beatmapset_ids:
+            return {}
+        models = (
+            (
+                await self._session.execute(
+                    select(BeatmapModel)
+                    .where(BeatmapModel.beatmapset_id.in_(beatmapset_ids))
+                    .order_by(BeatmapModel.beatmapset_id.asc(), BeatmapModel.id.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        models_by_set_id: defaultdict[int, list[BeatmapModel]] = defaultdict(list)
+        for model in models:
+            models_by_set_id[model.beatmapset_id].append(model)
+        return {
+            beatmapset_id: tuple(beatmap_models)
+            for beatmapset_id, beatmap_models in models_by_set_id.items()
+        }
 
     async def _get_snapshot_related_beatmap_models(
         self,
@@ -1017,7 +1103,7 @@ def _mark_fetch_completed_statement(
             "last_attempted_at": now,
             "updated_at": func.now(),
         },
-    )
+    ).returning(BeatmapFetchStateModel.id)
 
 
 def _increment_submission_counts_statement(beatmap_id: int, *, passed: bool):
@@ -1414,26 +1500,6 @@ def _search_document_updated_at(model: BeatmapSetModel) -> datetime:
         datetime: 検索document更新時刻. 未設定なら現在UTC時刻.
     """
     return model.search_document_updated_at or datetime.now(UTC)
-
-
-def _index_state_to_model(state: DirectExternalIndexState) -> BeatmapDirectExternalIndexStateModel:
-    """Domain external index stateをSQLAlchemy保存modelへ変換する.
-
-    Args:
-        state (DirectExternalIndexState): 保存するexternal index同期状態.
-
-    Returns:
-        BeatmapDirectExternalIndexStateModel: enumを永続化値へ変換したmodel.
-    """
-    return BeatmapDirectExternalIndexStateModel(
-        backend=state.backend.value,
-        beatmapset_id=state.beatmapset_id,
-        document_version=state.document_version,
-        status=state.status.value,
-        last_attempted_at=state.last_attempted_at,
-        last_succeeded_at=state.last_succeeded_at,
-        failure_reason=state.failure_reason,
-    )
 
 
 def _beatmapset_to_domain(model: BeatmapSetModel, beatmaps: tuple[Beatmap, ...]) -> BeatmapSet:

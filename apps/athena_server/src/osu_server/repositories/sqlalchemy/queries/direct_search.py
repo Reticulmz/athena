@@ -46,7 +46,7 @@ _FALLBACK_SCORE: Final = 0.0
 _POSTGRES_TEXT_SEARCH_CONFIG: Final = "simple"
 _SEARCH_DOCUMENT_TABLE_NAME: Final = "beatmapsets"
 _DIRECT_SEARCH_TEXT_FIELD: Final = "direct_search_text"
-_INACTIVE_STATUS_VALUES: Final = ("graveyard", "not_submitted", "unknown")
+_INACTIVE_STATUS_VALUES: Final = ("not_submitted", "unknown")
 _PG_AVAILABLE_EXTENSIONS = table("pg_available_extensions", column("name", String))
 _PG_EXTENSION = table("pg_extension", column("extname", String))
 _PG_INDEXES = table(
@@ -444,14 +444,8 @@ def _tsvector_search_statement(request: DirectSearchRequest) -> Executable:
     statement = select(
         BeatmapSetModel.id.label("beatmapset_id"),
         score,
-    ).where(_active_beatmapset_filter())
+    ).where(*_search_scope_filters(request, mode=mode))
 
-    if request.statuses:
-        statement = statement.where(
-            BeatmapSetModel.official_status.in_([status.value for status in request.statuses])
-        )
-    if mode is not None:
-        statement = statement.where(_usable_child_exists(mode=mode))
     if uses_text_search:
         statement = statement.where(
             _text_or_difficulty_search_filter(

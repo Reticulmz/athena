@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from meilisearch_python_sdk import AsyncClient as MeilisearchAsyncClient
     from meilisearch_python_sdk.index import AsyncIndex
     from meilisearch_python_sdk.models.search import SearchResults
+    from meilisearch_python_sdk.models.task import TaskInfo
 
     from osu_server.domain.beatmaps.direct import BeatmapSetSearchDocument
 
@@ -138,7 +139,8 @@ class MeilisearchDirectIndexBackend:
             MeilisearchDirectIndexError: Meilisearch requestが失敗した場合.
         """
         try:
-            _ = await self._index().update_settings(_settings_payload(self._index_definition))
+            task = await self._index().update_settings(_settings_payload(self._index_definition))
+            await _wait_for_task(self._client, task)
         except MeilisearchError as exc:
             msg = f"{_BACKEND_NAME} settings update failed"
             raise MeilisearchDirectIndexError(msg) from exc
@@ -156,10 +158,11 @@ class MeilisearchDirectIndexBackend:
             MeilisearchDirectIndexError: Meilisearch requestが失敗した場合.
         """
         try:
-            _ = await self._index().add_documents(
+            task = await self._index().add_documents(
                 [_document_payload(document, self._index_definition)],
                 primary_key=_PRIMARY_KEY_FIELD,
             )
+            await _wait_for_task(self._client, task)
         except MeilisearchError as exc:
             msg = f"{_BACKEND_NAME} document indexing failed"
             raise MeilisearchDirectIndexError(
@@ -261,6 +264,8 @@ class MeilisearchDirectSearchBackend:
         """
         try:
             health = await self._client.health()
+            task = await self._index().update_settings(_settings_payload(self._index_definition))
+            await _wait_for_task(self._client, task)
             settings = await self._index().get_settings()
         except MeilisearchError as exc:
             msg = f"{_BACKEND_NAME} search backend is unavailable"
@@ -285,6 +290,22 @@ class MeilisearchDirectSearchBackend:
             AsyncIndex: Meilisearch SDKが生成するlocal index handle.
         """
         return self._client.index(self._index_name)
+
+
+async def _wait_for_task(client: MeilisearchAsyncClient, task: TaskInfo) -> None:
+    """Meilisearch taskが完了するまで待つ.
+
+    Args:
+        client (MeilisearchAsyncClient): task statusをpollするSDK client.
+        task (TaskInfo): update/add requestが返したtask metadata.
+
+    Returns:
+        None: taskが成功状態で完了したことを示す.
+
+    Raises:
+        MeilisearchError: taskが失敗した場合またはtimeoutした場合.
+    """
+    _ = await client.wait_for_task(task.task_uid, raise_for_status=True)
 
 
 def _settings_payload(index_definition: SearchIndexDefinition) -> MeilisearchSettings:

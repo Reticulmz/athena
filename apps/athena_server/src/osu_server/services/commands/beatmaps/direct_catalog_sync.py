@@ -8,7 +8,6 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol, cast
 
 import structlog
@@ -21,7 +20,11 @@ from osu_server.domain.beatmaps import (
     DirectCoverageKind,
     DirectCoverageRecord,
 )
-from osu_server.shared.ports import DirectCatalogWorkKind
+from osu_server.shared.ports import (
+    DirectCatalogScheduleOutcome,
+    DirectCatalogScheduleResult,
+    DirectCatalogWorkKind,
+)
 
 if TYPE_CHECKING:
     from osu_server.domain.beatmaps import (
@@ -41,39 +44,6 @@ _logger = cast(
 
 type DirectCatalogWork = Callable[[], Awaitable[None]]
 type TimeFunc = Callable[[], float]
-
-
-class DirectCatalogScheduleOutcome(StrEnum):
-    """DirectCatalogSchedulerがworkへ与えた実行結果を表す.
-
-    Attributes:
-        COMPLETED (DirectCatalogScheduleOutcome): budgetを取得してworkが完了した.
-        DELAYED (DirectCatalogScheduleOutcome): budget枯渇によりretry可能なdelayになった.
-        FAILED (DirectCatalogScheduleOutcome): work実行中に失敗しretry可能な状態を返した.
-    """
-
-    COMPLETED = "completed"
-    DELAYED = "delayed"
-    FAILED = "failed"
-
-
-@dataclass(slots=True, frozen=True)
-class DirectCatalogScheduleResult:
-    """Shared upstream budget schedulerのwork単位結果を表す.
-
-    Attributes:
-        work_kind (DirectCatalogWorkKind): schedulerへ渡されたwork種別.
-        outcome (DirectCatalogScheduleOutcome): workの実行結果.
-        retry_eligible (bool): 呼び出し側が後続retry対象にしてよいか.
-        retry_after_seconds (int | None): delay時に次回試行まで待つ推奨秒数.
-        failure_reason (str | None): operator向けにsanitize済みの失敗理由.
-    """
-
-    work_kind: DirectCatalogWorkKind
-    outcome: DirectCatalogScheduleOutcome
-    retry_eligible: bool
-    retry_after_seconds: int | None = None
-    failure_reason: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -231,21 +201,30 @@ class DirectCatalogScheduler:
         self,
         work_kind: DirectCatalogWorkKind,
         work: DirectCatalogWork,
+        *,
+        request_count: int = 1,
     ) -> DirectCatalogScheduleResult:
         """Shared budgetを取得できた場合だけupstream workを実行する.
 
         Args:
             work_kind (DirectCatalogWorkKind): 実行するworkの種別.
             work (DirectCatalogWork): budget取得後に呼び出す非同期work.
+            request_count (int): このworkが消費するupstream request数.
 
         Returns:
             DirectCatalogScheduleResult: 完了, delay, failureのいずれかを表す結果.
+
+        Raises:
+            ValueError: request_countが正でない場合.
         """
+        if request_count <= 0:
+            msg = "request_count must be positive"
+            raise ValueError(msg)
         if _is_catalog_work(work_kind):
             # ponytail: one event-loop tick is enough priority for current worker concurrency.
             await asyncio.sleep(0)
 
-        retry_after_seconds = await self._reserve_budget()
+        retry_after_seconds = await self._reserve_budget(request_count=request_count)
         if retry_after_seconds is not None:
             result = DirectCatalogScheduleResult(
                 work_kind=work_kind,
@@ -276,8 +255,11 @@ class DirectCatalogScheduler:
         self._log_completion(result)
         return result
 
-    async def _reserve_budget(self) -> int | None:
-        """現在windowのbudgetを1件予約し,枯渇時はretry秒数を返す.
+    async def _reserve_budget(self, *, request_count: int) -> int | None:
+        """現在windowのbudgetを予約し,枯渇時はretry秒数を返す.
+
+        Args:
+            request_count (int): 予約するupstream request数.
 
         Returns:
             int | None: budget枯渇時はretryまでの秒数. 予約できた場合はNone.
@@ -290,11 +272,11 @@ class DirectCatalogScheduler:
                 self._used_budget = 0
                 window_age = 0
 
-            if self._used_budget >= self._request_budget_per_minute:
+            if self._used_budget + request_count > self._request_budget_per_minute:
                 retry_after_seconds = math.ceil(_UPSTREAM_BUDGET_WINDOW_SECONDS - window_age)
                 return max(1, retry_after_seconds)
 
-            self._used_budget += 1
+            self._used_budget += request_count
             return None
 
     def _log_delay(self, result: DirectCatalogScheduleResult) -> None:
@@ -537,7 +519,11 @@ class DirectRangeCrawl:
                 await uow.beatmaps.record_direct_coverage(coverage)
                 await uow.commit()
 
-        result = await self._scheduler.run(DirectCatalogWorkKind.ID_RANGE_CRAWL, work)
+        result = await self._scheduler.run(
+            DirectCatalogWorkKind.ID_RANGE_CRAWL,
+            work,
+            request_count=chunk.to_beatmapset_id - chunk.from_beatmapset_id + 1,
+        )
         if result.outcome is DirectCatalogScheduleOutcome.FAILED:
             await self._record_failed_coverage(
                 chunk,

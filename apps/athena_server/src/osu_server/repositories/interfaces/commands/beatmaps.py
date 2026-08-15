@@ -155,8 +155,17 @@ class BeatmapCommandRepository(Protocol):
         """
         ...
 
-    async def list_search_documents(self) -> tuple[BeatmapSetSearchDocument, ...]:
+    async def list_search_documents(
+        self,
+        *,
+        after_beatmapset_id: int = 0,
+        limit: int | None = None,
+    ) -> tuple[BeatmapSetSearchDocument, ...]:
         """External index rebuild用に検索projectionを列挙する.
+
+        Args:
+            after_beatmapset_id (int): このBeatmapSet IDより大きいprojectionだけを返す.
+            limit (int | None): 返す最大件数. Noneなら全件を返す.
 
         Returns:
             tuple[BeatmapSetSearchDocument, ...]: beatmapset ID順の検索projection.

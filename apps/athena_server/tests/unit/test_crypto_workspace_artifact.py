@@ -98,14 +98,12 @@ def test_ci_rebuilds_editable_crypto_extension_after_each_venv_restore() -> None
     明示的に再installする.
 
     Returns:
-        None: 3つのconsumer jobでrestore後にreinstallする順序を検証して完了する.
+        None: 各consumer jobでrestore後にreinstallする順序を検証して完了する.
     """
     workflow_source = CI_WORKFLOW_PATH.read_text(encoding="utf-8")
     restore_step = "uses: actions/cache/restore@v4"
     reinstall_command = "run: uv sync --locked --reinstall-package athena-crypto"
 
-    assert workflow_source.count(restore_step) == 3
-    assert workflow_source.count(reinstall_command) == 3
     restore_offsets = [
         offset
         for offset in range(len(workflow_source))
@@ -116,6 +114,8 @@ def test_ci_rebuilds_editable_crypto_extension_after_each_venv_restore() -> None
         for offset in range(len(workflow_source))
         if workflow_source.startswith(reinstall_command, offset)
     ]
+    assert len(restore_offsets) == len(reinstall_offsets)
+    assert restore_offsets
     assert all(
         restore_offset < reinstall_offset
         for restore_offset, reinstall_offset in zip(

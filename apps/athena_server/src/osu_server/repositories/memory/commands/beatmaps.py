@@ -214,16 +214,27 @@ class InMemoryBeatmapCommandRepository:
         """
         return self._state.search_documents_by_beatmapset_id.get(beatmapset_id)
 
-    async def list_search_documents(self) -> tuple[BeatmapSetSearchDocument, ...]:
+    async def list_search_documents(
+        self,
+        *,
+        after_beatmapset_id: int = 0,
+        limit: int | None = None,
+    ) -> tuple[BeatmapSetSearchDocument, ...]:
         """External index rebuild用に検索projectionをbeatmapset ID順で返す.
+
+        Args:
+            after_beatmapset_id (int): このBeatmapSet IDより大きいprojectionだけを返す.
+            limit (int | None): 返す最大件数. Noneなら全件を返す.
 
         Returns:
             tuple[BeatmapSetSearchDocument, ...]: 保存済み検索projection列.
         """
-        return tuple(
+        documents = tuple(
             self._state.search_documents_by_beatmapset_id[beatmapset_id]
             for beatmapset_id in sorted(self._state.search_documents_by_beatmapset_id)
+            if beatmapset_id > after_beatmapset_id
         )
+        return documents if limit is None else documents[:limit]
 
     async def rebuild_search_projection(self, *, now: datetime) -> int:
         """保存済みmetadataから検索projectionを再構築する.
@@ -256,7 +267,11 @@ class InMemoryBeatmapCommandRepository:
         Returns:
             None: in-memory stateへ同期状態を保存して完了する.
         """
-        self._state.external_index_states_by_key[(state.backend, state.beatmapset_id)] = state
+        key = (state.backend, state.beatmapset_id)
+        previous = self._state.external_index_states_by_key.get(key)
+        if previous is not None and state.last_succeeded_at is None:
+            state = replace(state, last_succeeded_at=previous.last_succeeded_at)
+        self._state.external_index_states_by_key[key] = state
 
     async def record_direct_coverage(self, record: DirectCoverageRecord) -> None:
         """osu!direct catalog coverage recordを保存する.
@@ -614,12 +629,20 @@ class InMemoryBeatmapCommandRepository:
         beatmapset = self._state.beatmapsets_by_id.get(beatmap.beatmapset_id)
         if beatmapset is None:
             return
-        self._state.beatmapsets_by_id[beatmapset.id] = replace(
+        updated_beatmapset = replace(
             beatmapset,
             beatmaps=tuple(
                 beatmap if existing.id == beatmap.id else existing
                 for existing in beatmapset.beatmaps
             ),
+        )
+        self._state.beatmapsets_by_id[beatmapset.id] = updated_beatmapset
+        self._state.search_documents_by_beatmapset_id[beatmapset.id] = (
+            build_beatmapset_search_document(
+                updated_beatmapset,
+                previous=self._state.search_documents_by_beatmapset_id.get(beatmapset.id),
+                updated_at=now_utc(),
+            )
         )
 
     def _require_beatmap(self, beatmap_id: int) -> Beatmap:

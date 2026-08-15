@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -84,7 +85,7 @@ class FakeMeilisearchIndex:
         if self.error is not None:
             raise self.error
         self.settings_updates.append(body)
-        return object()
+        return SimpleNamespace(task_uid=1)
 
     async def add_documents(
         self,
@@ -106,7 +107,7 @@ class FakeMeilisearchIndex:
         if self.error is not None:
             raise self.error
         self.document_batches.append((documents, primary_key))
-        return object()
+        return SimpleNamespace(task_uid=2)
 
     async def search(
         self,
@@ -152,12 +153,14 @@ class FakeMeilisearchClient:
         index_handle (FakeMeilisearchIndex): index()が返すfake index.
         health_status (str): health()が返すstatus.
         health_calls (int): health()呼び出し回数.
+        waited_task_uids (list[int]): wait_for_taskで待機したtask UID列.
     """
 
     index_uid: str | None
     index_handle: FakeMeilisearchIndex
     health_status: str
     health_calls: int
+    waited_task_uids: list[int]
 
     def __init__(self) -> None:
         """健康なMeilisearch client fakeを初期化する."""
@@ -165,6 +168,7 @@ class FakeMeilisearchClient:
         self.index_handle = FakeMeilisearchIndex()
         self.health_status = "available"
         self.health_calls = 0
+        self.waited_task_uids = []
 
     def index(self, uid: str) -> FakeMeilisearchIndex:
         """指定UIDのfake index handleを返す.
@@ -186,6 +190,29 @@ class FakeMeilisearchClient:
         """
         self.health_calls += 1
         return Health(status=self.health_status)
+
+    async def wait_for_task(
+        self,
+        task_uid: int,
+        *,
+        timeout_in_ms: int | None = 5000,
+        interval_in_ms: int = 50,
+        raise_for_status: bool = False,
+    ) -> object:
+        """Meilisearch task完了待機呼び出しを記録する.
+
+        Args:
+            task_uid (int): SDK task UID.
+            timeout_in_ms (int | None): SDK既定のtimeout.
+            interval_in_ms (int): SDK既定のpoll間隔.
+            raise_for_status (bool): 失敗taskでSDK例外を送出するか.
+
+        Returns:
+            object: adapterが内容を読まないtask result placeholder.
+        """
+        _ = (timeout_in_ms, interval_in_ms, raise_for_status)
+        self.waited_task_uids.append(task_uid)
+        return object()
 
 
 @pytest.mark.asyncio

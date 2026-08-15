@@ -17,6 +17,8 @@ if TYPE_CHECKING:
     from osu_server.domain.beatmaps import BeatmapSetSearchDocument
     from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 
+_EXTERNAL_INDEX_REBUILD_BATCH_SIZE = 250
+
 
 class DirectExternalIndexWriter(Protocol):
     """Projection documentをexternal indexへ同期するportを定義する."""
@@ -149,18 +151,25 @@ class DirectIndexingCommands:
         Returns:
             DirectExternalIndexRebuildResult: 成功/失敗したdocument件数.
         """
-        async with self._unit_of_work_factory() as uow:
-            documents = await uow.beatmaps.list_search_documents()
-            await uow.commit()
-
         succeeded_count = 0
         failed_count = 0
-        for document in documents:
-            result = await self._sync_document(document)
-            if result.outcome is DirectExternalIndexUpdateOutcome.SUCCEEDED:
-                succeeded_count += 1
-            elif result.outcome is DirectExternalIndexUpdateOutcome.FAILED:
-                failed_count += 1
+        after_beatmapset_id = 0
+        while True:
+            async with self._unit_of_work_factory() as uow:
+                documents = await uow.beatmaps.list_search_documents(
+                    after_beatmapset_id=after_beatmapset_id,
+                    limit=_EXTERNAL_INDEX_REBUILD_BATCH_SIZE,
+                )
+                await uow.commit()
+            if not documents:
+                break
+            for document in documents:
+                result = await self._sync_document(document)
+                if result.outcome is DirectExternalIndexUpdateOutcome.SUCCEEDED:
+                    succeeded_count += 1
+                elif result.outcome is DirectExternalIndexUpdateOutcome.FAILED:
+                    failed_count += 1
+            after_beatmapset_id = documents[-1].beatmapset_id
         return DirectExternalIndexRebuildResult(
             succeeded_count=succeeded_count,
             failed_count=failed_count,

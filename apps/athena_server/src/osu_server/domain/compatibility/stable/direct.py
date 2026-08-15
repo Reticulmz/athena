@@ -67,7 +67,7 @@ def stable_direct_statuses_from_wire(
         return StableDirectSearchParseError.MALFORMED_STATUS
     if status_value == _ALL_STATUS_FILTER:
         return ()
-    return _STATUS_FILTERS.get(status_value, (BeatmapRankStatus.RANKED,))
+    return _STATUS_FILTERS.get(status_value, StableDirectSearchParseError.MALFORMED_STATUS)
 
 
 def stable_direct_mode_from_wire(

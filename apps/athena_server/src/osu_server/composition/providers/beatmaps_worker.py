@@ -17,6 +17,9 @@ from osu_server.domain.beatmaps import (
     DirectExternalIndexBackend,
 )
 from osu_server.infrastructure.beatmaps import OsuApiMetadataProviderService
+from osu_server.infrastructure.beatmaps.metadata_source_adapters import (
+    MirrorMetadataProviderService,
+)
 from osu_server.infrastructure.http.beatmap_http_client import (
     BeatmapHttpClient as ConcreteBeatmapHttpClient,
 )
@@ -66,28 +69,33 @@ class _DirectCatalogFetcher:
     """worker catalog sync use-caseへupstream metadata fetchを提供するadapter.
 
     Attributes:
-        _metadata_provider (BeatmapMetadataProvider): range crawlで使う既存metadata provider.
+        _metadata_provider (BeatmapMetadataProvider): range crawl fallbackで使う既存provider.
         _official_provider (OsuApiMetadataProviderService | None): feed windowで使う公式検索
             provider.
+        _mirror_provider (BeatmapMetadataProvider): mirror range crawlで使うprovider.
     """
 
     _metadata_provider: BeatmapMetadataProvider
     _official_provider: OsuApiMetadataProviderService | None
+    _mirror_provider: BeatmapMetadataProvider
 
     def __init__(
         self,
         *,
         metadata_provider: BeatmapMetadataProvider,
         official_provider: OsuApiMetadataProviderService | None,
+        mirror_provider: BeatmapMetadataProvider,
     ) -> None:
         """Catalog fetch adapterの参照を保持する.
 
         Args:
-            metadata_provider (BeatmapMetadataProvider): id range lookupに使う既存provider.
+            metadata_provider (BeatmapMetadataProvider): id range lookupのfallback provider.
             official_provider (OsuApiMetadataProviderService | None): feed search用provider.
+            mirror_provider (BeatmapMetadataProvider): mirror source指定時のprovider.
         """
         self._metadata_provider = metadata_provider
         self._official_provider = official_provider
+        self._mirror_provider = mirror_provider
 
     async def fetch_feed_window(
         self,
@@ -129,14 +137,36 @@ class _DirectCatalogFetcher:
 
         Returns:
             DirectRangeCrawlFetchResult: 見つかったsnapshotだけを含むrange結果.
+
+        Raises:
+            RuntimeError: requested sourceのproviderが構成されていない場合.
         """
         snapshots: list[BeatmapsetSnapshot] = []
-        # ponytail: one budget slot covers the configured chunk; split chunks smaller if needed.
+        provider = self._range_provider(chunk.source)
         for beatmapset_id in range(chunk.from_beatmapset_id, chunk.to_beatmapset_id + 1):
-            snapshot = await self._metadata_provider.lookup_by_beatmapset_id(beatmapset_id)
+            snapshot = await provider.lookup_by_beatmapset_id(beatmapset_id)
             if snapshot is not None:
                 snapshots.append(snapshot)
         return DirectRangeCrawlFetchResult(beatmapsets=tuple(snapshots))
+
+    def _range_provider(self, source: BeatmapMetadataSource) -> BeatmapMetadataProvider:
+        """Coverage sourceに一致するmetadata providerを返す.
+
+        Args:
+            source (BeatmapMetadataSource): chunkがcoverageへ記録するsource.
+
+        Returns:
+            BeatmapMetadataProvider: sourceに対応するprovider.
+
+        Raises:
+            RuntimeError: 公式sourceが要求されたがproviderが無効な場合.
+        """
+        if source is BeatmapMetadataSource.MIRROR:
+            return self._mirror_provider
+        if self._official_provider is None:
+            msg = "official metadata source is not configured"
+            raise RuntimeError(msg)
+        return self._official_provider
 
 
 @final
@@ -189,9 +219,14 @@ class BeatmapWorkerProviderSet(Provider):
             if config.beatmap_official_sources_enabled
             else None
         )
+        mirror_provider = MirrorMetadataProviderService(
+            http_client=ConcreteBeatmapHttpClient(http_client),
+            base_urls=config.beatmap_metadata_mirror_base_urls,
+        )
         return _DirectCatalogFetcher(
             metadata_provider=metadata_provider,
             official_provider=official_provider,
+            mirror_provider=mirror_provider,
         )
 
     @provide

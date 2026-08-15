@@ -52,7 +52,12 @@ async def change_user_password(
     Notes:
         このhelperが作成したdatabase engineは処理結果または例外にかかわらずdisposeする.
     """
-    engine = create_engine(str(config.database_url))
+    engine = create_engine(
+        str(config.database_url),
+        pool_size=config.database_pool_size,
+        max_overflow=config.database_max_overflow,
+        pool_timeout=config.database_pool_timeout_seconds,
+    )
     try:
         session_factory = create_session_factory(engine)
         password_service = PasswordService(
@@ -87,7 +92,12 @@ async def change_user_role(
         このhelperが作成したValkey clientとdatabase engineは処理結果または例外にかかわらず
         close/disposeする.
     """
-    engine = create_engine(str(config.database_url))
+    engine = create_engine(
+        str(config.database_url),
+        pool_size=config.database_pool_size,
+        max_overflow=config.database_max_overflow,
+        pool_timeout=config.database_pool_timeout_seconds,
+    )
     try:
         valkey = await create_valkey_client(str(config.valkey_url))
         try:

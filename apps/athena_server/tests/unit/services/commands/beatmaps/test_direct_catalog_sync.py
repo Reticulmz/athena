@@ -401,7 +401,7 @@ async def test_range_crawl_saves_metadata_and_completed_id_range_coverage() -> N
     )
     crawl = DirectRangeCrawl(
         unit_of_work_factory=factory,
-        scheduler=DirectCatalogScheduler(request_budget_per_minute=10),
+        scheduler=DirectCatalogScheduler(request_budget_per_minute=11),
         range_crawl_fetcher=fetcher,
     )
 
@@ -441,7 +441,7 @@ async def test_range_crawl_failure_records_failed_chunk_without_metadata() -> No
     chunk = _make_range_chunk(from_beatmapset_id=2_020, to_beatmapset_id=2_030)
     crawl = DirectRangeCrawl(
         unit_of_work_factory=factory,
-        scheduler=DirectCatalogScheduler(request_budget_per_minute=10),
+        scheduler=DirectCatalogScheduler(request_budget_per_minute=11),
         range_crawl_fetcher=FailingRangeCrawlFetcher(),
     )
 

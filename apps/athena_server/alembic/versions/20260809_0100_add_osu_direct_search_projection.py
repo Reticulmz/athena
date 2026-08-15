@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from alembic import op
-from paradedb.sqlalchemy.alembic import CreateParadeDBIndexOp
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -34,10 +33,7 @@ _SEARCH_DOCUMENT_PARADEDB_FIELDS = (
     "id",
     "direct_search_text",
 )
-_PG_AVAILABLE_EXTENSIONS = sa.table(
-    "pg_available_extensions",
-    sa.column("name", sa.String()),
-)
+_PG_EXTENSION = sa.table("pg_extension", sa.column("extname", sa.String()))
 _PARADEDB_EXTENSION = "pg_search"
 _VECTOR_EXTENSION = "vector"
 _SEARCH_DOCUMENT_VERSION_COLUMN = sa.column("search_document_version", sa.Integer())
@@ -165,12 +161,18 @@ def upgrade() -> None:
         _SEARCH_DOCUMENT_VERSION_CONSTRAINT,
         _BEATMAPSET_TABLE,
         _SEARCH_DOCUMENT_VERSION_COLUMN > 0,
+        postgresql_not_valid=True,
     )
-    op.create_index(
-        _SEARCH_DOCUMENT_ACTIVE_STATUS_INDEX,
-        _BEATMAPSET_TABLE,
-        ["official_status", "search_document_updated_at", "id"],
-    )
+    validate_constraint_sql = f"ALTER TABLE {_BEATMAPSET_TABLE} "
+    validate_constraint_sql += f"VALIDATE CONSTRAINT {_SEARCH_DOCUMENT_VERSION_CONSTRAINT}"
+    op.execute(sa.text(validate_constraint_sql))
+    with op.get_context().autocommit_block():
+        op.create_index(
+            _SEARCH_DOCUMENT_ACTIVE_STATUS_INDEX,
+            _BEATMAPSET_TABLE,
+            ["official_status", "search_document_updated_at", "id"],
+            postgresql_concurrently=True,
+        )
     _create_search_document_bm25_index()
 
     _ = op.create_table(
@@ -301,45 +303,40 @@ def _create_search_document_bm25_index() -> None:
     Returns:
         None: pg_search利用可能時だけmaterialized検索入力を含むParadeDB indexを作成したことを示す.
     """
-    if not _paradedb_extensions_available():
+    if not _paradedb_extensions_created():
         return
 
-    op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
-    op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS pg_search"))
-    op.invoke(
-        CreateParadeDBIndexOp(
-            index_name=_SEARCH_DOCUMENT_BM25_INDEX,
-            table_name=_BEATMAPSET_TABLE,
-            expressions=list(_SEARCH_DOCUMENT_PARADEDB_FIELDS),
-            key_field="id",
-        )
-    )
+    fields = ", ".join(_SEARCH_DOCUMENT_PARADEDB_FIELDS)
+    create_index_sql = f"CREATE INDEX CONCURRENTLY {_SEARCH_DOCUMENT_BM25_INDEX} "
+    create_index_sql += f"ON {_BEATMAPSET_TABLE} USING paradedb ({fields}) WITH (key_field='id')"
+    with op.get_context().autocommit_block():
+        op.execute(sa.text(create_index_sql))
 
 
-def _paradedb_extensions_available() -> bool:
-    """PostgreSQL clusterにParadeDBの依存extensionが導入済みか返す.
+def _paradedb_extensions_created() -> bool:
+    """ParadeDB依存extensionがこのdatabaseで作成済みか返す.
 
     Returns:
-        bool: `CREATE EXTENSION vector` と `CREATE EXTENSION pg_search` が可能ならTrue.
+        bool: 管理者がvectorとpg_searchをpre-create済みならTrue.
     """
-    return _postgres_extension_available(_VECTOR_EXTENSION) and _postgres_extension_available(
+    return _postgres_extension_created(_VECTOR_EXTENSION) and _postgres_extension_created(
         _PARADEDB_EXTENSION
     )
 
 
-def _postgres_extension_available(extension_name: str) -> bool:
-    """PostgreSQL clusterに指定extensionが導入済みか返す.
+def _postgres_extension_created(extension_name: str) -> bool:
+    """PostgreSQL databaseで指定extensionが作成済みか返す.
 
     Args:
-        extension_name (str): `pg_available_extensions`で確認するextension名.
+        extension_name (str): `pg_extension`で確認するextension名.
 
     Returns:
-        bool: 指定extensionをこのDBで作成できる場合はTrue.
+        bool: 指定extensionが現在databaseに作成済みの場合はTrue.
     """
     statement = (
         sa.select(sa.literal(True))
-        .select_from(_PG_AVAILABLE_EXTENSIONS)
-        .where(_PG_AVAILABLE_EXTENSIONS.c.name == extension_name)
+        .select_from(_PG_EXTENSION)
+        .where(_PG_EXTENSION.c.extname == extension_name)
         .limit(1)
     )
     return bool(op.get_bind().execute(statement).scalar_one_or_none())
@@ -351,4 +348,10 @@ def _drop_search_document_bm25_index() -> None:
     Returns:
         None: search document ParadeDB indexを削除または不在のまま確認したことを示す.
     """
-    op.drop_index(_SEARCH_DOCUMENT_BM25_INDEX, table_name=_BEATMAPSET_TABLE, if_exists=True)
+    with op.get_context().autocommit_block():
+        op.drop_index(
+            _SEARCH_DOCUMENT_BM25_INDEX,
+            table_name=_BEATMAPSET_TABLE,
+            if_exists=True,
+            postgresql_concurrently=True,
+        )

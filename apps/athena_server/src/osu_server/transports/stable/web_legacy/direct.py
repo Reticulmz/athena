@@ -282,7 +282,7 @@ def format_direct_point_lookup_response(result: DirectPointLookupQueryResult) ->
 
 
 def _format_beatmapset_row(beatmapset: BeatmapSet) -> str | None:
-    """Beatmapset metadataをstable directの14 field rowへ変換する.
+    """Beatmapset metadataをstable directの15 field rowへ変換する.
 
     Args:
         beatmapset (BeatmapSet): stable direct bodyへ出力するmetadata.
@@ -317,6 +317,7 @@ def _format_beatmapset_row(beatmapset: BeatmapSet) -> str | None:
         "0",
         "0",
         difficulty_summaries,
+        "0",
     )
     return "|".join(fields)
 

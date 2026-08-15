@@ -3,6 +3,7 @@
 環境変数と環境別`.env` fileから設定を読み込み,起動前に型と運用上の制約を検証する.
 """
 
+import math
 import os
 import re
 from pathlib import Path
@@ -47,6 +48,28 @@ _TEST_ENVIRONMENT = "test"
 _DEVELOPMENT_ENVIRONMENT = "development"
 _BEATMAP_URL_TEMPLATE_FIELD = "beatmap_id"
 type _BeatmapUrlTemplateField = tuple[str, str | None, str | None]
+
+
+def _normalize_choice(value: str, *, field_name: str, choices: dict[str, str]) -> str:
+    """設定値をunderscore形式へ正規化して許可値へ写像する.
+
+    Args:
+        value (str): environmentから読み込んだ文字列値.
+        field_name (str): validation errorに含める設定field名.
+        choices (dict[str, str]): 正規化済み入力値から保存値への対応.
+
+    Returns:
+        str: 許可された保存値.
+
+    Raises:
+        ValueError: 正規化後の値がchoicesに存在しない場合.
+    """
+    normalized = value.lower().replace("-", "_")
+    result = choices.get(normalized)
+    if result is not None:
+        return result
+    msg = f"Invalid {field_name}: {value!r}. Valid: {', '.join(dict.fromkeys(choices.values()))}"
+    raise ValueError(msg)
 
 
 class UnsupportedEnvironmentError(ValueError):
@@ -390,18 +413,18 @@ class AppConfig(BaseSettings):
         Raises:
             ValueError: policy名がauthenticated,disabled,supporter_entitlement以外の場合.
         """
-        normalized = v.lower().replace("-", "_")
-        if normalized == "authenticated":
-            return "authenticated"
-        if normalized == "disabled":
-            return "disabled"
-        if normalized == "supporter_entitlement":
-            return "supporter_entitlement"
-        msg = (
-            f"Invalid osu_direct_access_policy: {v!r}. Valid: authenticated, "
-            "disabled, supporter_entitlement"
+        return cast(
+            "OsuDirectAccessPolicy",
+            _normalize_choice(
+                v,
+                field_name="osu_direct_access_policy",
+                choices={
+                    "authenticated": "authenticated",
+                    "disabled": "disabled",
+                    "supporter_entitlement": "supporter_entitlement",
+                },
+            ),
         )
-        raise ValueError(msg)
 
     @field_validator("osu_direct_search_backend", mode="before")
     @classmethod
@@ -417,20 +440,20 @@ class AppConfig(BaseSettings):
         Raises:
             ValueError: search backendがauto,paradedb,meilisearch,tsvector以外の場合.
         """
-        normalized = v.lower().replace("-", "_")
-        if normalized == "auto":
-            return "auto"
-        if normalized in {"paradedb", "pg_search"}:
-            return "paradedb"
-        if normalized == "meilisearch":
-            return "meilisearch"
-        if normalized == "tsvector":
-            return "tsvector"
-        msg = (
-            f"Invalid osu_direct_search_backend: {v!r}. Valid: "
-            "auto, paradedb, meilisearch, tsvector"
+        return cast(
+            "OsuDirectSearchBackend",
+            _normalize_choice(
+                v,
+                field_name="osu_direct_search_backend",
+                choices={
+                    "auto": "auto",
+                    "paradedb": "paradedb",
+                    "pg_search": "paradedb",
+                    "meilisearch": "meilisearch",
+                    "tsvector": "tsvector",
+                },
+            ),
         )
-        raise ValueError(msg)
 
     @field_validator("osu_direct_external_index_backend", mode="before")
     @classmethod
@@ -446,13 +469,14 @@ class AppConfig(BaseSettings):
         Raises:
             ValueError: backend名がdisabledまたはmeilisearch以外の場合.
         """
-        normalized = v.lower().replace("-", "_")
-        if normalized == "disabled":
-            return "disabled"
-        if normalized == "meilisearch":
-            return "meilisearch"
-        msg = f"Invalid osu_direct_external_index_backend: {v!r}. Valid: disabled, meilisearch"
-        raise ValueError(msg)
+        return cast(
+            "OsuDirectExternalIndexBackend",
+            _normalize_choice(
+                v,
+                field_name="osu_direct_external_index_backend",
+                choices={"disabled": "disabled", "meilisearch": "meilisearch"},
+            ),
+        )
 
     @field_validator("osu_direct_upstream_search_providers", mode="before")
     @classmethod
@@ -489,10 +513,14 @@ class AppConfig(BaseSettings):
         Raises:
             ValueError: priority policyが`point_lookup_first`以外の場合.
         """
-        if v.lower().replace("-", "_") == "point_lookup_first":
-            return "point_lookup_first"
-        msg = f"Invalid osu_direct_catalog_priority_policy: {v!r}. Valid: point_lookup_first"
-        raise ValueError(msg)
+        return cast(
+            "OsuDirectCatalogPriorityPolicy",
+            _normalize_choice(
+                v,
+                field_name="osu_direct_catalog_priority_policy",
+                choices={"point_lookup_first": "point_lookup_first"},
+            ),
+        )
 
     @field_validator("log_max_files")
     @classmethod
@@ -565,8 +593,8 @@ class AppConfig(BaseSettings):
         Raises:
             ValueError: timeout秒数が0以下の場合.
         """
-        if v <= 0:
-            msg = "database_pool_timeout_seconds must be greater than 0"
+        if not math.isfinite(v) or v <= 0:
+            msg = "database_pool_timeout_seconds must be a finite value greater than 0"
             raise ValueError(msg)
         return v
 
@@ -770,8 +798,8 @@ class AppConfig(BaseSettings):
             self.osu_direct_upstream_search_wait_seconds,
             self.osu_direct_upstream_search_first_page_refresh_seconds,
         )
-        if any(value <= 0 for value in osu_direct_runtime_values):
-            msg = "osu_direct runtime values must be greater than 0"
+        if any(not math.isfinite(value) or value <= 0 for value in osu_direct_runtime_values):
+            msg = "osu_direct runtime values must be finite values greater than 0"
             raise ValueError(msg)
         self._validate_osu_direct_upstream_search_config(environment)
         if not self.osu_direct_meilisearch_index_name.strip():
@@ -839,18 +867,22 @@ class AppConfig(BaseSettings):
         ):
             msg = "osu_direct_upstream_search_providers must not be empty when enabled"
             raise ValueError(msg)
-        self._validate_beatmap_http_url(
-            self.osu_direct_hinamizawa_search_url,
-            field_name="osu_direct_hinamizawa_search_url",
-            environment=environment,
-            absolute_url_label="URL",
-        )
-        self._validate_beatmap_http_url(
-            self.osu_direct_nerinyan_search_url,
-            field_name="osu_direct_nerinyan_search_url",
-            environment=environment,
-            absolute_url_label="URL",
-        )
+        if not self.osu_direct_upstream_search_enabled:
+            return
+        if "hinamizawa" in self.osu_direct_upstream_search_providers:
+            self._validate_beatmap_http_url(
+                self.osu_direct_hinamizawa_search_url,
+                field_name="osu_direct_hinamizawa_search_url",
+                environment=environment,
+                absolute_url_label="URL",
+            )
+        if "nerinyan" in self.osu_direct_upstream_search_providers:
+            self._validate_beatmap_http_url(
+                self.osu_direct_nerinyan_search_url,
+                field_name="osu_direct_nerinyan_search_url",
+                environment=environment,
+                absolute_url_label="URL",
+            )
 
     @staticmethod
     def _validate_beatmap_url_template(

@@ -104,7 +104,7 @@ async def test_cheesegull_provider_maps_hinamizawa_json_search_results() -> None
         assert mock_request.url.params["query"] == "camellia"
         assert mock_request.url.params["mode"] == "0"
         assert mock_request.url.params["status"] == "1"
-        assert mock_request.url.params["amount"] == "2"
+        assert mock_request.url.params["amount"] == "3"
         assert mock_request.url.params["offset"] == "2"
         return httpx.Response(
             200,
@@ -288,7 +288,7 @@ async def test_cheesegull_provider_paginates_expanded_all_status_globally() -> N
         params = _mock_transport_request(request).url.params
         page_key = (params["status"], params["offset"])
         requested_pages.append(page_key)
-        assert params["amount"] == "2"
+        assert params["amount"] == "3"
         return httpx.Response(200, json=rows_by_page.get(page_key, []))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
@@ -420,9 +420,9 @@ async def test_cheesegull_provider_translates_special_listings_to_hinamizawa_sor
             )
 
     assert observed_params == [
-        ("", "0", "4", "100", "100", "ranked_desc"),
-        ("", "0", "4", "100", "100", "favourites_desc"),
-        ("", "0", "4", "100", "100", "plays_desc"),
+        ("", "0", "4", "101", "100", "ranked_desc"),
+        ("", "0", "4", "101", "100", "favourites_desc"),
+        ("", "0", "4", "101", "100", "plays_desc"),
     ]
 
 
@@ -448,7 +448,7 @@ async def test_nerinyan_provider_maps_v2_search_results() -> None:
         assert mock_request.url.params["m"] == "3"
         assert mock_request.url.params["s"] == "loved"
         assert mock_request.url.params["p"] == "1"
-        assert mock_request.url.params["ps"] == "1"
+        assert mock_request.url.params["ps"] == "2"
         return httpx.Response(
             200,
             json={

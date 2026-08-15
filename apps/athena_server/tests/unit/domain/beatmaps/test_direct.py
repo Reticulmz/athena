@@ -21,6 +21,7 @@ from osu_server.domain.beatmaps import (
 )
 
 _UPDATED_AT = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
+_LATER_UPDATED_AT = datetime(2026, 8, 11, 12, 0, 0, tzinfo=UTC)
 
 
 def test_search_document_activates_complete_usable_beatmapset() -> None:
@@ -122,9 +123,49 @@ def test_search_document_activates_graveyard_beatmapset() -> None:
     assert document.status is BeatmapRankStatus.GRAVEYARD
 
 
+def test_search_document_increments_version_when_content_changes() -> None:
+    """既存projectionから検索内容が変わるとversionと更新時刻を進める契約を検証する.
+
+    Returns:
+        None: content差分がdocument_versionとupdated_atへ反映されることを確認して完了する.
+    """
+    previous = build_beatmapset_search_document(
+        _beatmapset(beatmaps=(_beatmap(),)),
+        updated_at=_UPDATED_AT,
+    )
+    changed = build_beatmapset_search_document(
+        _beatmapset(title="Exit This Earth's Atomosphere 2", beatmaps=(_beatmap(),)),
+        previous=previous,
+        updated_at=_LATER_UPDATED_AT,
+    )
+
+    assert changed.document_version == previous.document_version + 1
+    assert changed.updated_at == _LATER_UPDATED_AT
+
+
+def test_search_document_preserves_version_when_content_is_unchanged() -> None:
+    """既存projectionと検索内容が同じならversionと更新時刻を保つ契約を検証する.
+
+    Returns:
+        None: 同一内容の再構築でdocument identityが進まないことを確認して完了する.
+    """
+    beatmapset = _beatmapset(beatmaps=(_beatmap(),))
+    previous = build_beatmapset_search_document(beatmapset, updated_at=_UPDATED_AT)
+
+    unchanged = build_beatmapset_search_document(
+        beatmapset,
+        previous=previous,
+        updated_at=_LATER_UPDATED_AT,
+    )
+
+    assert unchanged.document_version == previous.document_version
+    assert unchanged.updated_at == previous.updated_at
+
+
 def _beatmapset(
     *,
     status: BeatmapRankStatus = BeatmapRankStatus.RANKED,
+    title: str = "Exit This Earth's Atomosphere",
     beatmaps: tuple[Beatmap, ...],
     official_last_updated_at: datetime | None = None,
 ) -> BeatmapSet:
@@ -132,6 +173,7 @@ def _beatmapset(
 
     Args:
         status (BeatmapRankStatus): BeatmapSetへ設定する公式公開状態.
+        title (str): BeatmapSetへ設定する曲名.
         beatmaps (tuple[Beatmap, ...]): BeatmapSetに含めるchild beatmap列.
         official_last_updated_at (datetime | None): set-level更新日時. 未提供ならNone.
 
@@ -141,7 +183,7 @@ def _beatmapset(
     return BeatmapSet(
         id=1_000,
         artist="Camellia",
-        title="Exit This Earth's Atomosphere",
+        title=title,
         creator="Realazy",
         artist_unicode="かめりあ",
         title_unicode=None,
