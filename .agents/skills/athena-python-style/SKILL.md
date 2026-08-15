@@ -1,6 +1,6 @@
 ---
 name: athena-python-style
-description: Athena Python implementation style. Use before writing, editing, reviewing, or debugging first-party Python, Python tests, local .pyi stubs, migrations, or Python lint/type/docstring policy in this repository.
+description: Athena Python implementation style. Use before writing, editing, reviewing, or debugging first-party Python, Python tests, local .pyi stubs, migrations, Dishka dependency-injection composition, or Python lint/type/docstring policy in this repository.
 ---
 
 # Athena Python Style
@@ -19,6 +19,8 @@ Apply these defaults while reading it:
 - Prefer `match`/`case` for closed, shape-driven branching; keep `if`/`elif`
   for simple predicates and range checks.
 - Avoid compatibility shims for Python versions below 3.14.
+- Keep Dishka wiring in composition/provider modules. Business code receives
+  constructor arguments, not containers or Dishka marker types.
 
 Completion: `docs/agent-python.md` has been read, scoped `AGENTS.md` files for
 touched paths have been read, and Python changes follow the 3.14+ policy.
