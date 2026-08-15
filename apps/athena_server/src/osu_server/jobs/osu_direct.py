@@ -7,16 +7,33 @@ from typing import TYPE_CHECKING, Annotated, Never, Protocol, cast
 import structlog
 from taskiq import Context, TaskiqDepends
 
-from osu_server.domain.beatmaps import BeatmapMetadataSource, DirectCoverageStatusScope
+from osu_server.domain.beatmaps import (
+    BeatmapFetchTarget,
+    BeatmapMetadataSource,
+    DirectCoverageStatusScope,
+)
 from osu_server.infrastructure.jobs.registry import jobs
+from osu_server.jobs.beatmap_fetch import (
+    get_beatmap_metadata_fetch,
+    get_beatmap_metadata_fetch_semaphore,
+    run_beatmap_metadata_fetch,
+)
 from osu_server.services.commands.beatmaps.direct_catalog_sync import (
     DirectFeedWindow,
     DirectRangeCrawlChunk,
 )
+from osu_server.shared.ports import (
+    DirectCatalogScheduleOutcome,
+    DirectCatalogScheduleResult,
+    DirectCatalogWorkKind,
+)
 
+FETCH_OSU_DIRECT_POINT_LOOKUP_METADATA_TASK = "fetch_osu_direct_point_lookup_metadata"
 UPDATE_OSU_DIRECT_EXTERNAL_INDEX_TASK = "update_osu_direct_external_index"
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from taskiq import TaskiqState
 
     from osu_server.services.commands.beatmaps.direct_indexing import (
@@ -54,6 +71,26 @@ class WorkerDirectRangeCrawl(Protocol):
 
         Returns:
             object: scheduler結果. job adapterではpayload境界だけを扱う.
+        """
+        ...
+
+
+class WorkerDirectCatalogScheduler(Protocol):
+    """direct catalog workを共有upstream budgetで実行する境界を表す."""
+
+    async def run(
+        self,
+        work_kind: DirectCatalogWorkKind,
+        work: Callable[[], Awaitable[None]],
+    ) -> DirectCatalogScheduleResult:
+        """指定kindのworkをscheduler経由で実行する.
+
+        Args:
+            work_kind (DirectCatalogWorkKind): 実行するdirect catalog work種別.
+            work (Callable[[], Awaitable[None]]): budget取得後に実行する処理.
+
+        Returns:
+            DirectCatalogScheduleResult: schedulerの実行結果.
         """
         ...
 
@@ -200,6 +237,21 @@ def get_osu_direct_range_crawl(state: TaskiqState) -> WorkerDirectRangeCrawl | N
     return cast("WorkerDirectRangeCrawl | None", getattr(state, "osu_direct_range_crawl", None))
 
 
+def get_osu_direct_catalog_scheduler(state: TaskiqState) -> WorkerDirectCatalogScheduler | None:
+    """Taskiq stateからosu!direct catalog schedulerを返す.
+
+    Args:
+        state (TaskiqState): worker runtimeが保持するTaskiq state.
+
+    Returns:
+        WorkerDirectCatalogScheduler | None: 登録済みschedulerまたは未登録時のNone.
+    """
+    return cast(
+        "WorkerDirectCatalogScheduler | None",
+        getattr(state, "osu_direct_catalog_scheduler", None),
+    )
+
+
 def get_osu_direct_indexing_commands(state: TaskiqState) -> WorkerDirectIndexingCommands | None:
     """Taskiq stateからosu!direct indexing commandを返す.
 
@@ -213,6 +265,69 @@ def get_osu_direct_indexing_commands(state: TaskiqState) -> WorkerDirectIndexing
         "WorkerDirectIndexingCommands | None",
         getattr(state, "osu_direct_indexing_commands", None),
     )
+
+
+@jobs.register(task_name=FETCH_OSU_DIRECT_POINT_LOOKUP_METADATA_TASK)
+async def fetch_osu_direct_point_lookup_metadata(
+    target_type: str,
+    target_key: str,
+    context: Annotated[Context, TaskiqDepends()],
+    *,
+    force_refresh: bool = False,
+) -> None:
+    """Point lookup由来のmetadata fetchを共有budget経由で実行する.
+
+    Args:
+        target_type (str): metadata fetchのtarget種別を表すprimitive payload.
+        target_key (str): target種別に対応するlookup key.
+        context (Context): use-caseとschedulerを取得するTaskiq runtime context.
+        force_refresh (bool): cache状態にかかわらずrefreshするか.
+
+    Returns:
+        None: scheduler結果を記録してmetadata fetch処理を完了する.
+
+    Raises:
+        RuntimeError: metadata fetch use-caseまたはschedulerが未登録の場合.
+        ValueError: payloadがBeatmapFetchTargetの不変条件を満たさない場合.
+    """
+    use_case = get_beatmap_metadata_fetch(context.state)
+    if use_case is None:
+        _raise_runtime_missing(
+            task_name=FETCH_OSU_DIRECT_POINT_LOOKUP_METADATA_TASK,
+            dependency="beatmap_metadata_fetch",
+        )
+    scheduler = get_osu_direct_catalog_scheduler(context.state)
+    if scheduler is None:
+        _raise_runtime_missing(
+            task_name=FETCH_OSU_DIRECT_POINT_LOOKUP_METADATA_TASK,
+            dependency="osu_direct_catalog_scheduler",
+        )
+    target = BeatmapFetchTarget.from_queue_payload(
+        target_type=target_type,
+        target_key=target_key,
+        force_refresh=force_refresh,
+    )
+    semaphore = get_beatmap_metadata_fetch_semaphore(context.state)
+
+    async def work() -> None:
+        """Metadata fetch use-caseをscheduler内で実行する.
+
+        Returns:
+            None: use-caseへtargetを渡して完了する.
+        """
+        await run_beatmap_metadata_fetch(use_case, target, semaphore)
+
+    result = await scheduler.run(DirectCatalogWorkKind.POINT_LOOKUP, work)
+    if result.outcome is not DirectCatalogScheduleOutcome.COMPLETED:
+        logger.warning(
+            "osu_direct_point_lookup_not_completed",
+            outcome=result.outcome.value,
+            retry_eligible=result.retry_eligible,
+            retry_after_seconds=result.retry_after_seconds,
+            failure_reason=result.failure_reason,
+            target_type=target_type,
+            target_key=target_key,
+        )
 
 
 @jobs.register(task_name="sync_osu_direct_feed_window")
@@ -500,12 +615,16 @@ def _raise_runtime_missing(*, task_name: str, dependency: str) -> Never:
 
 
 __all__ = [
+    "FETCH_OSU_DIRECT_POINT_LOOKUP_METADATA_TASK",
     "UPDATE_OSU_DIRECT_EXTERNAL_INDEX_TASK",
     "TaskiqDirectExternalIndexUpdateWorkerWake",
+    "WorkerDirectCatalogScheduler",
     "WorkerDirectFeedSync",
     "WorkerDirectIndexingCommands",
     "WorkerDirectRangeCrawl",
     "crawl_osu_direct_id_range",
+    "fetch_osu_direct_point_lookup_metadata",
+    "get_osu_direct_catalog_scheduler",
     "get_osu_direct_feed_sync",
     "get_osu_direct_indexing_commands",
     "get_osu_direct_range_crawl",

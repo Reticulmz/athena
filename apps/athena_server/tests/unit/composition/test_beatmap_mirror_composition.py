@@ -60,14 +60,12 @@ class _FakeTask:
     Attributes:
         calls (list[tuple[str, str]]): target type と key の enqueue 記録.
         force_refresh_calls (list[bool]): force refresh 指定の enqueue 記録.
-        direct_point_lookup_calls (list[bool]): direct point lookup指定のenqueue記録.
     """
 
     def __init__(self) -> None:
         """空の enqueue 記録を持つ fake task を初期化する."""
         self.calls: list[tuple[str, str]] = []
         self.force_refresh_calls: list[bool] = []
-        self.direct_point_lookup_calls: list[bool] = []
 
     async def kiq(
         self,
@@ -75,7 +73,6 @@ class _FakeTask:
         target_key: str,
         *,
         force_refresh: bool = False,
-        direct_point_lookup: bool = False,
     ) -> None:
         """Beatmap fetch job の enqueue 引数を記録する.
 
@@ -83,14 +80,12 @@ class _FakeTask:
             target_type (str): fetch 対象種別を表す queue 値.
             target_key (str): fetch 対象を識別する queue 値.
             force_refresh (bool): cache を使わず更新する指定か.
-            direct_point_lookup (bool): stable direct point lookup由来のmetadata取得か.
 
         Returns:
             None: enqueue 引数を記録し, 呼び出し側へ値を返さない.
         """
         self.calls.append((target_type, target_key))
         self.force_refresh_calls.append(force_refresh)
-        self.direct_point_lookup_calls.append(direct_point_lookup)
 
 
 class _FakeBroker:
@@ -98,12 +93,14 @@ class _FakeBroker:
 
     Attributes:
         metadata (_FakeTask): metadata fetch task の記録先.
+        direct_point_lookup_metadata (_FakeTask): point lookup専用metadata taskの記録先.
         file (_FakeTask): file fetch task の記録先.
     """
 
     def __init__(self) -> None:
-        """二つの独立した fake task を持つ broker を初期化する."""
+        """三つの独立したfake taskを持つbrokerを初期化する."""
         self.metadata: _FakeTask = _FakeTask()
+        self.direct_point_lookup_metadata: _FakeTask = _FakeTask()
         self.file: _FakeTask = _FakeTask()
 
     def find_task(self, task_name: str) -> _FakeTask | None:
@@ -117,6 +114,8 @@ class _FakeBroker:
         """
         if task_name == "fetch_beatmap_metadata":
             return self.metadata
+        if task_name == "fetch_osu_direct_point_lookup_metadata":
+            return self.direct_point_lookup_metadata
         if task_name == "fetch_beatmap_file":
             return self.file
         return None
@@ -300,32 +299,11 @@ async def test_beatmap_fetch_enqueue_preserves_force_refresh_flag() -> None:
 
 
 @pytest.mark.asyncio
-async def test_beatmap_fetch_enqueue_marks_direct_point_lookup_metadata_targets() -> None:
-    """Direct point lookup由来のmetadata enqueueがworker payload flagを保持する.
+async def test_direct_point_lookup_query_uses_dedicated_metadata_task() -> None:
+    """DirectPointLookupQueryが専用metadata taskへfetchをenqueueする.
 
     Returns:
-        None: metadata taskへdirect_point_lookup=Trueが渡ることを検証して完了する.
-    """
-    broker = _FakeBroker()
-
-    await enqueue_beatmap_fetch(
-        cast("AsyncBroker", cast("object", broker)),
-        BeatmapFetchTarget.metadata_by_beatmapset_id(1),
-        direct_point_lookup=True,
-    )
-
-    assert broker.metadata.calls == [("metadata:beatmapset", "1")]
-    assert broker.metadata.direct_point_lookup_calls == [True]
-    assert broker.file.calls == []
-
-
-@pytest.mark.asyncio
-async def test_direct_point_lookup_query_uses_direct_point_lookup_enqueue() -> None:
-    """DirectPointLookupQueryが専用resolverからdirect lookup metadata fetchをenqueueする.
-
-    Returns:
-        None: lookup miss時にdirect_point_lookup=True付きmetadata taskが
-            enqueueされることを確認する.
+        None: lookup miss時に共通metadata taskではなく専用taskが使われることを確認する.
     """
     repo = InMemoryBeatmapStore()
     broker = _FakeBroker()
@@ -356,8 +334,8 @@ async def test_direct_point_lookup_query_uses_direct_point_lookup_enqueue() -> N
     )
 
     assert result.beatmapset is None
-    assert broker.metadata.calls == [("metadata:beatmapset", "1000")]
-    assert broker.metadata.direct_point_lookup_calls == [True]
+    assert broker.metadata.calls == []
+    assert broker.direct_point_lookup_metadata.calls == [("metadata:beatmapset", "1000")]
     assert broker.file.calls == []
 
 

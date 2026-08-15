@@ -10,6 +10,7 @@ import structlog.testing
 from taskiq import Context, InMemoryBroker, TaskiqMessage
 
 from osu_server.domain.beatmaps import (
+    BeatmapFetchTargetKind,
     BeatmapMetadataSource,
     DirectCoverageStatusScope,
 )
@@ -18,6 +19,8 @@ from osu_server.jobs import osu_direct, register_all_jobs
 from osu_server.jobs.osu_direct import (
     TaskiqDirectExternalIndexUpdateWorkerWake,
     crawl_osu_direct_id_range,
+    fetch_osu_direct_point_lookup_metadata,
+    get_osu_direct_catalog_scheduler,
     get_osu_direct_feed_sync,
     get_osu_direct_indexing_commands,
     get_osu_direct_range_crawl,
@@ -32,12 +35,97 @@ from osu_server.services.commands.beatmaps.direct_indexing import (
     DirectExternalIndexUpdateResult,
     DirectSearchProjectionRebuildResult,
 )
+from osu_server.shared.ports import (
+    DirectCatalogScheduleOutcome,
+    DirectCatalogScheduleResult,
+    DirectCatalogWorkKind,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from osu_server.domain.beatmaps import BeatmapFetchTarget
     from osu_server.services.commands.beatmaps.direct_catalog_sync import (
         DirectFeedWindow,
         DirectRangeCrawlChunk,
     )
+
+
+class _FakeMetadataFetch:
+    """Point lookup taskから渡されたmetadata targetを記録するtest double.
+
+    Attributes:
+        calls (list[BeatmapFetchTarget]): executeへ渡されたtarget履歴.
+    """
+
+    def __init__(self) -> None:
+        """空のtarget履歴でmetadata fetch doubleを初期化する."""
+        self.calls: list[BeatmapFetchTarget] = []
+
+    async def execute(self, target: BeatmapFetchTarget) -> None:
+        """Metadata fetch targetを呼び出し履歴へ追加する.
+
+        Args:
+            target (BeatmapFetchTarget): direct taskがqueue payloadから構築したtarget.
+
+        Returns:
+            None: targetを記録して値を返さずに完了する.
+        """
+        self.calls.append(target)
+
+
+class _FakeScheduler:
+    """Point lookup taskのscheduler呼び出しと結果を制御するtest double.
+
+    Attributes:
+        calls (list[DirectCatalogWorkKind]): schedulerへ渡されたwork kind履歴.
+        outcome (DirectCatalogScheduleOutcome): runが返すscheduler結果.
+    """
+
+    outcome: DirectCatalogScheduleOutcome
+
+    def __init__(
+        self,
+        outcome: DirectCatalogScheduleOutcome = DirectCatalogScheduleOutcome.COMPLETED,
+    ) -> None:
+        """空の呼び出し履歴と返却結果を設定する.
+
+        Args:
+            outcome (DirectCatalogScheduleOutcome): runが返すscheduler結果.
+        """
+        self.calls: list[DirectCatalogWorkKind] = []
+        self.outcome = outcome
+
+    async def run(
+        self,
+        work_kind: DirectCatalogWorkKind,
+        work: Callable[[], Awaitable[None]],
+    ) -> DirectCatalogScheduleResult:
+        """Work kindを記録し,完了結果ならmetadata fetchを実行する.
+
+        Args:
+            work_kind (DirectCatalogWorkKind): taskが指定したdirect work種別.
+            work (Callable[[], Awaitable[None]]): budget取得後に実行するcallback.
+
+        Returns:
+            DirectCatalogScheduleResult: 設定済みoutcomeを持つscheduler結果.
+        """
+        self.calls.append(work_kind)
+        if self.outcome is DirectCatalogScheduleOutcome.COMPLETED:
+            await work()
+        return DirectCatalogScheduleResult(
+            work_kind=work_kind,
+            outcome=self.outcome,
+            retry_eligible=self.outcome is not DirectCatalogScheduleOutcome.COMPLETED,
+            retry_after_seconds=30
+            if self.outcome is DirectCatalogScheduleOutcome.DELAYED
+            else None,
+            failure_reason=(
+                "scheduled failure"
+                if self.outcome is DirectCatalogScheduleOutcome.FAILED
+                else None
+            ),
+        )
 
 
 class _FakeFeedSync:
@@ -239,6 +327,7 @@ def test_osu_direct_tasks_are_registered() -> None:
     """
     assert "sync_osu_direct_feed_window" in jobs.task_names
     assert "crawl_osu_direct_id_range" in jobs.task_names
+    assert "fetch_osu_direct_point_lookup_metadata" in jobs.task_names
     assert "update_osu_direct_external_index" in jobs.task_names
     assert "rebuild_osu_direct_search_projection" in jobs.task_names
     assert "rebuild_osu_direct_external_index" in jobs.task_names
@@ -256,6 +345,7 @@ def test_register_all_jobs_attaches_osu_direct_tasks_to_broker() -> None:
 
     assert broker.find_task("sync_osu_direct_feed_window") is not None
     assert broker.find_task("crawl_osu_direct_id_range") is not None
+    assert broker.find_task("fetch_osu_direct_point_lookup_metadata") is not None
     assert broker.find_task("update_osu_direct_external_index") is not None
     assert broker.find_task("rebuild_osu_direct_search_projection") is not None
     assert broker.find_task("rebuild_osu_direct_external_index") is not None
@@ -271,6 +361,63 @@ def test_osu_direct_jobs_stay_queue_adapters_only() -> None:
 
     assert "sqlalchemy" not in source
     assert "osu_server.repositories" not in source
+
+
+async def test_point_lookup_metadata_fetch_uses_direct_scheduler() -> None:
+    """専用taskがmetadata fetchをPOINT_LOOKUP枠で実行することを検証する.
+
+    Returns:
+        None: scheduler種別とforce refreshを保持したtargetを確認する.
+    """
+    metadata_fetch = _FakeMetadataFetch()
+    scheduler = _FakeScheduler()
+    context = _make_context(
+        beatmap_metadata_fetch=metadata_fetch,
+        osu_direct_catalog_scheduler=scheduler,
+    )
+
+    await fetch_osu_direct_point_lookup_metadata(
+        target_type="metadata:beatmapset",
+        target_key="2000",
+        force_refresh=True,
+        context=context,
+    )
+
+    assert scheduler.calls == [DirectCatalogWorkKind.POINT_LOOKUP]
+    assert len(metadata_fetch.calls) == 1
+    assert metadata_fetch.calls[0].kind is BeatmapFetchTargetKind.METADATA_BY_BEATMAPSET_ID
+    assert metadata_fetch.calls[0].target_key == "2000"
+    assert metadata_fetch.calls[0].force_refresh is True
+
+
+async def test_point_lookup_metadata_fetch_logs_scheduler_delay() -> None:
+    """専用taskがscheduler delayを記録してfetchを実行しないことを検証する.
+
+    Returns:
+        None: delay結果のwarningと空のmetadata fetch履歴を確認する.
+    """
+    metadata_fetch = _FakeMetadataFetch()
+    scheduler = _FakeScheduler(DirectCatalogScheduleOutcome.DELAYED)
+    context = _make_context(
+        beatmap_metadata_fetch=metadata_fetch,
+        osu_direct_catalog_scheduler=scheduler,
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        await fetch_osu_direct_point_lookup_metadata(
+            target_type="metadata:beatmapset",
+            target_key="2000",
+            context=context,
+        )
+
+    entries = [
+        entry for entry in logs if entry.get("event") == "osu_direct_point_lookup_not_completed"
+    ]
+    assert len(entries) == 1
+    assert entries[0]["outcome"] == "delayed"
+    assert entries[0]["retry_eligible"] is True
+    assert entries[0]["retry_after_seconds"] == 30
+    assert metadata_fetch.calls == []
 
 
 async def test_feed_sync_raises_when_runtime_missing() -> None:
@@ -501,12 +648,24 @@ def test_state_helpers_return_registered_dependencies() -> None:
     feed = _FakeFeedSync()
     range_crawl = _FakeRangeCrawl()
     indexing = _FakeIndexingCommands()
+    scheduler = _FakeScheduler()
     context = _make_context(
         osu_direct_feed_sync=feed,
         osu_direct_range_crawl=range_crawl,
         osu_direct_indexing_commands=indexing,
+        osu_direct_catalog_scheduler=scheduler,
     )
 
+    assert get_osu_direct_catalog_scheduler(context.state) is scheduler
     assert get_osu_direct_feed_sync(context.state) is feed
     assert get_osu_direct_range_crawl(context.state) is range_crawl
     assert get_osu_direct_indexing_commands(context.state) is indexing
+
+
+def test_direct_catalog_scheduler_state_helper_returns_none_when_missing() -> None:
+    """Scheduler未登録のTaskiq stateからNoneを返すことを検証する.
+
+    Returns:
+        None: 空のcontext stateでscheduler helperがNoneになることを確認する.
+    """
+    assert get_osu_direct_catalog_scheduler(_make_context().state) is None

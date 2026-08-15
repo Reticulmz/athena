@@ -181,6 +181,7 @@
         "crawl_osu_direct_id_range",
         "fetch_beatmap_file",
         "fetch_beatmap_metadata",
+        "fetch_osu_direct_point_lookup_metadata",
         "persist_channel_message",
         "persist_private_message",
         "process_performance_recalculation_batch",

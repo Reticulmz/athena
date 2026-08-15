@@ -28,6 +28,7 @@ from osu_server.infrastructure.http.beatmap_http_client import (
     BeatmapHttpClient as ConcreteBeatmapHttpClient,
 )
 from osu_server.infrastructure.search.meilisearch_direct import MeilisearchDirectSearchBackend
+from osu_server.jobs.osu_direct import FETCH_OSU_DIRECT_POINT_LOOKUP_METADATA_TASK
 from osu_server.repositories.interfaces.queries.beatmaps import BeatmapQueryRepository
 from osu_server.repositories.sqlalchemy.queries.direct_search import (
     AutoDirectSearchBackend,
@@ -204,17 +205,30 @@ class BeatmapAppProviderSet(Provider):
         Returns:
             DirectPointLookupQuery: direct point lookup用のread-only query use-case.
         """
+
+        async def enqueue_refresh(target: BeatmapFetchTarget) -> None:
+            """Point lookupのfetch targetを専用metadata taskへenqueueする.
+
+            Args:
+                target (BeatmapFetchTarget): point lookup resolverが要求したfetch target.
+
+            Returns:
+                None: metadataは専用taskへ,fileは既存taskへenqueueして完了する.
+            """
+            task_name = (
+                "fetch_beatmap_file"
+                if target.is_file_fetch
+                else FETCH_OSU_DIRECT_POINT_LOOKUP_METADATA_TASK
+            )
+            await _enqueue_beatmap_fetch_task(broker, target, task_name=task_name)
+
         beatmap_resolver = BeatmapMirrorService(
             repository=repository,
             eligibility_service=eligibility_service,
             freshness_policy=freshness_policy,
             mirror_trust_enabled=config.beatmap_mirror_trust_policy == "trusted",
             official_sources_available=config.beatmap_official_sources_enabled,
-            enqueue_refresh=lambda target: enqueue_beatmap_fetch(
-                broker,
-                target,
-                direct_point_lookup=True,
-            ),
+            enqueue_refresh=enqueue_refresh,
         )
         return DirectPointLookupQuery(
             beatmap_resolver,
@@ -342,8 +356,6 @@ def _make_direct_search_upstream_provider(
 async def enqueue_beatmap_fetch(
     broker: AsyncBroker,
     target: BeatmapFetchTarget,
-    *,
-    direct_point_lookup: bool = False,
 ) -> None:
     """Fetch targetに対応するworker taskを選択してenqueueする.
 
@@ -351,15 +363,33 @@ async def enqueue_beatmap_fetch(
         broker (AsyncBroker): ``fetch_beatmap_file`` と ``fetch_beatmap_metadata`` taskを持つ
             broker.
         target (BeatmapFetchTarget): file fetchかmetadata fetchかと対象keyを表すrequest.
-        direct_point_lookup (bool): stable direct point lookup由来のmetadata取得か.
 
     Returns:
         None: task未登録時はerror logを残して何もenqueueせず,それ以外はenqueue完了後に返す.
 
     Notes:
-        ``force_refresh`` と ``direct_point_lookup`` は真の場合だけkeyword argumentとして渡す.
+        ``force_refresh`` は真の場合だけkeyword argumentとして渡す.
     """
     task_name = "fetch_beatmap_file" if target.is_file_fetch else "fetch_beatmap_metadata"
+    await _enqueue_beatmap_fetch_task(broker, target, task_name=task_name)
+
+
+async def _enqueue_beatmap_fetch_task(
+    broker: AsyncBroker,
+    target: BeatmapFetchTarget,
+    *,
+    task_name: str,
+) -> None:
+    """指定taskへBeatmapFetchTargetのprimitive payloadをenqueueする.
+
+    Args:
+        broker (AsyncBroker): taskを名前で解決してenqueueするbroker.
+        target (BeatmapFetchTarget): queue payloadへ変換するfetch target.
+        task_name (str): enqueue先の登録済みTaskiq task名.
+
+    Returns:
+        None: task未登録時はerror logを残し,登録済みならenqueueして完了する.
+    """
     task = broker.find_task(task_name)
     if task is None:
         logger.error(
@@ -374,6 +404,4 @@ async def enqueue_beatmap_fetch(
     kwargs: dict[str, bool] = {}
     if payload.force_refresh:
         kwargs["force_refresh"] = payload.force_refresh
-    if direct_point_lookup and not target.is_file_fetch:
-        kwargs["direct_point_lookup"] = True
     _ = await task.kiq(payload.target_type, payload.target_key, **kwargs)
