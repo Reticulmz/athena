@@ -51,9 +51,10 @@ Dishka is Athena's composition tool, not an application service locator.
   per-request or per-job state and resources with a shorter lifetime. Use `Scope.SESSION` only
   when the integration exposes a long-lived connection/session scope. Do not put mutable
   request, user, or connection state in `Scope.APP`.
-- Providers that open resources must yield them from async generator factories and release them
-  after `yield`. Consumers do not close Dishka-owned objects; application and worker shutdown
-  close the container.
+- Providers that own closable runtime resources must yield them from generator factories and
+  release them after `yield`; use async generators for Athena async resources. Consumers do not
+  close Dishka-owned objects. Scope-specific finalization runs when the owning scope exits, and
+  app/worker shutdown closes the top-level APP container.
 - If a provider needs framework context such as Starlette `Request`, `WebSocket`, or Taskiq
   context, pass it through Dishka integration context data such as `from_context`, not globals or
   ad hoc attributes. Keep framework context at the adapter/composition boundary.
