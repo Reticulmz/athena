@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
 import pytest
 import structlog.testing
-from taskiq import Context, InMemoryBroker, TaskiqMessage
+from taskiq import Context, InMemoryBroker, NoResultError, TaskiqMessage
 
 from osu_server.domain.beatmaps import (
     BeatmapFetchTargetKind,
@@ -23,6 +24,7 @@ from osu_server.jobs.osu_direct import (
     get_osu_direct_catalog_scheduler,
     get_osu_direct_feed_sync,
     get_osu_direct_indexing_commands,
+    get_osu_direct_point_lookup_request_count,
     get_osu_direct_range_crawl,
     rebuild_osu_direct_external_index,
     rebuild_osu_direct_search_projection,
@@ -43,6 +45,8 @@ from osu_server.shared.ports import (
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+
+    from taskiq import BrokerMessage
 
     from osu_server.domain.beatmaps import BeatmapFetchTarget
     from osu_server.services.commands.beatmaps.direct_catalog_sync import (
@@ -78,7 +82,7 @@ class _FakeScheduler:
     """Point lookup taskのscheduler呼び出しと結果を制御するtest double.
 
     Attributes:
-        calls (list[DirectCatalogWorkKind]): schedulerへ渡されたwork kind履歴.
+        calls (list[tuple[DirectCatalogWorkKind, int]]): schedulerへ渡されたwork kindと予約数.
         outcome (DirectCatalogScheduleOutcome): runが返すscheduler結果.
     """
 
@@ -93,24 +97,27 @@ class _FakeScheduler:
         Args:
             outcome (DirectCatalogScheduleOutcome): runが返すscheduler結果.
         """
-        self.calls: list[DirectCatalogWorkKind] = []
+        self.calls: list[tuple[DirectCatalogWorkKind, int]] = []
         self.outcome = outcome
 
     async def run(
         self,
         work_kind: DirectCatalogWorkKind,
         work: Callable[[], Awaitable[None]],
+        *,
+        request_count: int = 1,
     ) -> DirectCatalogScheduleResult:
         """Work kindを記録し,完了結果ならmetadata fetchを実行する.
 
         Args:
             work_kind (DirectCatalogWorkKind): taskが指定したdirect work種別.
             work (Callable[[], Awaitable[None]]): budget取得後に実行するcallback.
+            request_count (int): callbackが消費しうるupstream request数.
 
         Returns:
             DirectCatalogScheduleResult: 設定済みoutcomeを持つscheduler結果.
         """
-        self.calls.append(work_kind)
+        self.calls.append((work_kind, request_count))
         if self.outcome is DirectCatalogScheduleOutcome.COMPLETED:
             await work()
         return DirectCatalogScheduleResult(
@@ -126,6 +133,31 @@ class _FakeScheduler:
                 else None
             ),
         )
+
+
+class _RecordingBroker(InMemoryBroker):
+    """Taskiq requeueがbrokerへ送ったmessageを記録するtest double.
+
+    Attributes:
+        requeued_messages (list[BrokerMessage]): kickへ渡された再投入message履歴.
+    """
+
+    def __init__(self) -> None:
+        """空の再投入履歴でin-memory brokerを初期化する."""
+        super().__init__()
+        self.requeued_messages: list[BrokerMessage] = []
+
+    @override
+    async def kick(self, message: BrokerMessage) -> None:
+        """再投入messageを実行せずに履歴へ追加する.
+
+        Args:
+            message (BrokerMessage): Context.requeueがserializeしたTaskiq message.
+
+        Returns:
+            None: messageを記録し,呼び出し側へ値を返さずに完了する.
+        """
+        self.requeued_messages.append(message)
 
 
 class _FakeFeedSync:
@@ -306,7 +338,7 @@ def _make_context(**services: object) -> Context:
     Returns:
         Context: osu!direct taskを直接実行できるTaskiq context.
     """
-    broker = InMemoryBroker()
+    broker = _RecordingBroker()
     for key, value in services.items():
         object.__setattr__(broker.state, key, value)
     message = TaskiqMessage(
@@ -374,6 +406,7 @@ async def test_point_lookup_metadata_fetch_uses_direct_scheduler() -> None:
     context = _make_context(
         beatmap_metadata_fetch=metadata_fetch,
         osu_direct_catalog_scheduler=scheduler,
+        osu_direct_point_lookup_request_count=4,
     )
 
     await fetch_osu_direct_point_lookup_metadata(
@@ -383,27 +416,61 @@ async def test_point_lookup_metadata_fetch_uses_direct_scheduler() -> None:
         context=context,
     )
 
-    assert scheduler.calls == [DirectCatalogWorkKind.POINT_LOOKUP]
+    assert scheduler.calls == [(DirectCatalogWorkKind.POINT_LOOKUP, 4)]
     assert len(metadata_fetch.calls) == 1
     assert metadata_fetch.calls[0].kind is BeatmapFetchTargetKind.METADATA_BY_BEATMAPSET_ID
     assert metadata_fetch.calls[0].target_key == "2000"
     assert metadata_fetch.calls[0].force_refresh is True
 
 
-async def test_point_lookup_metadata_fetch_logs_scheduler_delay() -> None:
-    """専用taskがscheduler delayを記録してfetchを実行しないことを検証する.
+@pytest.mark.parametrize(
+    ("outcome", "expected_delay"),
+    [
+        (DirectCatalogScheduleOutcome.DELAYED, 30),
+        (DirectCatalogScheduleOutcome.FAILED, 1),
+    ],
+)
+async def test_point_lookup_metadata_fetch_requeues_retryable_scheduler_result(
+    monkeypatch: pytest.MonkeyPatch,
+    outcome: DirectCatalogScheduleOutcome,
+    expected_delay: int,
+) -> None:
+    """専用taskがretry可能なscheduler結果を待機後に再投入することを検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): asyncio sleepを待機時間記録関数へ置換するfixture.
+        outcome (DirectCatalogScheduleOutcome): DELAYEDまたはFAILEDのscheduler結果.
+        expected_delay (int): taskが再投入前に待機する秒数.
 
     Returns:
-        None: delay結果のwarningと空のmetadata fetch履歴を確認する.
+        None: warning,待機時間,Taskiq requeue,空のmetadata fetch履歴を確認する.
     """
+    sleep_calls: list[float] = []
+
+    async def record_sleep(delay: float) -> None:
+        """Taskが要求したretry待機時間を記録する.
+
+        Args:
+            delay (float): asyncio.sleepへ渡された秒数.
+
+        Returns:
+            None: 待機せず記録だけを完了する.
+        """
+        sleep_calls.append(delay)
+
+    monkeypatch.setattr(asyncio, "sleep", record_sleep)
     metadata_fetch = _FakeMetadataFetch()
-    scheduler = _FakeScheduler(DirectCatalogScheduleOutcome.DELAYED)
+    scheduler = _FakeScheduler(outcome)
     context = _make_context(
         beatmap_metadata_fetch=metadata_fetch,
         osu_direct_catalog_scheduler=scheduler,
+        osu_direct_point_lookup_request_count=4,
     )
 
-    with structlog.testing.capture_logs() as logs:
+    with (
+        structlog.testing.capture_logs() as logs,
+        pytest.raises(NoResultError),
+    ):
         await fetch_osu_direct_point_lookup_metadata(
             target_type="metadata:beatmapset",
             target_key="2000",
@@ -414,9 +481,41 @@ async def test_point_lookup_metadata_fetch_logs_scheduler_delay() -> None:
         entry for entry in logs if entry.get("event") == "osu_direct_point_lookup_not_completed"
     ]
     assert len(entries) == 1
-    assert entries[0]["outcome"] == "delayed"
+    assert entries[0]["outcome"] == outcome.value
     assert entries[0]["retry_eligible"] is True
-    assert entries[0]["retry_after_seconds"] == 30
+    assert entries[0]["requeue_count"] == 0
+    assert sleep_calls == [expected_delay]
+    assert context.message.labels["X-Taskiq-requeue"] == "1"
+    assert isinstance(context.broker, _RecordingBroker)
+    assert len(context.broker.requeued_messages) == 1
+    assert scheduler.calls == [(DirectCatalogWorkKind.POINT_LOOKUP, 4)]
+    assert metadata_fetch.calls == []
+
+
+async def test_point_lookup_metadata_fetch_stops_after_requeue_limit() -> None:
+    """専用taskが再投入上限到達後にscheduler failureを可視化することを検証する.
+
+    Returns:
+        None: RuntimeErrorを送出し,4回目の再投入を行わないことを確認する.
+    """
+    metadata_fetch = _FakeMetadataFetch()
+    scheduler = _FakeScheduler(DirectCatalogScheduleOutcome.FAILED)
+    context = _make_context(
+        beatmap_metadata_fetch=metadata_fetch,
+        osu_direct_catalog_scheduler=scheduler,
+        osu_direct_point_lookup_request_count=4,
+    )
+    context.message.labels["X-Taskiq-requeue"] = "3"
+
+    with pytest.raises(RuntimeError, match="scheduled failure"):
+        await fetch_osu_direct_point_lookup_metadata(
+            target_type="metadata:beatmapset",
+            target_key="2000",
+            context=context,
+        )
+
+    assert isinstance(context.broker, _RecordingBroker)
+    assert context.broker.requeued_messages == []
     assert metadata_fetch.calls == []
 
 
@@ -654,9 +753,11 @@ def test_state_helpers_return_registered_dependencies() -> None:
         osu_direct_range_crawl=range_crawl,
         osu_direct_indexing_commands=indexing,
         osu_direct_catalog_scheduler=scheduler,
+        osu_direct_point_lookup_request_count=4,
     )
 
     assert get_osu_direct_catalog_scheduler(context.state) is scheduler
+    assert get_osu_direct_point_lookup_request_count(context.state) == 4
     assert get_osu_direct_feed_sync(context.state) is feed
     assert get_osu_direct_range_crawl(context.state) is range_crawl
     assert get_osu_direct_indexing_commands(context.state) is indexing
@@ -668,4 +769,7 @@ def test_direct_catalog_scheduler_state_helper_returns_none_when_missing() -> No
     Returns:
         None: 空のcontext stateでscheduler helperがNoneになることを確認する.
     """
-    assert get_osu_direct_catalog_scheduler(_make_context().state) is None
+    state = _make_context().state
+
+    assert get_osu_direct_catalog_scheduler(state) is None
+    assert get_osu_direct_point_lookup_request_count(state) is None

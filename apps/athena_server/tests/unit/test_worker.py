@@ -173,12 +173,14 @@ def _make_config(
     tmp_path: Path,
     *,
     beatmap_official_sources_enabled: bool = False,
+    beatmap_metadata_mirror_base_urls: list[str] | None = None,
 ) -> AppConfig:
     """Worker startupをin-memoryで実行する最小AppConfigを生成する.
 
     Args:
         tmp_path (Path): logとblob storageを隔離するtest専用directory.
         beatmap_official_sources_enabled (bool): 公式metadata sourceを有効にするか.
+        beatmap_metadata_mirror_base_urls (list[str] | None): metadata mirror URL一覧.
 
     Returns:
         AppConfig: test environmentとlocal storage pathを持つ設定値.
@@ -193,6 +195,7 @@ def _make_config(
             "beatmap_official_sources_enabled": beatmap_official_sources_enabled,
             "beatmap_official_api_client_id": "test-client-id",
             "beatmap_official_api_client_secret": "test-client-secret",
+            "beatmap_metadata_mirror_base_urls": beatmap_metadata_mirror_base_urls or [],
         }
     )
 
@@ -460,6 +463,18 @@ def _state_osu_direct_catalog_scheduler(state: TaskiqState) -> object | None:
     return cast("object | None", getattr(state, "osu_direct_catalog_scheduler", None))
 
 
+def _state_osu_direct_point_lookup_request_count(state: TaskiqState) -> int | None:
+    """Taskiq stateからpoint lookupの最大upstream request数を取得する.
+
+    Args:
+        state (TaskiqState): lifecycle dependencyを保持するbroker state.
+
+    Returns:
+        int | None: 設定済み最大request数. 未設定時はNone.
+    """
+    return cast("int | None", getattr(state, "osu_direct_point_lookup_request_count", None))
+
+
 async def _run_startup(state: TaskiqState) -> None:
     """型付きstartup hookをTaskiq stateで実行する.
 
@@ -565,7 +580,13 @@ async def test_worker_startup_sets_task_use_cases_from_dishka_container(
         None: lifecycle stateの全dependencyを検証して完了し,呼び出し側へ値を返さない.
     """
     state = TaskiqState()
-    config = _make_config(tmp_path)
+    config = _make_config(
+        tmp_path,
+        beatmap_metadata_mirror_base_urls=[
+            "https://mirror-one.example.com",
+            "https://mirror-two.example.com",
+        ],
+    )
     _install_in_memory_worker_container(monkeypatch, tmp_path=tmp_path, config=config)
 
     await _run_startup(state)
@@ -609,6 +630,7 @@ async def test_worker_startup_sets_task_use_cases_from_dishka_container(
         assert isinstance(_state_osu_direct_range_crawl(state), DirectRangeCrawl)
         assert isinstance(_state_osu_direct_indexing_commands(state), DirectIndexingCommands)
         assert isinstance(_state_osu_direct_catalog_scheduler(state), DirectCatalogScheduler)
+        assert _state_osu_direct_point_lookup_request_count(state) == 4
     finally:
         await _run_shutdown(state)
 
@@ -670,6 +692,7 @@ async def test_worker_startup_failure_closes_dishka_container(
     assert _state_osu_direct_range_crawl(state) is None
     assert _state_osu_direct_indexing_commands(state) is None
     assert _state_osu_direct_catalog_scheduler(state) is None
+    assert _state_osu_direct_point_lookup_request_count(state) is None
     assert _state_replay_download_accounting_executor(state) is None
     assert failing_container.close_calls == 1
 
@@ -831,6 +854,7 @@ async def test_worker_shutdown_clears_runtime_state() -> None:
     state.osu_direct_range_crawl = object()
     state.osu_direct_indexing_commands = object()
     state.osu_direct_catalog_scheduler = object()
+    state.osu_direct_point_lookup_request_count = 4
     state.replay_download_accounting_executor = object()
 
     await _run_shutdown(state)
@@ -849,5 +873,6 @@ async def test_worker_shutdown_clears_runtime_state() -> None:
     assert _state_osu_direct_range_crawl(state) is None
     assert _state_osu_direct_indexing_commands(state) is None
     assert _state_osu_direct_catalog_scheduler(state) is None
+    assert _state_osu_direct_point_lookup_request_count(state) is None
     assert _state_replay_download_accounting_executor(state) is None
     assert dishka_container.close_calls == 1

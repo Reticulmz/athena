@@ -55,6 +55,7 @@ if TYPE_CHECKING:
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
+_MAX_OFFICIAL_POINT_LOOKUP_REQUEST_COUNT = 2
 _config = load_config()
 
 broker = ListQueueBroker(url=str(_config.valkey_url))
@@ -96,6 +97,7 @@ def _clear_worker_runtime_state(state: TaskiqState) -> None:
     state.osu_direct_range_crawl = None
     state.osu_direct_indexing_commands = None
     state.osu_direct_catalog_scheduler = None
+    state.osu_direct_point_lookup_request_count = None
     state.replay_download_accounting_executor = None
 
 
@@ -145,6 +147,10 @@ async def startup(state: TaskiqState) -> None:
         state.osu_direct_range_crawl = await worker_container.get(DirectRangeCrawl)
         state.osu_direct_indexing_commands = await worker_container.get(DirectIndexingCommands)
         state.osu_direct_catalog_scheduler = await worker_container.get(DirectCatalogScheduler)
+        state.osu_direct_point_lookup_request_count = (
+            _MAX_OFFICIAL_POINT_LOOKUP_REQUEST_COUNT
+            + len(_config.beatmap_metadata_mirror_base_urls)
+        )
         state.replay_download_accounting_executor = await worker_container.get(
             ReplayDownloadAccountingUseCase
         )

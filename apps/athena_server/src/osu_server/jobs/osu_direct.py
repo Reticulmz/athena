@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Annotated, Never, Protocol, cast
 
 import structlog
@@ -30,6 +31,8 @@ from osu_server.shared.ports import (
 
 FETCH_OSU_DIRECT_POINT_LOOKUP_METADATA_TASK = "fetch_osu_direct_point_lookup_metadata"
 UPDATE_OSU_DIRECT_EXTERNAL_INDEX_TASK = "update_osu_direct_external_index"
+_MAX_POINT_LOOKUP_REQUEUES = 3
+_POINT_LOOKUP_FAILURE_RETRY_SECONDS = 1
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -82,12 +85,15 @@ class WorkerDirectCatalogScheduler(Protocol):
         self,
         work_kind: DirectCatalogWorkKind,
         work: Callable[[], Awaitable[None]],
+        *,
+        request_count: int = 1,
     ) -> DirectCatalogScheduleResult:
         """指定kindのworkをscheduler経由で実行する.
 
         Args:
             work_kind (DirectCatalogWorkKind): 実行するdirect catalog work種別.
             work (Callable[[], Awaitable[None]]): budget取得後に実行する処理.
+            request_count (int): workが消費しうるupstream request数.
 
         Returns:
             DirectCatalogScheduleResult: schedulerの実行結果.
@@ -252,6 +258,21 @@ def get_osu_direct_catalog_scheduler(state: TaskiqState) -> WorkerDirectCatalogS
     )
 
 
+def get_osu_direct_point_lookup_request_count(state: TaskiqState) -> int | None:
+    """Taskiq stateからpoint lookup 1件の最大upstream request数を返す.
+
+    Args:
+        state (TaskiqState): worker runtimeが保持するTaskiq state.
+
+    Returns:
+        int | None: 公式OAuth/APIとmirror fallbackを含む最大request数. 未登録ならNone.
+    """
+    return cast(
+        "int | None",
+        getattr(state, "osu_direct_point_lookup_request_count", None),
+    )
+
+
 def get_osu_direct_indexing_commands(state: TaskiqState) -> WorkerDirectIndexingCommands | None:
     """Taskiq stateからosu!direct indexing commandを返す.
 
@@ -287,7 +308,8 @@ async def fetch_osu_direct_point_lookup_metadata(
         None: scheduler結果を記録してmetadata fetch処理を完了する.
 
     Raises:
-        RuntimeError: metadata fetch use-caseまたはschedulerが未登録の場合.
+        RuntimeError: runtime dependency未登録,retry不可,または再投入上限到達の場合.
+        NoResultError: retry可能な結果をTaskiqへ再投入した場合.
         ValueError: payloadがBeatmapFetchTargetの不変条件を満たさない場合.
     """
     use_case = get_beatmap_metadata_fetch(context.state)
@@ -301,6 +323,12 @@ async def fetch_osu_direct_point_lookup_metadata(
         _raise_runtime_missing(
             task_name=FETCH_OSU_DIRECT_POINT_LOOKUP_METADATA_TASK,
             dependency="osu_direct_catalog_scheduler",
+        )
+    request_count = get_osu_direct_point_lookup_request_count(context.state)
+    if request_count is None:
+        _raise_runtime_missing(
+            task_name=FETCH_OSU_DIRECT_POINT_LOOKUP_METADATA_TASK,
+            dependency="osu_direct_point_lookup_request_count",
         )
     target = BeatmapFetchTarget.from_queue_payload(
         target_type=target_type,
@@ -317,17 +345,40 @@ async def fetch_osu_direct_point_lookup_metadata(
         """
         await run_beatmap_metadata_fetch(use_case, target, semaphore)
 
-    result = await scheduler.run(DirectCatalogWorkKind.POINT_LOOKUP, work)
-    if result.outcome is not DirectCatalogScheduleOutcome.COMPLETED:
-        logger.warning(
-            "osu_direct_point_lookup_not_completed",
-            outcome=result.outcome.value,
-            retry_eligible=result.retry_eligible,
-            retry_after_seconds=result.retry_after_seconds,
-            failure_reason=result.failure_reason,
-            target_type=target_type,
-            target_key=target_key,
-        )
+    result = await scheduler.run(
+        DirectCatalogWorkKind.POINT_LOOKUP,
+        work,
+        request_count=request_count,
+    )
+    if result.outcome is DirectCatalogScheduleOutcome.COMPLETED:
+        return
+
+    raw_requeue_count = cast(
+        "object",
+        context.message.labels.get("X-Taskiq-requeue", "0"),
+    )
+    requeue_count = int(raw_requeue_count) if isinstance(raw_requeue_count, (int, str)) else 0
+    logger.warning(
+        "osu_direct_point_lookup_not_completed",
+        outcome=result.outcome.value,
+        retry_eligible=result.retry_eligible,
+        retry_after_seconds=result.retry_after_seconds,
+        failure_reason=result.failure_reason,
+        requeue_count=requeue_count,
+        target_type=target_type,
+        target_key=target_key,
+    )
+    if not result.retry_eligible or requeue_count >= _MAX_POINT_LOOKUP_REQUEUES:
+        msg = result.failure_reason or "osu!direct point lookup metadata fetch failed"
+        raise RuntimeError(msg)
+
+    retry_after_seconds = (
+        result.retry_after_seconds
+        if result.retry_after_seconds is not None
+        else _POINT_LOOKUP_FAILURE_RETRY_SECONDS
+    )
+    await asyncio.sleep(retry_after_seconds)
+    await context.requeue()
 
 
 @jobs.register(task_name="sync_osu_direct_feed_window")
@@ -627,6 +678,7 @@ __all__ = [
     "get_osu_direct_catalog_scheduler",
     "get_osu_direct_feed_sync",
     "get_osu_direct_indexing_commands",
+    "get_osu_direct_point_lookup_request_count",
     "get_osu_direct_range_crawl",
     "rebuild_osu_direct_external_index",
     "rebuild_osu_direct_search_projection",
