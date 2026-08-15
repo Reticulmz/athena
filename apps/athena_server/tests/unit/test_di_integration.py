@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from http import HTTPStatus
 from typing import TYPE_CHECKING, cast
 
@@ -16,6 +17,7 @@ from taskiq import AsyncBroker
 
 import osu_server.config as config_module
 from osu_server.app import app, create_app
+from osu_server.composition import lifespan as lifespan_module
 from osu_server.composition.providers.container import make_app_container
 from osu_server.composition.providers.test import (
     TestProviderSet,
@@ -23,6 +25,7 @@ from osu_server.composition.providers.test import (
     replace_value,
 )
 from osu_server.config import AppConfig, load_routing_config
+from osu_server.domain.beatmaps import DirectSearchBackend, DirectSearchBackendResult
 from osu_server.domain.compatibility.stable import (
     ReplayDownloadBranch,
     ReplayDownloadResponseBody,
@@ -93,6 +96,12 @@ from osu_server.services.commands.scores.replay_download_accounting import (
     ReplayDownloadAccountingPublisher,
     ReplayDownloadAccountingUseCase,
 )
+from osu_server.services.queries.beatmaps import (
+    DirectPointLookupQuery,
+    DirectPointLookupQueryResult,
+    DirectSearchQuery,
+    DirectSearchQueryResult,
+)
 from osu_server.services.queries.beatmaps.mirror import BeatmapMirrorService
 from osu_server.services.queries.chat import (
     ListAutojoinChannelsQuery,
@@ -136,6 +145,8 @@ _EXPECTED_MIN_HOST_ROUTES = 4
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from osu_server.domain.beatmaps import DirectPointLookupRequest, DirectSearchRequest
 
 
 class _FakeValkeyClient:
@@ -237,6 +248,95 @@ class _InjectedReplayDownloadAccountingPublisher:
         self.inputs.append(input_data)
 
 
+class _InjectedDirectSearchQuery:
+    """固定direct search resultを返し入力を記録するquery fakeを提供する.
+
+    Attributes:
+        inputs (list[DirectSearchRequest]): executeに渡されたdirect search request.
+    """
+
+    inputs: list[DirectSearchRequest]
+
+    def __init__(self) -> None:
+        """入力記録を空listで初期化する."""
+        self.inputs = []
+
+    async def execute(self, request: DirectSearchRequest) -> DirectSearchQueryResult:
+        """入力を記録して空search resultを返す.
+
+        Args:
+            request (DirectSearchRequest): handlerが生成したdirect search request.
+
+        Returns:
+            DirectSearchQueryResult: stable response body `0` へ整形される空結果.
+        """
+        self.inputs.append(request)
+        return DirectSearchQueryResult(beatmapsets=(), stable_result_count=0)
+
+
+class _InjectedDirectSearchBackend:
+    """Startup検証でvalidate呼出だけを記録するdirect search backend fakeを提供する.
+
+    Attributes:
+        validate_calls (int): startup validationがbackendを検証した回数.
+    """
+
+    validate_calls: int
+
+    def __init__(self) -> None:
+        """Validate呼出回数を0で初期化する."""
+        self.validate_calls = 0
+
+    async def search(self, request: DirectSearchRequest) -> DirectSearchBackendResult:
+        """検索traffic用の空候補を返す.
+
+        Args:
+            request (DirectSearchRequest): direct search use-caseから渡された検索条件.
+
+        Returns:
+            DirectSearchBackendResult: 候補なしの検索結果.
+        """
+        _ = request
+        return DirectSearchBackendResult(candidates=(), has_more=False)
+
+    async def validate(self) -> None:
+        """Startup時のsearch backend検証を記録する.
+
+        Returns:
+            None: backendが利用可能であることを示し, 呼び出し回数だけを更新する.
+        """
+        self.validate_calls += 1
+
+
+class _InjectedDirectPointLookupQuery:
+    """固定point lookup resultを返し入力を記録するquery fakeを提供する.
+
+    Attributes:
+        inputs (list[DirectPointLookupRequest]): executeに渡されたpoint lookup request.
+    """
+
+    inputs: list[DirectPointLookupRequest]
+
+    def __init__(self) -> None:
+        """入力記録を空listで初期化する."""
+        self.inputs = []
+
+    async def execute(
+        self,
+        request: DirectPointLookupRequest,
+    ) -> DirectPointLookupQueryResult:
+        """入力を記録して未解決lookup resultを返す.
+
+        Args:
+            request (DirectPointLookupRequest): handlerが生成したpoint lookup request.
+
+        Returns:
+            DirectPointLookupQueryResult: stable response bodyを空にする未解決結果.
+        """
+        self.inputs.append(request)
+        return DirectPointLookupQueryResult(beatmapset=None)
+
+
 def test_public_app_entrypoint_exposes_starlette_app() -> None:
     """前提: 公開 app entrypoint と app factory が import できる.
 
@@ -286,13 +386,13 @@ def test_create_app_registers_host_and_fallback_routes() -> None:
 
 
 def test_create_app_registers_replay_download_primary_route_only() -> None:
-    """前提: replay download は stable web host の primary route で提供する.
+    """前提: stable web endpoint は osu host の primary route で提供する.
 
     操作: osu host と root route から GET path を収集する.
-    結果: osu-getreplay.php だけが存在し旧 replay path は存在しない.
+    結果: replay download と direct route が存在し旧 replay path は存在しない.
 
     Returns:
-        None: replay download route migration 契約を検証する.
+        None: stable web route registration 契約を検証する.
     """
     created = create_app()
     domain = load_routing_config().domain
@@ -312,6 +412,8 @@ def test_create_app_registers_replay_download_primary_route_only() -> None:
     }
 
     assert "/web/osu-getreplay.php" in web_paths
+    assert "/web/osu-search.php" in web_paths
+    assert "/web/osu-search-set.php" in web_paths
     assert not any(path.startswith("/web/replays") for path in web_paths | root_paths)
 
 
@@ -733,18 +835,24 @@ async def test_runtime_graph_provides_valkey_replay_download_accounting_gate(
         await container.close()
 
 
-def test_in_memory_app_replay_download_route_reaches_handler(tmp_path: Path) -> None:
+def test_in_memory_app_replay_download_route_reaches_handler(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     """前提: in-memory provider override を使う Starlette app を生成できる.
 
     操作: osu host の replay download route へ認証なし GET request を送る.
     結果: handler まで到達し unauthorized response と空 body を返す.
 
     Args:
+        monkeypatch (pytest.MonkeyPatch): app startup用の必須environmentを隔離するfixture.
         tmp_path (Path): isolated blob storage root を作る temporary directory.
 
     Returns:
         None: in-memory replay route の handler 到達契約を検証する.
     """
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/athena")
+    monkeypatch.setenv("VALKEY_URL", "redis://localhost:6379/0")
     created = create_app(
         provider_overrides=(make_in_memory_runtime_provider_set(blob_root=tmp_path / "blobs"),)
     )
@@ -755,3 +863,118 @@ def test_in_memory_app_replay_download_route_reaches_handler(tmp_path: Path) -> 
 
     assert response.status_code == HTTPStatus.UNAUTHORIZED
     assert response.content == b""
+
+
+def test_in_memory_app_direct_routes_reach_di_resolved_handlers(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """認証済みdirect requestがStarlette routeからDI解決済みhandlerへ届く契約を検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): app startup用の必須environmentを隔離するfixture.
+        tmp_path (Path): isolated blob storage root を作る temporary directory.
+
+    Returns:
+        None: direct searchとpoint lookupがfake use-caseへ到達することを確認する.
+    """
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/athena")
+    monkeypatch.setenv("VALKEY_URL", "redis://localhost:6379/0")
+    search_query = _InjectedDirectSearchQuery()
+    point_lookup_query = _InjectedDirectPointLookupQuery()
+    created = create_app(
+        provider_overrides=(
+            make_in_memory_runtime_provider_set(blob_root=tmp_path / "blobs"),
+            TestProviderSet(
+                replace_value(
+                    SessionCredentialsQueryUseCase,
+                    cast(
+                        "SessionCredentialsQueryUseCase",
+                        cast("object", _InjectedSessionCredentialsQuery()),
+                    ),
+                ),
+                replace_value(
+                    DirectSearchQuery,
+                    cast("DirectSearchQuery", cast("object", search_query)),
+                ),
+                replace_value(
+                    DirectPointLookupQuery,
+                    cast("DirectPointLookupQuery", cast("object", point_lookup_query)),
+                ),
+            ),
+        )
+    )
+
+    with TestClient(created, raise_server_exceptions=False) as client:
+        domain = load_routing_config().domain
+        search_response = client.get(
+            f"http://osu.{domain}/web/osu-search.php",
+            params={"u": "Player", "h": "hash", "q": "Camellia", "r": "4"},
+        )
+        lookup_response = client.get(
+            f"http://osu.{domain}/web/osu-search-set.php",
+            params={"u": "Player", "h": "hash", "s": "123"},
+        )
+
+    assert search_response.status_code == HTTPStatus.OK
+    assert search_response.content == b"0"
+    assert len(search_query.inputs) == 1
+    assert search_query.inputs[0].query_text == "Camellia"
+    assert lookup_response.status_code == HTTPStatus.OK
+    assert lookup_response.content == b""
+    assert len(point_lookup_query.inputs) == 1
+    assert point_lookup_query.inputs[0].target_value == 123
+
+
+def test_in_memory_app_startup_validates_direct_sql_search_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Application startupがrequired direct SQL backendを検証する契約を検証する.
+
+    In-memory provider graphへdirect search backend fakeを注入してstartupを実行する.
+    検索trafficを受ける前にbackend validateが1回だけ呼ばれることを確認する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): app startup用の必須environmentを隔離するfixture.
+        tmp_path (Path): isolated blob storage rootを作るtemporary directory.
+
+    Returns:
+        None: startup validation呼出を検証して完了する.
+    """
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/athena")
+    monkeypatch.setenv("VALKEY_URL", "redis://localhost:6379/0")
+    backend = _InjectedDirectSearchBackend()
+    created = create_app(
+        provider_overrides=(
+            make_in_memory_runtime_provider_set(blob_root=tmp_path / "blobs"),
+            TestProviderSet(
+                replace_value(
+                    DirectSearchBackend,
+                    cast("DirectSearchBackend", cast("object", backend)),
+                ),
+            ),
+        )
+    )
+
+    with TestClient(created, raise_server_exceptions=False) as client:
+        response = client.get("/")
+
+    assert response.status_code == HTTPStatus.OK
+    assert backend.validate_calls == 1
+
+
+def test_app_startup_does_not_run_direct_rebuild_commands() -> None:
+    """Application startupがdirect rebuildをoperator taskに残す契約を検証する.
+
+    Startup初期化関数の依存解決範囲を確認し, projection/external index rebuild methodを
+    呼び出さないことを固定する.
+
+    Returns:
+        None: startup code pathにdirect rebuild実行がないことを検証して完了する.
+    """
+    source = inspect.getsource(lifespan_module)
+
+    assert "DirectIndexingCommands" not in source
+    assert "rebuild_search_projection" not in source
+    assert "rebuild_external_index" not in source

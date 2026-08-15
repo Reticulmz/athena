@@ -18,6 +18,8 @@ from osu_server.domain.beatmaps import (
     BeatmapRankStatus,
     BeatmapSet,
     BeatmapSourceVerification,
+    DirectCoverageRecord,
+    DirectCoverageStatusScope,
 )
 from osu_server.services.queries.beatmaps.resolve_beatmap import (
     ResolveBeatmapByChecksumQuery,
@@ -67,6 +69,24 @@ class BeatmapQueryRepositoryStub:
             BeatmapSet | None: 一致するbeatmapset. 未登録の場合はNone.
         """
         return self.beatmapsets_by_id.get(beatmapset_id)
+
+    async def list_beatmapsets_by_ids(
+        self,
+        beatmapset_ids: tuple[int, ...],
+    ) -> tuple[BeatmapSet, ...]:
+        """Beatmapset ID列に一致する保存済みbeatmapsetを入力順で返す.
+
+        Args:
+            beatmapset_ids (tuple[int, ...]): 検索するbeatmapset ID列.
+
+        Returns:
+            tuple[BeatmapSet, ...]: 登録済みbeatmapsetだけを入力順で含む列.
+        """
+        return tuple(
+            beatmapset
+            for beatmapset_id in beatmapset_ids
+            if (beatmapset := self.beatmapsets_by_id.get(beatmapset_id)) is not None
+        )
 
     async def get_beatmap_by_checksum(self, checksum_md5: str) -> Beatmap | None:
         """MD5 checksumに一致する保存済みbeatmapを返す.
@@ -124,6 +144,26 @@ class BeatmapQueryRepositoryStub:
             BeatmapFetchRecord | None: 保存済みfetch state. 未登録の場合はNone.
         """
         return self.fetch_states_by_target.get(target)
+
+    async def list_completed_direct_search_coverages(
+        self,
+        status_scopes: tuple[DirectCoverageStatusScope, ...],
+        *,
+        feed_sort_key: str,
+        feed_window_key: str,
+    ) -> tuple[DirectCoverageRecord, ...]:
+        """Resolve queryでは使わないdirect検索coverageを空として返す.
+
+        Args:
+            status_scopes (tuple[DirectCoverageStatusScope, ...]): 未使用のstatus scope列.
+            feed_sort_key (str): 未使用のfeed sort key.
+            feed_window_key (str): 未使用のfeed window key.
+
+        Returns:
+            tuple[DirectCoverageRecord, ...]: このstubでは常に空tuple.
+        """
+        _ = status_scopes, feed_sort_key, feed_window_key
+        return ()
 
 
 @pytest.fixture

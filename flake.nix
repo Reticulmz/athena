@@ -7,6 +7,9 @@
       url = "github:cachix/git-hooks.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    paradedb = {
+      url = "github:paradedb/paradedb/v0.25.1";
+    };
   };
 
   outputs =
@@ -14,6 +17,7 @@
       self,
       nixpkgs,
       git-hooks,
+      paradedb,
     }:
     let
       supportedSystems = [
@@ -31,6 +35,33 @@
           lib = pkgs.lib;
           serverWorkspace = import ./apps/athena_server/default.nix { inherit pkgs lib; };
           cryptoWorkspace = import ./packages/athena_crypto/default.nix { inherit pkgs lib; };
+          # ParadeDB 0.25.1 uses pgrx 0.19.0, while nixpkgs cargo-pgrx is still 0.18.x.
+          cargoPgrx019 = pkgs.rustPlatform.buildRustPackage {
+            pname = "cargo-pgrx";
+            version = "0.19.0";
+            src = pkgs.fetchCrate {
+              pname = "cargo-pgrx";
+              version = "0.19.0";
+              hash = "sha256-1OTE+mPtR9vaJhVGvq9X3fNd1nRoedoABUaVGQvFwNU=";
+            };
+            cargoHash = "sha256-dTfbgc6pGLP3s9y3zfIk97XUkPiLngdIoilIX7UM4W8=";
+            nativeBuildInputs = [ pkgs.pkg-config ];
+            buildInputs = [ pkgs.openssl ];
+            doCheck = false;
+            meta.mainProgram = "cargo-pgrx";
+          };
+          pgSearch = (pkgs.callPackage "${paradedb}/nix/pg_search.nix" {
+            self = paradedb;
+            cargo-pgrx = cargoPgrx019;
+            postgresql = pkgs.postgresql_18;
+          }).overrideAttrs (old: {
+            # pg_search links libopenblas, but upstream pg_search.nix does not declare it yet.
+            buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.openblas ];
+          });
+          athenaPostgresql = pkgs.postgresql_18.withPackages (ps: [
+            pgSearch
+            ps.pgvector
+          ]);
 
           rootPackages =
             (with pkgs; [
@@ -40,7 +71,7 @@
               just
               mkcert
               nginx
-              postgresql_17
+              athenaPostgresql
               prek
               process-compose
               valkey

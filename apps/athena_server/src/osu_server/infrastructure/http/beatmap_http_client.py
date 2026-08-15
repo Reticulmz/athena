@@ -216,6 +216,7 @@ class BeatmapHttpClient:
         *,
         source: str,
         lookup_key: str,
+        headers: Mapping[str, str] | None = None,
     ) -> HttpFetchResult:
         """URL から beatmap source の byte 列を取得します.
 
@@ -223,6 +224,7 @@ class BeatmapHttpClient:
             url (str): 取得対象 URL です.
             source (str): error と log に使う取得元 label です.
             lookup_key (str): error と log に使う検索 key です.
+            headers (Mapping[str, str] | None): requestへ追加するHTTP headerです.
 
         Returns:
             HttpFetchResult: 取得した response body と任意の filename metadata です.
@@ -233,7 +235,7 @@ class BeatmapHttpClient:
         client = self._get_client()
 
         try:
-            response = await client.get(url, follow_redirects=True)
+            response = await client.get(url, follow_redirects=True, headers=headers)
         except _TRANSIENT_EXCEPTIONS as exc:
             category = (
                 BeatmapSourceErrorCategory.TIMEOUT
@@ -259,6 +261,7 @@ class BeatmapHttpClient:
         *,
         source: str,
         lookup_key: str,
+        headers: Mapping[str, str] | None = None,
     ) -> dict[str, object] | list[object]:
         """URL から JSON を取得し,object または array として返します.
 
@@ -266,6 +269,7 @@ class BeatmapHttpClient:
             url (str): 取得対象 URL です.
             source (str): error と log に使う取得元 label です.
             lookup_key (str): error と log に使う検索 key です.
+            headers (Mapping[str, str] | None): requestへ追加するHTTP headerです.
 
         Returns:
             dict[str, object] | list[object]: JSON object または array です.
@@ -277,7 +281,7 @@ class BeatmapHttpClient:
         Notes:
             JSON primitive は contract 違反のため INVALID_RESPONSE として拒否します.
         """
-        result = await self.fetch(url, source=source, lookup_key=lookup_key)
+        result = await self.fetch(url, source=source, lookup_key=lookup_key, headers=headers)
         try:
             parsed = cast("object", httpx.Response(200, content=result.content).json())
         except Exception as exc:

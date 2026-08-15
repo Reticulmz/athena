@@ -10,6 +10,10 @@ from osu_server.domain.beatmaps import (
     BeatmapFetchState,
     BeatmapFetchTarget,
     BeatmapFileState,
+    BeatmapSetSearchDocument,
+    DirectCoverageRecord,
+    DirectExternalIndexState,
+    build_beatmapset_search_document,
 )
 from osu_server.repositories.interfaces.commands.beatmaps import BeatmapSubmissionCounts
 from osu_server.repositories.memory.commands.state import now_utc
@@ -154,21 +158,135 @@ class InMemoryBeatmapCommandRepository:
         Raises:
             DuplicateBeatmapChecksumError: snapshot 内又は既存 state と MD5 checksum が競合する
                 場合.
+        """
+        _ = await self.save_beatmapset_snapshot_returning_previous(snapshot)
+
+    async def save_beatmapset_snapshot_returning_previous(
+        self,
+        snapshot: BeatmapSet,
+    ) -> BeatmapSet | None:
+        """Beatmapset snapshotを保存し保存前のbeatmapsetを返す.
+
+        Args:
+            snapshot (BeatmapSet): 保存するbeatmapsetとその子beatmap snapshots.
+
+        Returns:
+            BeatmapSet | None: 保存前のbeatmapset. 初回保存ではNone.
+
+        Raises:
+            DuplicateBeatmapChecksumError: snapshot 内又は既存 state と MD5 checksum が競合する
+                場合.
 
         Notes:
             既存 beatmap の local status override と file attachment を優先して保持する.
             checksum 競合は state を変更する前に検証する.
         """
+        previous = self._state.beatmapsets_by_id.get(snapshot.id)
         self._check_checksum_conflicts(snapshot)
         stored_beatmaps = tuple(
             self._merge_beatmap_snapshot(beatmap) for beatmap in snapshot.beatmaps
         )
-        for beatmap in stored_beatmaps:
-            self._store_beatmap(beatmap)
-        self._state.beatmapsets_by_id[snapshot.id] = replace(
+        stored_snapshot = self._merge_beatmapset_snapshot(
             snapshot,
+            previous,
             beatmaps=stored_beatmaps,
         )
+        for beatmap in stored_beatmaps:
+            self._store_beatmap(beatmap)
+        self._state.beatmapsets_by_id[snapshot.id] = stored_snapshot
+        self._state.search_documents_by_beatmapset_id[snapshot.id] = (
+            build_beatmapset_search_document(
+                stored_snapshot,
+                previous=self._state.search_documents_by_beatmapset_id.get(snapshot.id),
+                updated_at=now_utc(),
+            )
+        )
+        return previous
+
+    async def get_search_document(self, beatmapset_id: int) -> BeatmapSetSearchDocument | None:
+        """External indexing用に保存済み検索projectionを返す.
+
+        Args:
+            beatmapset_id (int): 検索projectionを取得するbeatmapset ID.
+
+        Returns:
+            BeatmapSetSearchDocument | None: 保存済みprojection. 未登録ならNone.
+        """
+        return self._state.search_documents_by_beatmapset_id.get(beatmapset_id)
+
+    async def list_search_documents(
+        self,
+        *,
+        after_beatmapset_id: int = 0,
+        limit: int | None = None,
+    ) -> tuple[BeatmapSetSearchDocument, ...]:
+        """External index rebuild用に検索projectionをbeatmapset ID順で返す.
+
+        Args:
+            after_beatmapset_id (int): このBeatmapSet IDより大きいprojectionだけを返す.
+            limit (int | None): 返す最大件数. Noneなら全件を返す.
+
+        Returns:
+            tuple[BeatmapSetSearchDocument, ...]: 保存済み検索projection列.
+        """
+        if limit is not None and limit <= 0:
+            return ()
+        documents: list[BeatmapSetSearchDocument] = []
+        for beatmapset_id in sorted(self._state.search_documents_by_beatmapset_id):
+            if beatmapset_id <= after_beatmapset_id:
+                continue
+            documents.append(self._state.search_documents_by_beatmapset_id[beatmapset_id])
+            if limit is not None and len(documents) >= limit:
+                break
+        return tuple(documents)
+
+    async def rebuild_search_projection(self, *, now: datetime) -> int:
+        """保存済みmetadataから検索projectionを再構築する.
+
+        Args:
+            now (datetime): 変更されたprojectionへ設定するUTC timestamp.
+
+        Returns:
+            int: 再構築対象として処理したbeatmapset数.
+        """
+        rebuilt_count = 0
+        for beatmapset_id in sorted(self._state.beatmapsets_by_id):
+            beatmapset = self._state.beatmapsets_by_id[beatmapset_id]
+            self._state.search_documents_by_beatmapset_id[beatmapset_id] = (
+                build_beatmapset_search_document(
+                    beatmapset,
+                    previous=self._state.search_documents_by_beatmapset_id.get(beatmapset_id),
+                    updated_at=now,
+                )
+            )
+            rebuilt_count += 1
+        return rebuilt_count
+
+    async def record_index_state(self, state: DirectExternalIndexState) -> None:
+        """External index documentの同期状態を保存する.
+
+        Args:
+            state (DirectExternalIndexState): 保存するsuccessまたはfailure state.
+
+        Returns:
+            None: in-memory stateへ同期状態を保存して完了する.
+        """
+        key = (state.backend, state.beatmapset_id)
+        previous = self._state.external_index_states_by_key.get(key)
+        if previous is not None and state.last_succeeded_at is None:
+            state = replace(state, last_succeeded_at=previous.last_succeeded_at)
+        self._state.external_index_states_by_key[key] = state
+
+    async def record_direct_coverage(self, record: DirectCoverageRecord) -> None:
+        """osu!direct catalog coverage recordを保存する.
+
+        Args:
+            record (DirectCoverageRecord): feed windowまたはid range crawlのcoverage record.
+
+        Returns:
+            None: coverage stateを保存して完了する.
+        """
+        self._state.direct_coverage_records_by_scope[_coverage_scope_key(record)] = record
 
     async def set_local_status_override(
         self, beatmap_id: int, status: LocalBeatmapStatus | None
@@ -442,6 +560,45 @@ class InMemoryBeatmapCommandRepository:
             file_attachment=file_attachment,
         )
 
+    def _merge_beatmapset_snapshot(
+        self,
+        snapshot: BeatmapSet,
+        previous: BeatmapSet | None,
+        *,
+        beatmaps: tuple[Beatmap, ...],
+    ) -> BeatmapSet:
+        """Incoming beatmapset snapshotに既存の公式日時を必要に応じて統合する.
+
+        Args:
+            snapshot (BeatmapSet): 外部snapshotから得たincoming beatmapset.
+            previous (BeatmapSet | None): 保存済みbeatmapset. 未登録時はNone.
+            beatmaps (tuple[Beatmap, ...]): local stateを統合済みのchild beatmap列.
+
+        Returns:
+            BeatmapSet: incoming値を優先し,欠損した公式日時だけ既存値で補ったsnapshot.
+        """
+        if previous is None:
+            return replace(snapshot, beatmaps=beatmaps)
+        return replace(
+            snapshot,
+            beatmaps=beatmaps,
+            official_submitted_at=(
+                snapshot.official_submitted_at
+                if snapshot.official_submitted_at is not None
+                else previous.official_submitted_at
+            ),
+            official_ranked_at=(
+                snapshot.official_ranked_at
+                if snapshot.official_ranked_at is not None
+                else previous.official_ranked_at
+            ),
+            official_last_updated_at=(
+                snapshot.official_last_updated_at
+                if snapshot.official_last_updated_at is not None
+                else previous.official_last_updated_at
+            ),
+        )
+
     def _store_beatmap(self, beatmap: Beatmap) -> None:
         """Beatmap 主記録と checksum index を state に保存する.
 
@@ -476,12 +633,20 @@ class InMemoryBeatmapCommandRepository:
         beatmapset = self._state.beatmapsets_by_id.get(beatmap.beatmapset_id)
         if beatmapset is None:
             return
-        self._state.beatmapsets_by_id[beatmapset.id] = replace(
+        updated_beatmapset = replace(
             beatmapset,
             beatmaps=tuple(
                 beatmap if existing.id == beatmap.id else existing
                 for existing in beatmapset.beatmaps
             ),
+        )
+        self._state.beatmapsets_by_id[beatmapset.id] = updated_beatmapset
+        self._state.search_documents_by_beatmapset_id[beatmapset.id] = (
+            build_beatmapset_search_document(
+                updated_beatmapset,
+                previous=self._state.search_documents_by_beatmapset_id.get(beatmapset.id),
+                updated_at=now_utc(),
+            )
         )
 
     def _require_beatmap(self, beatmap_id: int) -> Beatmap:
@@ -500,3 +665,23 @@ class InMemoryBeatmapCommandRepository:
         if beatmap is None:
             raise BeatmapNotFoundError(beatmap_id)
         return beatmap
+
+
+def _coverage_scope_key(record: DirectCoverageRecord) -> tuple[str, str, str, str, str, int, int]:
+    """Direct coverage record から in-memory scope key を作る.
+
+    Args:
+        record (DirectCoverageRecord): key を抽出する coverage record.
+
+    Returns:
+        tuple[str, str, str, str, str, int, int]: scope を表す mapping key.
+    """
+    return (
+        record.coverage_kind.value,
+        record.source.value,
+        record.status_scope.value,
+        record.sort_key,
+        record.window_key,
+        record.from_beatmapset_id,
+        record.to_beatmapset_id,
+    )

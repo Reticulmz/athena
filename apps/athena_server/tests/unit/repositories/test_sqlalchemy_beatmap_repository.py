@@ -7,11 +7,14 @@ in-memory session fakeで確認する.
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast, override
 
 import pytest
+import structlog.testing
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.sql.elements import ClauseElement
 
 from osu_server.domain.beatmaps import (
@@ -27,15 +30,23 @@ from osu_server.domain.beatmaps import (
     BeatmapRankStatus,
     BeatmapSet,
     BeatmapSourceVerification,
+    DirectCoverageKind,
+    DirectCoverageRecord,
+    DirectCoverageStatusScope,
+    DirectExternalIndexBackend,
+    DirectExternalIndexState,
+    DirectExternalIndexStatus,
     LocalBeatmapStatus,
 )
 from osu_server.repositories.interfaces.commands.beatmaps import BeatmapCommandRepository
 from osu_server.repositories.sqlalchemy.commands.beatmaps import (
     BeatmapNotFoundError,
+    BeatmapSnapshotPersistenceError,
     DuplicateBeatmapChecksumError,
     SQLAlchemyBeatmapCommandRepository,
 )
 from osu_server.repositories.sqlalchemy.models.beatmap import (
+    BeatmapDirectCoverageModel,
     BeatmapFetchStateModel,
     BeatmapFileAttachmentModel,
     BeatmapModel,
@@ -45,7 +56,6 @@ from osu_server.repositories.sqlalchemy.models.beatmap import (
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from sqlalchemy.exc import IntegrityError
     from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.sql.base import Executable
 
@@ -92,6 +102,18 @@ class FakeResult:
         """
         return self._value
 
+    def scalar_one(self) -> object:
+        """設定済みscalar値を必須値として返す.
+
+        Returns:
+            object: scalar query結果.
+
+        Raises:
+            AssertionError: 値が設定されていない場合.
+        """
+        assert self._value is not None
+        return self._value
+
     def one_or_none(self) -> tuple[object, object] | None:
         """設定済みの単一rowを返す.
 
@@ -129,6 +151,8 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         refreshed (list[object]): refresh()したmodel列.
         executed (list[Executable]): execute()へ渡されたSQLAlchemy statement列.
         get_calls (list[tuple[type[object], int, bool]]): get()のmodel, identity, refresh指定.
+        merge_error_for_type (type[object] | None): merge/add時に失敗させるmodel型.
+        operations (list[str]): add/flushの呼び出し順.
         flushes (int): 成功したflush()の呼び出し回数.
     """
 
@@ -138,6 +162,7 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         get_results: dict[tuple[type[object], int], object] | None = None,
         execute_results: list[FakeResult] | None = None,
         flush_error: IntegrityError | None = None,
+        merge_error_for_type: type[object] | None = None,
     ) -> None:
         """Repository assertionに必要なsession応答と記録列を初期化する.
 
@@ -147,15 +172,19 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
             execute_results (list[FakeResult] | None): execute()が順に返す結果列.
                 未指定時は空列を使う.
             flush_error (IntegrityError | None): flush()で送出するerror. 未指定時は送出しない.
+            merge_error_for_type (type[object] | None): この型のinstanceをmerge/addすると失敗する.
+                未指定時は失敗しない.
         """
         self.get_results: dict[tuple[type[object], int], object] = get_results or {}
         self.execute_results: list[FakeResult] = execute_results or []
         self.flush_error: IntegrityError | None = flush_error
+        self.merge_error_for_type: type[object] | None = merge_error_for_type
         self.added: list[object] = []
         self.merged: list[object] = []
         self.refreshed: list[object] = []
         self.executed: list[Executable] = []
         self.get_calls: list[tuple[type[object], int, bool]] = []
+        self.operations: list[str] = []
         self.flushes: int = 0
 
     @override
@@ -230,7 +259,15 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
 
         Returns:
             object: 記録した入力instance.
+
+        Raises:
+            RuntimeError: instanceがmerge_error_for_typeに一致する場合.
         """
+        if self.merge_error_for_type is not None and isinstance(
+            instance,
+            self.merge_error_for_type,
+        ):
+            raise RuntimeError("projection failed")
         self.merged.append(instance)
         return instance
 
@@ -242,8 +279,17 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
 
         Returns:
             None: 追加対象を記録して値を返さない.
+
+        Raises:
+            RuntimeError: instanceがmerge_error_for_typeに一致する場合.
         """
+        if self.merge_error_for_type is not None and isinstance(
+            instance,
+            self.merge_error_for_type,
+        ):
+            raise RuntimeError("projection failed")
         self.added.append(instance)
+        self.operations.append(f"add:{type(instance).__name__}")
 
     async def flush(self) -> None:
         """設定済みerrorを送出するか成功回数を記録する.
@@ -256,6 +302,7 @@ class FakeSession(AbstractAsyncContextManager["FakeSession"]):
         """
         if self.flush_error is not None:
             raise self.flush_error
+        self.operations.append("flush")
         self.flushes += 1
 
     async def refresh(self, instance: object) -> None:
@@ -291,7 +338,9 @@ def _repo(session: FakeSession) -> SQLAlchemyBeatmapCommandRepository:
 def _beatmap_model(
     *,
     id: int = 2_000,  # noqa: A002
+    beatmapset_id: int = 1_000,
     checksum_md5: str = _CHECKSUM,
+    version: str = "Another",
     official_status: str = "ranked",
     local_status_override: str | None = None,
     local_status_override_changed_at: datetime | None = None,
@@ -303,7 +352,9 @@ def _beatmap_model(
 
     Args:
         id (int): beatmap永続化識別子.
+        beatmapset_id (int): 親BeatmapSetの永続化識別子.
         checksum_md5 (str): beatmapのMD5 checksum.
+        version (str): difficulty名として保存するversion.
         official_status (str): upstreamから取得したrank status値.
         local_status_override (str | None): 管理者によるlocal status上書き. 未設定時はNone.
         local_status_override_changed_at (datetime | None): local上書きの更新時刻. 未設定時はNone.
@@ -316,10 +367,10 @@ def _beatmap_model(
     """
     return BeatmapModel(
         id=id,
-        beatmapset_id=1_000,
+        beatmapset_id=beatmapset_id,
         checksum_md5=checksum_md5,
         mode="osu",
-        version="Another",
+        version=version,
         total_length=240,
         hit_length=220,
         max_combo=1_234,
@@ -342,39 +393,73 @@ def _beatmap_model(
     )
 
 
-def _beatmapset_model() -> BeatmapSetModel:
+def _beatmapset_model(
+    *,
+    beatmapset_id: int = 1_000,
+    official_submitted_at: datetime | None = None,
+    official_ranked_at: datetime | None = None,
+    official_last_updated_at: datetime | None = None,
+    search_document_version: int = 1,
+    search_document_updated_at: datetime = _NOW,
+) -> BeatmapSetModel:
     """固定metadataを持つ永続化済みbeatmapset modelを作成する.
+
+    Args:
+        beatmapset_id (int): beatmapset永続化識別子.
+        official_submitted_at (datetime | None): 保存済み投稿日時.
+        official_ranked_at (datetime | None): 保存済みranked日時.
+        official_last_updated_at (datetime | None): 保存済み更新日時.
+        search_document_version (int): 保存済み検索document version.
+        search_document_updated_at (datetime): 保存済み検索document更新時刻.
 
     Returns:
         BeatmapSetModel: beatmapset取得とsnapshot保存に使うmodel.
     """
     return BeatmapSetModel(
-        id=1_000,
+        id=beatmapset_id,
         artist="Camellia",
         title="Exit This Earth's Atomosphere",
         creator="Realazy",
         artist_unicode=None,
         title_unicode=None,
+        source_text="",
+        tags="",
+        direct_search_text="Camellia Exit This Earth's Atomosphere Realazy Another",
         official_status="ranked",
         official_status_source="official",
         official_status_verified=True,
         last_fetched_at=_NOW,
         next_refresh_at=_NEXT_REFRESH,
+        official_submitted_at=official_submitted_at,
+        official_ranked_at=official_ranked_at,
+        official_last_updated_at=official_last_updated_at,
+        search_document_version=search_document_version,
+        search_document_updated_at=search_document_updated_at,
     )
 
 
-def _attachment_model() -> BeatmapFileAttachmentModel:
+def _attachment_model(
+    *,
+    attachment_id: int = 1,
+    beatmap_id: int = 2_000,
+    checksum_md5: str = _CHECKSUM,
+) -> BeatmapFileAttachmentModel:
     """利用可能なosu file attachment modelを作成する.
+
+    Args:
+        attachment_id (int): attachmentのprimary key.
+        beatmap_id (int): attachmentが属するbeatmapのprimary key.
+        checksum_md5 (str): attachmentとverified fileのMD5 checksum.
 
     Returns:
         BeatmapFileAttachmentModel: checksum検証済みblob attachmentを表すmodel.
     """
     return BeatmapFileAttachmentModel(
-        id=1,
-        beatmap_id=2_000,
+        id=attachment_id,
+        beatmap_id=beatmap_id,
         blob_id=55,
-        checksum_md5=_CHECKSUM,
-        verified_md5=_CHECKSUM,
+        checksum_md5=checksum_md5,
+        verified_md5=checksum_md5,
         source="official",
         original_filename="2000.osu",
         fetched_at=_NOW,
@@ -402,6 +487,57 @@ def _fetch_state_model(status: str = "pending_fetch") -> BeatmapFetchStateModel:
         pending_since=_NOW,
         last_attempted_at=_NOW,
         updated_at=_NOW,
+    )
+
+
+def _stored_beatmapset_model(session: FakeSession) -> BeatmapSetModel:
+    """Session fakeが保存対象にしたbeatmapset modelを1件返す.
+
+    Args:
+        session (FakeSession): snapshot保存に使ったSQLAlchemy session fake.
+
+    Returns:
+        BeatmapSetModel: 保存pathが保持した検索入力付きbeatmapset model.
+
+    Raises:
+        AssertionError: beatmapset modelが1件だけ保存対象になっていない場合.
+    """
+    documents = [model for model in session.added if isinstance(model, BeatmapSetModel)]
+    assert len(documents) == 1
+    return documents[0]
+
+
+def _stored_beatmap_models(session: FakeSession) -> list[BeatmapModel]:
+    """Session fakeが保存対象にしたbeatmap model列を返す.
+
+    Args:
+        session (FakeSession): snapshot保存に使ったSQLAlchemy session fake.
+
+    Returns:
+        list[BeatmapModel]: 保存pathが保持したchild beatmap model列.
+    """
+    return [model for model in session.added if isinstance(model, BeatmapModel)]
+
+
+def _direct_coverage_model() -> BeatmapDirectCoverageModel:
+    """保存済みosu!direct coverage model fixtureを作成する.
+
+    Returns:
+        BeatmapDirectCoverageModel: coverage upsert testに使う永続化model.
+    """
+    return BeatmapDirectCoverageModel(
+        id=1,
+        coverage_kind="feed_window",
+        source="mirror",
+        status_scope="ranked",
+        sort_key="newest",
+        window_key="page-1",
+        from_beatmapset_id=1_000,
+        to_beatmapset_id=1_010,
+        cursor="cursor:old",
+        completed_at=_NOW,
+        failed_at=None,
+        failure_reason=None,
     )
 
 
@@ -452,11 +588,20 @@ def _beatmap_domain(
     )
 
 
-def _beatmapset_domain(beatmap: Beatmap) -> BeatmapSet:
+def _beatmapset_domain(
+    beatmap: Beatmap,
+    *,
+    official_submitted_at: datetime | None = None,
+    official_ranked_at: datetime | None = None,
+    official_last_updated_at: datetime | None = None,
+) -> BeatmapSet:
     """指定beatmapを含むdomain beatmapsetを作成する.
 
     Args:
         beatmap (Beatmap): beatmapsetへ含めるdomain beatmap.
+        official_submitted_at (datetime | None): sourceが報告した投稿日時.
+        official_ranked_at (datetime | None): sourceが報告したranked日時.
+        official_last_updated_at (datetime | None): sourceが報告した更新日時.
 
     Returns:
         BeatmapSet: snapshot保存に使用する1件のbeatmapを持つbeatmapset.
@@ -474,6 +619,9 @@ def _beatmapset_domain(beatmap: Beatmap) -> BeatmapSet:
         beatmaps=(beatmap,),
         last_fetched_at=_NOW,
         next_refresh_at=_NEXT_REFRESH,
+        official_submitted_at=official_submitted_at,
+        official_ranked_at=official_ranked_at,
+        official_last_updated_at=official_last_updated_at,
     )
 
 
@@ -551,11 +699,55 @@ async def test_get_beatmapset_loads_child_beatmaps() -> None:
     assert result.beatmaps[0].checksum_md5 == _CHECKSUM
 
 
+async def test_get_beatmapset_loads_current_attachments_in_bulk() -> None:
+    """Command repositoryのBeatmapset取得でattachment lookupがchild数へ増えないことを検証する.
+
+    複数child beatmapを持つbeatmapsetを取得し、current file attachment queryが1回だけ
+    実行されることを確認する.
+
+    Returns:
+        None: 取得したattachmentとquery回数をassertして値を返さない.
+    """
+    session = FakeSession(
+        get_results={(BeatmapSetModel, 1_000): _beatmapset_model()},
+        execute_results=[
+            FakeResult(
+                values=[
+                    _beatmap_model(id=2_000, checksum_md5="a" * 32, version="Another"),
+                    _beatmap_model(id=2_001, checksum_md5="b" * 32, version="Extra"),
+                ]
+            ),
+            FakeResult(
+                values=[
+                    _attachment_model(
+                        attachment_id=10,
+                        beatmap_id=2_000,
+                        checksum_md5="a" * 32,
+                    ),
+                    _attachment_model(
+                        attachment_id=11,
+                        beatmap_id=2_001,
+                        checksum_md5="b" * 32,
+                    ),
+                ]
+            ),
+        ],
+    )
+
+    result = await _repo(session).get_beatmapset(1_000)
+
+    assert result is not None
+    attachments = [beatmap.file_attachment for beatmap in result.beatmaps]
+    assert all(attachment is not None for attachment in attachments)
+    assert [attachment.id for attachment in attachments if attachment is not None] == [10, 11]
+    assert len(session.executed) == 2
+
+
 async def test_save_snapshot_preserves_existing_local_override() -> None:
     """Snapshot保存が既存local status overrideを保持することを検証する.
 
     Returns:
-        None: merged modelのofficial statusとlocal overrideをassertして値を返さない.
+        None: 保存対象modelのofficial statusとlocal overrideをassertして値を返さない.
 
     Raises:
         AssertionError: local overrideまたは更新時刻が上書きされる場合.
@@ -565,14 +757,14 @@ async def test_save_snapshot_preserves_existing_local_override() -> None:
         local_status_override="ranked",
         local_status_override_changed_at=override_changed_at,
     )
-    session = FakeSession(get_results={(BeatmapModel, 2_000): existing})
+    session = FakeSession(execute_results=[FakeResult(), FakeResult(values=[existing])])
 
     await _repo(session).save_beatmapset_snapshot(
         _beatmapset_domain(_beatmap_domain(official_status=BeatmapRankStatus.LOVED))
     )
 
-    assert session.flushes == 1
-    beatmap_models = [model for model in session.merged if isinstance(model, BeatmapModel)]
+    assert session.flushes == 2
+    beatmap_models = _stored_beatmap_models(session)
     assert len(beatmap_models) == 1
     assert beatmap_models[0].official_status == "loved"
     assert beatmap_models[0].local_status_override == "ranked"
@@ -583,40 +775,495 @@ async def test_save_snapshot_preserves_existing_last_updated_when_source_omits_i
     """Snapshot sourceが時刻を省略した場合に既存upstream更新時刻を保持することを検証する.
 
     Returns:
-        None: merged modelのofficial_last_updated_atをassertして値を返さない.
+        None: 保存対象modelのofficial_last_updated_atをassertして値を返さない.
 
     Raises:
         AssertionError: source未指定時に既存更新時刻が失われる場合.
     """
     official_last_updated_at = datetime(2026, 6, 29, 12, 34, 56, tzinfo=UTC)
     existing = _beatmap_model(official_last_updated_at=official_last_updated_at)
-    session = FakeSession(get_results={(BeatmapModel, 2_000): existing})
+    session = FakeSession(execute_results=[FakeResult(), FakeResult(values=[existing])])
 
     await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
 
-    beatmap_models = [model for model in session.merged if isinstance(model, BeatmapModel)]
+    beatmap_models = _stored_beatmap_models(session)
     assert len(beatmap_models) == 1
     assert beatmap_models[0].official_last_updated_at == official_last_updated_at
+
+
+async def test_save_snapshot_preserves_existing_set_dates_when_source_omits_them() -> None:
+    """Snapshot sourceがset-level日時を省略した場合に既存公式日時を保持することを検証する.
+
+    Returns:
+        None: 保存対象beatmapset modelの公式日時をassertして値を返さない.
+
+    Raises:
+        AssertionError: source未指定時に既存の投稿,ranked,更新日時が失われる場合.
+    """
+    official_submitted_at = datetime(2026, 6, 27, 12, 0, tzinfo=UTC)
+    official_ranked_at = datetime(2026, 6, 28, 12, 0, tzinfo=UTC)
+    official_last_updated_at = datetime(2026, 6, 29, 12, 0, tzinfo=UTC)
+    existing_set = _beatmapset_model(
+        official_submitted_at=official_submitted_at,
+        official_ranked_at=official_ranked_at,
+        official_last_updated_at=official_last_updated_at,
+    )
+    session = FakeSession(
+        get_results={(BeatmapSetModel, 1_000): existing_set},
+        execute_results=[FakeResult(values=[_beatmap_model()])],
+    )
+
+    await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
+
+    beatmapset_model = _stored_beatmapset_model(session)
+    assert beatmapset_model.official_submitted_at == official_submitted_at
+    assert beatmapset_model.official_ranked_at == official_ranked_at
+    assert beatmapset_model.official_last_updated_at == official_last_updated_at
 
 
 async def test_save_snapshot_preserves_existing_submission_counts() -> None:
     """Snapshot保存が既存play countとpass countを保持することを検証する.
 
     Returns:
-        None: merged modelのsubmission countをassertして値を返さない.
+        None: 保存対象modelのsubmission countをassertして値を返さない.
 
     Raises:
         AssertionError: snapshot保存で既存submission countが上書きされる場合.
     """
     existing = _beatmap_model(play_count=9, pass_count=7)
-    session = FakeSession(get_results={(BeatmapModel, 2_000): existing})
+    session = FakeSession(execute_results=[FakeResult(), FakeResult(values=[existing])])
 
     await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
 
-    beatmap_models = [model for model in session.merged if isinstance(model, BeatmapModel)]
+    beatmap_models = _stored_beatmap_models(session)
     assert len(beatmap_models) == 1
     assert beatmap_models[0].play_count == 9
     assert beatmap_models[0].pass_count == 7
+
+
+async def test_save_snapshot_updates_direct_search_input() -> None:
+    """Usableなmetadata保存が同じflush内で検索入力を更新することを検証する.
+
+    Returns:
+        None: 保存対象beatmapset modelの検索fieldとflush回数をassertして値を返さない.
+
+    Raises:
+        AssertionError: 検索入力がmetadata保存pathへ連動しない場合.
+    """
+    official_last_updated_at = datetime(2026, 6, 29, 12, 34, 56, tzinfo=UTC)
+    session = FakeSession()
+
+    await _repo(session).save_beatmapset_snapshot(
+        _beatmapset_domain(_beatmap_domain(official_last_updated_at=official_last_updated_at))
+    )
+
+    document = _stored_beatmapset_model(session)
+    assert document.id == 1_000
+    assert document.artist == "Camellia"
+    assert document.title == "Exit This Earth's Atomosphere"
+    assert document.creator == "Realazy"
+    assert document.source_text == ""
+    assert document.tags == ""
+    assert document.direct_search_text == "Camellia Exit This Earth's Atomosphere Realazy Another"
+    assert document.official_status == "ranked"
+    assert document.search_document_version == 1
+    assert session.flushes == 2
+
+
+async def test_save_snapshot_keeps_childless_set_without_difficulty_search_text() -> None:
+    """Child beatmapを持たないmetadata保存がdifficulty検索文字列を持たないことを検証する.
+
+    Returns:
+        None: materialized検索入力とstatusをassertして値を返さない.
+
+    Raises:
+        AssertionError: childless beatmapsetへchild由来の検索文字列が入る場合.
+    """
+    session = FakeSession()
+
+    await _repo(session).save_beatmapset_snapshot(
+        replace(_beatmapset_domain(_beatmap_domain()), beatmaps=())
+    )
+
+    document = _stored_beatmapset_model(session)
+    assert document.id == 1_000
+    assert document.direct_search_text == "Camellia Exit This Earth's Atomosphere Realazy"
+    assert document.official_status == "ranked"
+
+
+async def test_save_snapshot_keeps_direct_search_document_active_for_graveyard_set() -> None:
+    """Graveyard metadata保存がdirect検索projectionをactiveに保つことを検証する.
+
+    Returns:
+        None: graveyard setの検索documentがactiveであることをassertして値を返さない.
+
+    Raises:
+        AssertionError: graveyard beatmapsetがdirect検索対象から外れる場合.
+    """
+    session = FakeSession()
+
+    await _repo(session).save_beatmapset_snapshot(
+        replace(
+            _beatmapset_domain(_beatmap_domain()),
+            official_status=BeatmapRankStatus.GRAVEYARD,
+        )
+    )
+
+    document = _stored_beatmapset_model(session)
+    assert document.official_status == "graveyard"
+    assert document.direct_search_text == "Camellia Exit This Earth's Atomosphere Realazy Another"
+
+
+async def test_save_snapshot_projection_uses_preserved_local_status_override() -> None:
+    """既存local overrideを保持した保存内容で検索projectionを作ることを検証する.
+
+    Returns:
+        None: 保存modelと検索documentが同じinactive child状態を使うことをassertして値を返さない.
+
+    Raises:
+        AssertionError: projectionが保存済みmetadataと異なるeffective statusを使う場合.
+    """
+    existing = _beatmap_model(local_status_override="graveyard")
+    session = FakeSession(execute_results=[FakeResult(), FakeResult(values=[existing])])
+
+    await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
+
+    beatmap_models = _stored_beatmap_models(session)
+    document = _stored_beatmapset_model(session)
+    assert beatmap_models[0].local_status_override == "graveyard"
+    assert document.direct_search_text == "Camellia Exit This Earth's Atomosphere Realazy Another"
+
+
+async def test_save_new_beatmapset_snapshot_stores_set_before_child_beatmaps() -> None:
+    """新規metadata保存がchildより先にbeatmapsetをflushする契約を検証する.
+
+    Returns:
+        None: 保存対象登録順序と親flush順序をassertして値を返さない.
+
+    Raises:
+        AssertionError: child beatmapが親beatmapset flushより先に保存対象へ登録される場合.
+    """
+    session = FakeSession()
+
+    await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
+
+    assert isinstance(session.added[0], BeatmapSetModel)
+    assert isinstance(session.added[1], BeatmapModel)
+    assert session.operations[:3] == ["add:BeatmapSetModel", "flush", "add:BeatmapModel"]
+
+
+async def test_save_single_beatmap_snapshot_keeps_parent_child_set_ids_equal() -> None:
+    """単体beatmap由来の保存aggregateが親子で同じbeatmapset IDを保存することを検証する.
+
+    `/api/v2/beatmaps/{id}` のpayloadから作られる1 child aggregateで、親set IDとchild FKが
+    一致した保存modelになることを確認する.
+
+    Returns:
+        None: 保存対象modelの親IDとchild FKをassertして値を返さない.
+    """
+    beatmap = replace(
+        _beatmap_domain(),
+        id=1593926,
+        beatmapset_id=757681,
+        checksum_md5="699c3008a5a455db6736f0e659141571",
+        version="Alheak's Extra",
+    )
+    snapshot = replace(_beatmapset_domain(beatmap), id=757681)
+    session = FakeSession()
+
+    await _repo(session).save_beatmapset_snapshot(snapshot)
+
+    beatmapset_model = _stored_beatmapset_model(session)
+    beatmap_models = _stored_beatmap_models(session)
+    assert beatmapset_model.id == 757681
+    assert len(beatmap_models) == 1
+    assert beatmap_models[0].beatmapset_id == beatmapset_model.id
+
+
+async def test_save_snapshot_locks_beatmapset_scope_before_reads() -> None:
+    """Snapshot保存が同一beatmapsetの並行fetchを直列化することを検証する.
+
+    Returns:
+        None: 最初にtransaction advisory lockが発行されることをassertして値を返さない.
+
+    Raises:
+        AssertionError: checksum確認や既存document読込より前にlockされない場合.
+    """
+    session = FakeSession()
+
+    await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
+
+    statement = session.executed[0]
+    assert isinstance(statement, ClauseElement)
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+    assert "pg_advisory_xact_lock" in sql
+
+
+async def test_save_snapshot_preserves_flush_integrity_error_details() -> None:
+    """FlushのDB整合性違反をchecksum衝突へ偽装しないことを検証する.
+
+    Returns:
+        None: 永続化errorの型と構造化logをassertして値を返さない.
+
+    Raises:
+        AssertionError: 任意のIntegrityErrorがDuplicateBeatmapChecksumErrorへ変換された場合.
+    """
+    error = IntegrityError(
+        "INSERT INTO beatmaps",
+        {},
+        Exception("violates foreign key constraint"),
+    )
+    session = FakeSession(flush_error=error)
+
+    with (
+        structlog.testing.capture_logs() as logs,
+        pytest.raises(BeatmapSnapshotPersistenceError) as exc_info,
+    ):
+        await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
+
+    assert exc_info.value.__cause__ is error
+    assert "beatmap 0" not in str(exc_info.value)
+    assert logs[-1]["event"] == "beatmapset_snapshot_persistence_failed"
+    assert logs[-1]["beatmapset_id"] == 1_000
+    assert logs[-1]["original_error_message"] == "violates foreign key constraint"
+
+
+async def test_save_snapshot_fails_when_direct_search_projection_update_fails() -> None:
+    """Projection更新失敗時にmetadata保存をflush成功扱いしないことを検証する.
+
+    Returns:
+        None: projection保存対象登録failureの伝播とflush未実行をassertして値を返さない.
+
+    Raises:
+        AssertionError: projection失敗後にmetadata保存が成功扱いされる場合.
+    """
+    session = FakeSession(merge_error_for_type=BeatmapSetModel)
+
+    with pytest.raises(RuntimeError, match="projection failed"):
+        await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
+
+    assert session.flushes == 0
+
+
+async def test_get_search_document_returns_direct_projection_domain() -> None:
+    """保存済み検索projectionをdomain値として取得できることを検証する.
+
+    Returns:
+        None: projection fieldとversionをassertして完了する.
+
+    Raises:
+        AssertionError: projection modelがdomain値へ復元されない場合.
+    """
+    session = FakeSession(
+        get_results={(BeatmapSetModel, 1_000): _beatmapset_model()},
+        execute_results=[FakeResult(values=[_beatmap_model(official_last_updated_at=_NOW)])],
+    )
+
+    document = await _repo(session).get_search_document(1_000)
+
+    assert document is not None
+    assert document.beatmapset_id == 1_000
+    assert document.status is BeatmapRankStatus.RANKED
+    assert document.modes == (BeatmapMode.OSU,)
+    assert document.difficulty_names == "Another"
+    assert document.document_version == 1
+
+
+async def test_list_search_documents_returns_direct_projection_domains() -> None:
+    """External index rebuild用に検索projection群をdomain値で列挙することを検証する.
+
+    Returns:
+        None: projection document列がdomain値に変換されることをassertして完了する.
+
+    Raises:
+        AssertionError: projection一覧が変換または返却されない場合.
+    """
+    session = FakeSession(
+        execute_results=[
+            FakeResult(
+                values=[
+                    _beatmapset_model(beatmapset_id=1_000),
+                    _beatmapset_model(beatmapset_id=2_000),
+                ]
+            ),
+            FakeResult(
+                values=[
+                    _beatmap_model(official_last_updated_at=_NOW),
+                    _beatmap_model(
+                        id=3_000,
+                        beatmapset_id=2_000,
+                        official_last_updated_at=_NOW,
+                    ),
+                ]
+            ),
+        ]
+    )
+
+    documents = await _repo(session).list_search_documents()
+
+    assert [document.beatmapset_id for document in documents] == [1_000, 2_000]
+    assert documents[0].status is BeatmapRankStatus.RANKED
+
+
+async def test_rebuild_search_projection_updates_search_input_from_stored_metadata() -> None:
+    """保存済みmetadataから検索入力を再構築できることを検証する.
+
+    Returns:
+        None: beatmapsetとchild beatmapからmaterialized検索入力が更新されることをassertする.
+
+    Raises:
+        AssertionError: rebuildが検索入力を復元しない場合.
+    """
+    beatmapset_model = _beatmapset_model()
+    beatmapset_model.direct_search_text = ""
+    session = FakeSession(
+        execute_results=[
+            FakeResult(values=[beatmapset_model]),
+            FakeResult(values=[_beatmap_model(official_last_updated_at=_NOW)]),
+        ]
+    )
+
+    rebuilt_count = await _repo(session).rebuild_search_projection(now=_NOW)
+
+    assert rebuilt_count == 1
+    assert beatmapset_model.direct_search_text == (
+        "Camellia Exit This Earth's Atomosphere Realazy Another"
+    )
+    assert beatmapset_model.search_document_version == 1
+    assert session.flushes == 1
+
+
+async def test_rebuild_search_projection_orders_child_beatmaps_for_idempotency() -> None:
+    """Projection rebuildがchildを一括取得しID順でversionを揺らさないことを検証する.
+
+    Returns:
+        None: child beatmap取得queryのfilterとORDER BYをassertして完了する.
+
+    Raises:
+        AssertionError: child beatmap取得queryが一括取得またはID順指定をしない場合.
+    """
+    session = FakeSession(
+        execute_results=[
+            FakeResult(values=[_beatmapset_model()]),
+            FakeResult(values=[_beatmap_model(official_last_updated_at=_NOW)]),
+        ]
+    )
+
+    _ = await _repo(session).rebuild_search_projection(now=_NOW)
+
+    child_statement = session.executed[1]
+    assert isinstance(child_statement, ClauseElement)
+    statement_text = str(child_statement.compile(dialect=postgresql.dialect()))
+    assert "beatmaps.beatmapset_id IN" in statement_text
+    assert "ORDER BY beatmaps.beatmapset_id ASC, beatmaps.id ASC" in statement_text
+
+
+async def test_rebuild_search_projection_batches_child_lookup_ids() -> None:
+    """Projection rebuildがchild lookupのID列をbounded batchへ分割することを検証する.
+
+    1001件のBeatmapSetを再構築し, child lookupがPostgreSQL bind上限に近づく単一IN queryに
+    ならず2回へ分かれることを確認する.
+
+    Returns:
+        None: beatmapset取得1回とchild取得2回のexecute回数を検証して完了する.
+    """
+    session = FakeSession(
+        execute_results=[
+            FakeResult(
+                values=[
+                    _beatmapset_model(beatmapset_id=beatmapset_id)
+                    for beatmapset_id in range(1, 1_002)
+                ]
+            ),
+            FakeResult(values=[]),
+            FakeResult(values=[]),
+        ]
+    )
+
+    rebuilt_count = await _repo(session).rebuild_search_projection(now=_NOW)
+
+    assert rebuilt_count == 1_001
+    assert len(session.executed) == 3
+
+
+async def test_record_index_state_upserts_external_index_state() -> None:
+    """External indexの成功時刻を保ちながらstateをupsertすることを検証する.
+
+    Returns:
+        None: conflict updateがlast_succeeded_atを消さないことをSQLで検証して完了する.
+
+    Raises:
+        AssertionError: index state upsertまたはflushが実行されない場合.
+    """
+    session = FakeSession()
+    state = DirectExternalIndexState(
+        backend=DirectExternalIndexBackend.MEILISEARCH,
+        beatmapset_id=1_000,
+        document_version=3,
+        status=DirectExternalIndexStatus.FAILED,
+        last_attempted_at=_NOW,
+        last_succeeded_at=None,
+        failure_reason="RuntimeError: external index update failed",
+    )
+
+    await _repo(session).record_index_state(state)
+
+    assert len(session.executed) == 1
+    statement = session.executed[0]
+    assert isinstance(statement, ClauseElement)
+    statement_text = str(statement.compile(dialect=postgresql.dialect()))
+    assert "ON CONFLICT" in statement_text
+    assert "coalesce" in statement_text.lower()
+    assert "last_succeeded_at" in statement_text
+    assert session.flushes == 1
+
+
+async def test_record_direct_coverage_upserts_scope_state() -> None:
+    """Direct coverage recordがunique scopeでupsertされることを検証する.
+
+    Returns:
+        None: PostgreSQL upsert文, bind param, flush回数をassertして完了する.
+
+    Raises:
+        AssertionError: coverage stateがscope upsertとして構築されない場合.
+    """
+    session = FakeSession(execute_results=[FakeResult(_direct_coverage_model())])
+    record = DirectCoverageRecord(
+        coverage_kind=DirectCoverageKind.FEED_WINDOW,
+        source=BeatmapMetadataSource.MIRROR,
+        status_scope=DirectCoverageStatusScope.RANKED,
+        sort_key="newest",
+        window_key="page-1",
+        from_beatmapset_id=1_000,
+        to_beatmapset_id=1_010,
+        cursor="cursor:next",
+        completed_at=_NOW,
+        failed_at=None,
+        failure_reason=None,
+    )
+
+    await _repo(session).record_direct_coverage(record)
+
+    assert len(session.executed) == 1
+    statement = session.executed[0]
+    assert isinstance(statement, ClauseElement)
+    compiled = statement.compile(dialect=postgresql.dialect())
+    statement_text = str(compiled)
+    params = cast("dict[str, object]", compiled.construct_params())
+    assert "INSERT INTO beatmap_direct_coverage" in statement_text
+    assert (
+        "ON CONFLICT (coverage_kind, source, status_scope, sort_key, window_key" in statement_text
+    )
+    assert "from_beatmapset_id, to_beatmapset_id)" in statement_text
+    assert params["coverage_kind"] == "feed_window"
+    assert params["source"] == "mirror"
+    assert params["status_scope"] == "ranked"
+    assert params["sort_key"] == "newest"
+    assert params["window_key"] == "page-1"
+    assert params["from_beatmapset_id"] == 1_000
+    assert params["to_beatmapset_id"] == 1_010
+    assert params["cursor"] == "cursor:next"
+    assert session.flushes == 1
 
 
 async def test_save_snapshot_rejects_existing_checksum_conflict_before_flush() -> None:
@@ -630,7 +1277,7 @@ async def test_save_snapshot_rejects_existing_checksum_conflict_before_flush() -
     """
     conflicting_model = _beatmap_model(id=999, checksum_md5=_CHECKSUM)
     session = FakeSession(
-        execute_results=[FakeResult(conflicting_model)],
+        execute_results=[FakeResult(), FakeResult(values=[conflicting_model])],
     )
 
     with pytest.raises(DuplicateBeatmapChecksumError) as exc_info:
@@ -639,6 +1286,29 @@ async def test_save_snapshot_rejects_existing_checksum_conflict_before_flush() -
     assert exc_info.value.checksum_md5 == _CHECKSUM
     assert exc_info.value.existing_beatmap_id == 999
     assert session.flushes == 0
+
+
+async def test_save_snapshot_deduplicates_repeated_child_beatmap_ids() -> None:
+    """同じbeatmap IDの派生childを1件へ正規化して保存することを検証する.
+
+    convertsを含むprovider payloadのように同じbeatmap IDが複数modeで現れた場合でも、DBの
+    beatmaps primary keyへ重複insertせず初出のchildだけを保存する.
+
+    Returns:
+        None: 重複IDのchildが保存対象から除外されることをassertして値を返さない.
+    """
+    original = _beatmap_domain()
+    convert = replace(original, mode=BeatmapMode.TAIKO)
+    snapshot = replace(_beatmapset_domain(original), beatmaps=(original, convert))
+    session = FakeSession()
+
+    await _repo(session).save_beatmapset_snapshot(snapshot)
+
+    beatmap_models = _stored_beatmap_models(session)
+    assert len(beatmap_models) == 1
+    assert beatmap_models[0].id == original.id
+    assert beatmap_models[0].mode == "osu"
+    assert session.flushes == 2
 
 
 async def test_attach_osu_file_returns_existing_duplicate_attachment() -> None:
@@ -703,11 +1373,13 @@ async def test_string_fetch_target_kind_is_normalized_for_query_and_write() -> N
     pending_session = FakeSession(execute_results=[FakeResult(1)])
     assert await _repo(pending_session).try_mark_fetch_pending(target, now=_NOW) is True
 
-    completed_session = FakeSession(execute_results=[FakeResult()])
+    completed_session = FakeSession(execute_results=[FakeResult(value=2)])
     await _repo(completed_session).mark_fetch_succeeded(target, now=_NOW)
-    created = completed_session.added[0]
-    assert isinstance(created, BeatmapFetchStateModel)
-    assert created.target_type == BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID.value
+    statement = completed_session.executed[0]
+    assert isinstance(statement, ClauseElement)
+    compiled = statement.compile(dialect=postgresql.dialect())
+    params = cast("dict[str, object]", compiled.construct_params())
+    assert params["target_type"] == BeatmapFetchTargetKind.METADATA_BY_BEATMAP_ID.value
 
 
 async def test_fetch_pending_marker_uses_atomic_conflict_update() -> None:
@@ -790,7 +1462,7 @@ async def test_get_beatmap_by_checksum_returns_none_when_not_found() -> None:
     Raises:
         AssertionError: 未登録checksumにbeatmapが返される場合.
     """
-    session = FakeSession(execute_results=[FakeResult()])
+    session = FakeSession(execute_results=[FakeResult(value=10)])
 
     result = await _repo(session).get_beatmap_by_checksum("nonexistentchecksum00000000000000")
 
@@ -903,47 +1575,59 @@ async def test_increment_submission_counts_raises_when_beatmap_missing() -> None
 
 
 async def test_mark_fetch_succeeded_transitions_state_to_fresh() -> None:
-    """Fetch成功がpending stateをfreshへ遷移させることを検証する.
+    """Fetch成功がupsertでpending stateをfreshへ遷移させることを検証する.
 
     Returns:
-        None: lifecycle状態, error, 時刻, flush回数をassertして値を返さない.
+        None: lifecycle状態, error, 時刻, upsert文をassertして値を返さない.
 
     Raises:
         AssertionError: fetch成功後のstate遷移または永続化が期待と異なる場合.
     """
     target = BeatmapFetchTarget.metadata_by_beatmap_id(2_000)
-    model = _fetch_state_model(status="pending_fetch")
-    session = FakeSession(execute_results=[FakeResult(model)])
+    session = FakeSession(execute_results=[FakeResult(value=10)])
 
     await _repo(session).mark_fetch_succeeded(target, now=_NOW)
 
-    assert model.status == "fresh"
-    assert model.last_error is None
-    assert model.pending_since is None
-    assert model.last_attempted_at == _NOW
-    assert session.flushes == 1
+    assert len(session.executed) == 1
+    statement = session.executed[0]
+    assert isinstance(statement, ClauseElement)
+    compiled = statement.compile(dialect=postgresql.dialect())
+    statement_text = str(compiled)
+    params = cast("dict[str, object]", compiled.construct_params())
+    assert "ON CONFLICT" in statement_text
+    assert "DO UPDATE" in statement_text
+    assert params["status"] == "fresh"
+    assert params["last_error"] is None
+    assert params["pending_since"] is None
+    assert params["last_attempted_at"] == _NOW
+    assert session.get_calls == [(BeatmapFetchStateModel, 10, True)]
+    assert session.flushes == 0
 
 
 async def test_mark_fetch_failed_records_error_and_transitions_state() -> None:
-    """Fetch失敗がerrorを記録してfailed stateへ遷移させることを検証する.
+    """Fetch失敗がupsertでerrorを記録してfailed stateへ遷移させることを検証する.
 
     Returns:
-        None: lifecycle状態, error reason, 時刻, flush回数をassertして値を返さない.
+        None: lifecycle状態, error reason, 時刻, upsert文をassertして値を返さない.
 
     Raises:
         AssertionError: fetch失敗後のstate遷移またはerror記録が期待と異なる場合.
     """
     target = BeatmapFetchTarget.file_by_beatmap_id(2_000)
-    model = _fetch_state_model(status="pending_fetch")
-    session = FakeSession(execute_results=[FakeResult(model)])
+    session = FakeSession(execute_results=[FakeResult(value=11)])
 
     await _repo(session).mark_fetch_failed(target, reason="timeout", now=_NOW)
 
-    assert model.status == "failed"
-    assert model.last_error == "timeout"
-    assert model.pending_since is None
-    assert model.last_attempted_at == _NOW
-    assert session.flushes == 1
+    statement = session.executed[0]
+    assert isinstance(statement, ClauseElement)
+    compiled = statement.compile(dialect=postgresql.dialect())
+    params = cast("dict[str, object]", compiled.construct_params())
+    assert params["status"] == "failed"
+    assert params["last_error"] == "timeout"
+    assert params["pending_since"] is None
+    assert session.get_calls == [(BeatmapFetchStateModel, 11, True)]
+    assert params["last_attempted_at"] == _NOW
+    assert session.flushes == 0
 
 
 async def test_attach_osu_file_inserts_new_attachment() -> None:
@@ -971,23 +1655,23 @@ async def test_attach_osu_file_inserts_new_attachment() -> None:
     assert len(session.refreshed) == 1
 
 
-async def test_save_new_beatmapset_snapshot_merges_set_and_beatmaps() -> None:
-    """新規beatmapset snapshotがsetとchild beatmapをmergeすることを検証する.
+async def test_save_new_beatmapset_snapshot_stores_set_and_beatmaps() -> None:
+    """新規beatmapset snapshotがsetとchild beatmapを保存対象にすることを検証する.
 
     Returns:
-        None: merged set, child beatmap, flush回数をassertして値を返さない.
+        None: 保存対象set, child beatmap, flush回数をassertして値を返さない.
 
     Raises:
-        AssertionError: snapshot保存でsetまたはchild beatmapがmergeされない場合.
+        AssertionError: snapshot保存でsetまたはchild beatmapが保存対象にならない場合.
     """
     session = FakeSession()
 
     await _repo(session).save_beatmapset_snapshot(_beatmapset_domain(_beatmap_domain()))
 
-    set_models = [m for m in session.merged if isinstance(m, BeatmapSetModel)]
-    beatmap_models = [m for m in session.merged if isinstance(m, BeatmapModel)]
+    set_models = [m for m in session.added if isinstance(m, BeatmapSetModel)]
+    beatmap_models = _stored_beatmap_models(session)
     assert len(set_models) == 1
     assert set_models[0].id == 1_000
     assert len(beatmap_models) == 1
     assert beatmap_models[0].id == 2_000
-    assert session.flushes == 1
+    assert session.flushes == 2

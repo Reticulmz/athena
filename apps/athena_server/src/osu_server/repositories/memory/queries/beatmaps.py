@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from osu_server.domain.beatmaps import DirectCoverageKind
+
 if TYPE_CHECKING:
     from osu_server.domain.beatmaps import (
         Beatmap,
@@ -11,6 +13,8 @@ if TYPE_CHECKING:
         BeatmapFetchTarget,
         BeatmapFileAttachment,
         BeatmapSet,
+        DirectCoverageRecord,
+        DirectCoverageStatusScope,
     )
     from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 
@@ -58,6 +62,25 @@ class InMemoryBeatmapQueryRepository:
         """
         state = self._factory.snapshot()
         return state.beatmapsets_by_id.get(beatmapset_id)
+
+    async def list_beatmapsets_by_ids(
+        self,
+        beatmapset_ids: tuple[int, ...],
+    ) -> tuple[BeatmapSet, ...]:
+        """ID列でBeatmapSetをまとめて取得する.
+
+        Args:
+            beatmapset_ids (tuple[int, ...]): 取得するBeatmapSet ID列.
+
+        Returns:
+            tuple[BeatmapSet, ...]: snapshot内に存在するBeatmapSetを入力順で返す.
+        """
+        state = self._factory.snapshot()
+        return tuple(
+            beatmapset
+            for beatmapset_id in beatmapset_ids
+            if (beatmapset := state.beatmapsets_by_id.get(beatmapset_id)) is not None
+        )
 
     async def get_beatmap_by_checksum(self, checksum_md5: str) -> Beatmap | None:
         """Checksum MD5 の索引から Beatmap を取得する.
@@ -126,3 +149,39 @@ class InMemoryBeatmapQueryRepository:
         """
         state = self._factory.snapshot()
         return state.fetch_states_by_target.get(target)
+
+    async def list_completed_direct_search_coverages(
+        self,
+        status_scopes: tuple[DirectCoverageStatusScope, ...],
+        *,
+        feed_sort_key: str,
+        feed_window_key: str,
+    ) -> tuple[DirectCoverageRecord, ...]:
+        """完了済みのosu!direct検索用coverageを取得する.
+
+        Args:
+            status_scopes (tuple[DirectCoverageStatusScope, ...]): 対象にするstatus scope列.
+            feed_sort_key (str): 検索request由来feed coverageのsort key.
+            feed_window_key (str): 検索request由来feed coverageのwindow key.
+
+        Returns:
+            tuple[DirectCoverageRecord, ...]: snapshot内の完了済みID range coverageと
+            一致feed coverage.
+        """
+        scope_set = set(status_scopes)
+        state = self._factory.snapshot()
+        return tuple(
+            record
+            for record in state.direct_coverage_records_by_scope.values()
+            if record.status_scope in scope_set
+            and record.completed_at is not None
+            and record.failed_at is None
+            and (
+                record.coverage_kind is DirectCoverageKind.ID_RANGE
+                or (
+                    record.coverage_kind is DirectCoverageKind.FEED_WINDOW
+                    and record.sort_key == feed_sort_key
+                    and record.window_key == feed_window_key
+                )
+            )
+        )

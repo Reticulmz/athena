@@ -194,6 +194,9 @@ def test_beatmap_model_metadata_matches_mirror_identity_contract() -> None:
     assert not _column(beatmaps, "official_status").nullable
     assert not _column(beatmaps, "official_status_source").nullable
     assert not _column(beatmaps, "official_status_verified").nullable
+    assert "official_submitted_at" in beatmapsets.columns
+    assert "official_ranked_at" in beatmapsets.columns
+    assert "official_last_updated_at" in beatmapsets.columns
     assert "local_status_override" in beatmaps.columns
     assert "last_fetched_at" in beatmaps.columns
     assert "next_refresh_at" in beatmaps.columns

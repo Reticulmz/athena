@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from osu_server.domain.storage.blobs import BlobStored
     from osu_server.shared.ports import (
         BeatmapLeaderboardRebuildWorkerWake,
+        DirectExternalIndexUpdateWorkerWake,
     )
 
 _NOW = datetime.now(UTC) + timedelta(days=365)
@@ -199,6 +200,51 @@ class FailingLeaderboardRebuildWake:
         raise RuntimeError(msg)
 
 
+class DirectExternalIndexUpdateWakeRecorder:
+    """このdirect external index update通知の呼出を記録するtest double.
+
+    Attributes:
+        calls (list[tuple[int, str]]): beatmapset IDと理由の通知履歴.
+    """
+
+    def __init__(self) -> None:
+        """空のexternal index update通知履歴を初期化する."""
+        self.calls: list[tuple[int, str]] = []
+
+    async def wake_external_index_update(self, *, beatmapset_id: int, reason: str) -> None:
+        """対象beatmapsetのexternal index update通知を記録する.
+
+        Args:
+            beatmapset_id (int): 更新対象beatmapsetの識別子.
+            reason (str): 更新を要求する理由.
+
+        Returns:
+            None: 通知履歴を追加して完了し,呼び出し側へ値を返さない.
+        """
+        self.calls.append((beatmapset_id, reason))
+
+
+class FailingDirectExternalIndexUpdateWake:
+    """このdirect external index update通知の失敗を再現するtest double."""
+
+    async def wake_external_index_update(self, *, beatmapset_id: int, reason: str) -> None:
+        """対象beatmapsetのexternal index update通知後に意図的な失敗を送出する.
+
+        Args:
+            beatmapset_id (int): 更新対象beatmapsetの識別子.
+            reason (str): 更新を要求する理由.
+
+        Returns:
+            None: 処理を完了し,呼び出し側へ値を返さない.
+
+        Raises:
+            RuntimeError: 非同期通知失敗時のmetadata fetch継続処理を検証する場合.
+        """
+        _ = (beatmapset_id, reason)
+        msg = "external index update enqueue failed"
+        raise RuntimeError(msg)
+
+
 # ---------------------------------------------------------------------------
 # Snapshot factory helpers
 # ---------------------------------------------------------------------------
@@ -326,6 +372,7 @@ class TestFetchBeatmapMetadataUseCase:
         official: StubMetadataProvider | None = None,
         mirror: StubMetadataProvider | None = None,
         leaderboard_rebuild_wake: BeatmapLeaderboardRebuildWorkerWake | None = None,
+        direct_external_index_update_wake: DirectExternalIndexUpdateWorkerWake | None = None,
         official_sources_available: bool = True,
     ) -> FetchBeatmapMetadataUseCase:
         """指定依存を持つmetadata fetch use caseを作る.
@@ -336,6 +383,8 @@ class TestFetchBeatmapMetadataUseCase:
                 Noneの場合は空のstubを使う.
             mirror (StubMetadataProvider | None): mirror metadata provider. Noneの場合は空のstub.
             leaderboard_rebuild_wake (BeatmapLeaderboardRebuildWorkerWake | None): 通知先.
+            direct_external_index_update_wake (DirectExternalIndexUpdateWorkerWake | None):
+                direct external index update通知先.
             official_sources_available (bool): official sourceを利用可能として扱うか.
 
         Returns:
@@ -350,6 +399,7 @@ class TestFetchBeatmapMetadataUseCase:
             freshness_policy=_make_freshness_policy(),
             official_sources_available=official_sources_available,
             leaderboard_rebuild_wake=leaderboard_rebuild_wake,
+            direct_external_index_update_wake=direct_external_index_update_wake,
         )
 
     # --- success path --------------------------------------------------------
@@ -396,6 +446,63 @@ class TestFetchBeatmapMetadataUseCase:
         await job.execute(target)
 
         assert wake.beatmapset_calls == []
+
+    async def test_successful_metadata_fetch_wakes_direct_external_index_update_after_commit(
+        self,
+    ) -> None:
+        """Metadata保存成功後にdirect external index update通知を送る契約を検証する.
+
+        official providerがsnapshotを返す条件でmetadata fetchを実行する.
+        保存済みmetadataが読める状態でexternal index update wakeが呼ばれることを確認する.
+
+        Returns:
+            None: 保存結果とexternal index update通知履歴を検証して完了する.
+        """
+        repo = InMemoryBeatmapStore()
+        snapshot = _make_snapshot()
+        wake = DirectExternalIndexUpdateWakeRecorder()
+        official = StubMetadataProvider(by_beatmap_id={2000: snapshot})
+        job = self._make_job(
+            repo,
+            official=official,
+            direct_external_index_update_wake=wake,
+        )
+        target = BeatmapFetchTarget.metadata_by_beatmap_id(2000)
+
+        await job.execute(target)
+
+        saved = await repo.get_beatmapset(snapshot.beatmapset_id)
+        assert saved is not None
+        assert wake.calls == [(snapshot.beatmapset_id, "beatmap_metadata_saved")]
+
+    async def test_direct_external_index_wake_failure_does_not_rollback_metadata_fetch(
+        self,
+    ) -> None:
+        """External index update通知失敗がmetadata fetchをrollbackしない契約を検証する.
+
+        wake gatewayが例外を送出する状態でmetadata fetchを実行する.
+        metadata保存とFRESH fetch stateが維持されることを確認する.
+
+        Returns:
+            None: 保存結果とfetch stateを検証して完了する.
+        """
+        repo = InMemoryBeatmapStore()
+        snapshot = _make_snapshot()
+        official = StubMetadataProvider(by_beatmap_id={2000: snapshot})
+        job = self._make_job(
+            repo,
+            official=official,
+            direct_external_index_update_wake=FailingDirectExternalIndexUpdateWake(),
+        )
+        target = BeatmapFetchTarget.metadata_by_beatmap_id(2000)
+
+        await job.execute(target)
+
+        saved = await repo.get_beatmapset(snapshot.beatmapset_id)
+        assert saved is not None
+        fetch_record = await repo.get_fetch_state(target)
+        assert fetch_record is not None
+        assert fetch_record.status is BeatmapFetchState.FRESH
 
     async def test_status_change_wakes_beatmapset_leaderboard_rebuild_after_commit(self) -> None:
         """対象rank status変更がcommit後のbeatmapset再構築通知になる契約を検証する.
@@ -575,6 +682,36 @@ class TestFetchBeatmapMetadataUseCase:
         fetch_record = await repo.get_fetch_state(target)
         assert fetch_record is not None
         assert fetch_record.status is BeatmapFetchState.FAILED
+
+    async def test_mark_failed_when_snapshot_save_conflicts(self) -> None:
+        """保存時checksum競合を未処理例外にせずFAILED fetch stateへ変換する.
+
+        Returns:
+            None: checksum競合後のfetch stateを検証して完了する.
+        """
+        repo = InMemoryBeatmapStore()
+        initial = _make_snapshot(
+            beatmap_id=2000,
+            beatmapset_id=1000,
+            checksum_md5=_DEFAULT_CHECKSUM,
+        )
+        await repo.save_beatmapset_snapshot(_snapshot_to_beatmapset(initial))
+        conflicting = _make_snapshot(
+            beatmap_id=2001,
+            beatmapset_id=1001,
+            checksum_md5=_DEFAULT_CHECKSUM,
+        )
+        official = StubMetadataProvider(by_beatmap_id={2001: conflicting})
+        job = self._make_job(repo, official=official)
+        target = BeatmapFetchTarget.metadata_by_beatmap_id(2001)
+
+        await job.execute(target)
+
+        fetch_record = await repo.get_fetch_state(target)
+        assert fetch_record is not None
+        assert fetch_record.status is BeatmapFetchState.FAILED
+        assert fetch_record.last_error is not None
+        assert _DEFAULT_CHECKSUM in fetch_record.last_error
 
     # --- idempotency ---------------------------------------------------------
 

@@ -19,6 +19,9 @@ from osu_server.domain.beatmaps import (
     BeatmapRankStatus,
     BeatmapSet,
     BeatmapSourceVerification,
+    DirectExternalIndexBackend,
+    DirectExternalIndexState,
+    DirectExternalIndexStatus,
     LocalBeatmapStatus,
 )
 from osu_server.repositories.interfaces.commands.beatmaps import BeatmapCommandRepository
@@ -27,6 +30,7 @@ from osu_server.repositories.memory.commands.beatmaps import (
     InMemoryBeatmapCommandRepository,
 )
 from osu_server.repositories.memory.commands.state import InMemoryCommandRepositoryState
+from osu_server.repositories.memory.unit_of_work import InMemoryUnitOfWorkFactory
 
 _NOW = datetime(2026, 6, 4, tzinfo=UTC)
 _NEXT_REFRESH = _NOW + timedelta(days=30)
@@ -97,12 +101,18 @@ def _make_beatmap(
 def _make_beatmapset(
     *beatmaps: Beatmap,
     status: BeatmapRankStatus = BeatmapRankStatus.RANKED,
+    official_submitted_at: datetime | None = None,
+    official_ranked_at: datetime | None = None,
+    official_last_updated_at: datetime | None = None,
 ) -> BeatmapSet:
     """指定Beatmap群を持つBeatmapSet snapshot fixtureを構築する.
 
     Args:
         beatmaps (Beatmap): snapshotへ含めるchild Beatmap.
         status (BeatmapRankStatus): BeatmapSetのofficial rank status.
+        official_submitted_at (datetime | None): sourceが報告した投稿日時.
+        official_ranked_at (datetime | None): sourceが報告したranked日時.
+        official_last_updated_at (datetime | None): sourceが報告した更新日時.
 
     Returns:
         BeatmapSet: fixed metadata/timestampsと指定childを持つsnapshot fixture.
@@ -120,6 +130,9 @@ def _make_beatmapset(
         beatmaps=beatmaps,
         last_fetched_at=_NOW,
         next_refresh_at=_NEXT_REFRESH,
+        official_submitted_at=official_submitted_at,
+        official_ranked_at=official_ranked_at,
+        official_last_updated_at=official_last_updated_at,
     )
 
 
@@ -192,6 +205,132 @@ async def test_saves_and_resolves_beatmaps_by_id_set_id_and_checksum() -> None:
     beatmapset = await repo.get_beatmapset(1_000)
     assert beatmapset is not None
     assert beatmapset.beatmaps == (beatmap,)
+
+
+async def test_save_updates_direct_search_projection_state() -> None:
+    """Usableなsnapshot保存がin-memory検索projectionを同じstateに作ることを検証する.
+
+    Returns:
+        None: 検索documentのactive状態とdenormalized fieldをassertして値を返さない.
+
+    Raises:
+        AssertionError: metadata保存と検索projectionが同じstateで更新されない場合.
+    """
+    state = InMemoryCommandRepositoryState()
+    repo = InMemoryBeatmapCommandRepository(state)
+    beatmap = _make_beatmap(official_last_updated_at=_NOW)
+
+    await repo.save_beatmapset_snapshot(_make_beatmapset(beatmap))
+
+    document = state.search_documents_by_beatmapset_id[1_000]
+    assert document.beatmapset_id == 1_000
+    assert document.difficulty_names == "Difficulty 2000"
+    assert document.modes == (BeatmapMode.OSU,)
+    assert document.status is BeatmapRankStatus.RANKED
+    assert document.last_update_at == _NOW
+    assert document.is_active is True
+    assert document.document_version == 1
+
+
+async def test_save_disables_direct_search_projection_for_not_submitted_set() -> None:
+    """Not submitted metadata保存が既知inactive projectionを残すことを検証する.
+
+    Returns:
+        None: inactive documentのstatusとactive flagをassertして値を返さない.
+
+    Raises:
+        AssertionError: not submitted beatmapsetが検索対象として残る場合.
+    """
+    state = InMemoryCommandRepositoryState()
+    repo = InMemoryBeatmapCommandRepository(state)
+
+    await repo.save_beatmapset_snapshot(
+        _make_beatmapset(
+            _make_beatmap(),
+            status=BeatmapRankStatus.NOT_SUBMITTED,
+        )
+    )
+
+    document = state.search_documents_by_beatmapset_id[1_000]
+    assert document.status is BeatmapRankStatus.NOT_SUBMITTED
+    assert document.is_active is False
+    assert document.document_version == 1
+
+
+async def test_list_search_documents_returns_bounded_page_after_beatmapset_id() -> None:
+    """External index rebuild用projection一覧がID順page境界を守ることを検証する.
+
+    複数BeatmapSetを保存し, after_beatmapset_idより大きいprojectionをlimit件だけ返すことを確認する.
+
+    Returns:
+        None: pagination条件とlimit 0の空結果を検証して完了する.
+    """
+    repo = _repo()
+    for beatmapset_id in (1_000, 2_000, 3_000):
+        await repo.save_beatmapset_snapshot(
+            replace(
+                _make_beatmapset(
+                    _make_beatmap(
+                        beatmap_id=beatmapset_id + 100_000,
+                        beatmapset_id=beatmapset_id,
+                        checksum_md5=f"{beatmapset_id:032x}",
+                    )
+                ),
+                id=beatmapset_id,
+            )
+        )
+
+    documents = await repo.list_search_documents(after_beatmapset_id=1_000, limit=1)
+
+    assert [document.beatmapset_id for document in documents] == [2_000]
+    assert await repo.list_search_documents(limit=0) == ()
+
+
+async def test_unit_of_work_commit_publishes_direct_search_projection_state() -> None:
+    """In-memory UoW commitがmetadataと検索projectionを同時に公開することを検証する.
+
+    Returns:
+        None: committed snapshotにmetadataとprojectionが含まれることをassertして値を返さない.
+
+    Raises:
+        AssertionError: UoW commitがprojection stateを反映しない場合.
+    """
+    factory = InMemoryUnitOfWorkFactory()
+
+    async with factory() as uow:
+        await uow.beatmaps.save_beatmapset_snapshot(_make_beatmapset(_make_beatmap()))
+        await uow.commit()
+
+    snapshot = factory.snapshot()
+    assert 1_000 in snapshot.beatmapsets_by_id
+    assert snapshot.search_documents_by_beatmapset_id[1_000].is_active is True
+
+
+async def test_local_status_override_refreshes_direct_search_projection() -> None:
+    """Local status override更新が検索projectionも再構築することを検証する.
+
+    PENDINGとして保存したBeatmapへlocal UNKNOWN overrideを設定する.
+    child更新後のprojectionがeffective status由来のactive判定を反映することを確認する.
+
+    Returns:
+        None: in-memory stateのprojection更新を検証して完了する.
+    """
+    state = InMemoryCommandRepositoryState()
+    repo = InMemoryBeatmapCommandRepository(state)
+    await repo.save_beatmapset_snapshot(
+        _make_beatmapset(
+            _make_beatmap(official_status=BeatmapRankStatus.PENDING),
+            status=BeatmapRankStatus.PENDING,
+        )
+    )
+    previous = state.search_documents_by_beatmapset_id[1_000]
+
+    _ = await repo.set_local_status_override(2_000, LocalBeatmapStatus.UNKNOWN)
+
+    document = state.search_documents_by_beatmapset_id[1_000]
+    assert document.status is BeatmapRankStatus.PENDING
+    assert document.is_active is False
+    assert document.document_version == previous.document_version + 1
 
 
 async def test_save_rejects_checksum_reuse_for_different_beatmap() -> None:
@@ -296,6 +435,34 @@ async def test_official_refresh_preserves_existing_last_updated_when_source_omit
 
     refreshed = await repo.get_beatmap(2_000)
     assert refreshed is not None
+    assert refreshed.official_last_updated_at == official_last_updated_at
+
+
+async def test_official_refresh_preserves_existing_set_dates_when_source_omits_them() -> None:
+    """sourceがset-level日時を省略するofficial refreshが既存公式日時を保持する契約を検証する.
+
+    Returns:
+        None: 投稿,ranked,更新日時がrefresh後も保持されることを確認して完了する.
+    """
+    repo = _repo()
+    official_submitted_at = datetime(2026, 6, 27, 12, 0, tzinfo=UTC)
+    official_ranked_at = datetime(2026, 6, 28, 12, 0, tzinfo=UTC)
+    official_last_updated_at = datetime(2026, 6, 29, 12, 0, tzinfo=UTC)
+    await repo.save_beatmapset_snapshot(
+        _make_beatmapset(
+            _make_beatmap(),
+            official_submitted_at=official_submitted_at,
+            official_ranked_at=official_ranked_at,
+            official_last_updated_at=official_last_updated_at,
+        )
+    )
+
+    await repo.save_beatmapset_snapshot(_make_beatmapset(_make_beatmap()))
+
+    refreshed = await repo.get_beatmapset(1_000)
+    assert refreshed is not None
+    assert refreshed.official_submitted_at == official_submitted_at
+    assert refreshed.official_ranked_at == official_ranked_at
     assert refreshed.official_last_updated_at == official_last_updated_at
 
 
@@ -467,6 +634,47 @@ async def test_failed_fetch_state_is_observable() -> None:
     assert state.status is BeatmapFetchState.FAILED
     assert state.last_error == "timeout"
     assert state.last_attempted_at == _NOW + timedelta(seconds=5)
+
+
+async def test_record_index_state_preserves_last_success_on_failure() -> None:
+    """External index失敗stateが最後の成功時刻を消さないことを検証する.
+
+    成功stateを保存した後にlast_succeeded_atなしの失敗stateを保存する.
+    同じbackend/documentのlast_succeeded_atが成功時刻のまま残ることを確認する.
+
+    Returns:
+        None: in-memory external index stateのsuccess timestamp保持を検証する.
+    """
+    state = InMemoryCommandRepositoryState()
+    repo = InMemoryBeatmapCommandRepository(state)
+    key = (DirectExternalIndexBackend.MEILISEARCH, 1_000)
+    succeeded_at = _NOW
+
+    await repo.record_index_state(
+        DirectExternalIndexState(
+            backend=DirectExternalIndexBackend.MEILISEARCH,
+            beatmapset_id=1_000,
+            document_version=1,
+            status=DirectExternalIndexStatus.SUCCEEDED,
+            last_attempted_at=succeeded_at,
+            last_succeeded_at=succeeded_at,
+            failure_reason=None,
+        )
+    )
+    await repo.record_index_state(
+        DirectExternalIndexState(
+            backend=DirectExternalIndexBackend.MEILISEARCH,
+            beatmapset_id=1_000,
+            document_version=1,
+            status=DirectExternalIndexStatus.FAILED,
+            last_attempted_at=succeeded_at + timedelta(seconds=1),
+            last_succeeded_at=None,
+            failure_reason="RuntimeError: external index update failed",
+        )
+    )
+
+    assert state.external_index_states_by_key[key].last_succeeded_at == succeeded_at
+    assert state.external_index_states_by_key[key].status is DirectExternalIndexStatus.FAILED
 
 
 # ---------------------------------------------------------------------------

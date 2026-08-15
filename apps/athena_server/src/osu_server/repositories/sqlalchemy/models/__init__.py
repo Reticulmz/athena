@@ -4,6 +4,8 @@
 """
 
 from osu_server.repositories.sqlalchemy.models.beatmap import (
+    BeatmapDirectCoverageModel,
+    BeatmapDirectExternalIndexStateModel,
     BeatmapFetchStateModel,
     BeatmapFileAttachmentModel,
     BeatmapModel,
@@ -42,6 +44,8 @@ from osu_server.repositories.sqlalchemy.models.user_stats import (
 )
 
 __all__ = [
+    "BeatmapDirectCoverageModel",
+    "BeatmapDirectExternalIndexStateModel",
     "BeatmapFetchStateModel",
     "BeatmapFileAttachmentModel",
     "BeatmapLeaderboardUserBestModel",

@@ -108,16 +108,12 @@
               "  quality:",
               "  test:",
               "  build:",
-              "  migration:",
               "  nix:",
-              "  audit:",
               "run: just quality",
               "run: just db-migrate",
               "run: just test",
               "run: just build",
-              "run: just migration-check",
-              "run: nix flake check",
-              "run: just audit-monorepo"
+              "run: nix flake check"
             ],
             "forbidden_fragments": [
               "scripts/ci.sh",
@@ -182,13 +178,19 @@
       "task_names": [
         "account_replay_download",
         "calculate_score_performance",
+        "crawl_osu_direct_id_range",
         "fetch_beatmap_file",
         "fetch_beatmap_metadata",
+        "fetch_osu_direct_point_lookup_metadata",
         "persist_channel_message",
         "persist_private_message",
         "process_performance_recalculation_batch",
         "rebuild_beatmap_leaderboards_for_beatmapset",
-        "rebuild_beatmap_leaderboards_for_user"
+        "rebuild_beatmap_leaderboards_for_user",
+        "rebuild_osu_direct_external_index",
+        "rebuild_osu_direct_search_projection",
+        "sync_osu_direct_feed_window",
+        "update_osu_direct_external_index"
       ]
     },
     "cli": {
@@ -250,6 +252,8 @@
     "config": "alembic.ini",
     "versions_directory": "alembic/versions",
     "revision_chain": [
+      "20260815_0100",
+      "20260809_0100",
       "20260713_0700",
       "20260713_0600",
       "20260712_0500",
@@ -275,8 +279,8 @@
       "20260525_2100",
       "20260522_0811"
     ],
-    "head": "20260713_0700",
-    "current_at_head": "20260713_0700"
+    "head": "20260815_0100",
+    "current_at_head": "20260815_0100"
   },
   "builds": {
     "server": {
@@ -450,14 +454,16 @@
         "httpx>=0.28.1",
         "python-multipart>=0.0.29",
         "structlog>=25.5.0",
-        "taskiq>=0.11",
+        "taskiq[reload]>=0.11",
         "taskiq-redis>=1.0",
         "typer>=0.26.7",
         "inquirerpy>=0.3.4",
         "athena-crypto",
         "dishka",
         "starlette-dishka",
-        "rosu-pp-py==4.0.2"
+        "rosu-pp-py==4.0.2",
+        "sqlalchemy-paradedb==0.10.0",
+        "meilisearch-python-sdk>=7.4.1"
       ],
       "crypto_cargo_manifest": "athena-crypto/Cargo.toml",
       "crypto_cargo_dependencies": ["pyo3", "simple-rijndael"],

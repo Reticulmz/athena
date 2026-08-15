@@ -76,9 +76,69 @@ def _checked_string_enum(
     )
 
 
+def _checked_string_values(
+    *values: str,
+    constraint_name: str,
+    length: int,
+) -> SQLAlchemyEnum:
+    """固定文字列値からCHECK constraint付きSQLAlchemy Enumを生成する.
+
+    Args:
+        *values (str): 保存可能な閉集合の文字列値.
+        constraint_name (str): 生成するCHECK constraintの永続名.
+        length (int): 保存する文字列columnの最大長.
+
+    Returns:
+        SQLAlchemyEnum: native enumを使わず文字列値を検証するcolumn type.
+
+    Notes:
+        このhelperはdomain value objectが後続taskで追加されるschema先行tableだけに使う.
+    """
+    return SQLAlchemyEnum(
+        *values,
+        name=constraint_name,
+        native_enum=False,
+        create_constraint=True,
+        validate_strings=True,
+        length=length,
+    )
+
+
 BEATMAP_FETCH_STATE_ENUM = _checked_string_enum(
     BeatmapFetchState,
     constraint_name="ck_beatmap_fetch_states_status_known",
+    length=32,
+)
+BEATMAP_DIRECT_COVERAGE_KIND_ENUM = _checked_string_values(
+    "feed_window",
+    "id_range",
+    constraint_name="ck_beatmap_direct_coverage_kind_known",
+    length=16,
+)
+BEATMAP_DIRECT_EXTERNAL_INDEX_BACKEND_ENUM = _checked_string_values(
+    "meilisearch",
+    constraint_name="ck_beatmap_direct_external_index_state_backend_known",
+    length=32,
+)
+BEATMAP_DIRECT_EXTERNAL_INDEX_STATUS_ENUM = _checked_string_values(
+    "pending",
+    "succeeded",
+    "failed",
+    constraint_name="ck_beatmap_direct_external_index_state_status_known",
+    length=16,
+)
+BEATMAP_DIRECT_STATUS_SCOPE_ENUM = _checked_string_values(
+    "all",
+    "ranked",
+    "approved",
+    "loved",
+    "qualified",
+    "pending",
+    "wip",
+    "graveyard",
+    "not_submitted",
+    "unknown",
+    constraint_name="ck_beatmap_direct_coverage_status_scope_known",
     length=32,
 )
 BEATMAP_FETCH_TARGET_KIND_ENUM = _checked_string_enum(

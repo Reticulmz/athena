@@ -591,7 +591,7 @@ class TestBeatmapMirrorServiceApiBoundary:
     def test_public_methods_are_only_resolve_operations(self) -> None:
         """Service公開APIが解決操作だけを提供する境界契約を検証する.
 
-        BeatmapMirrorServiceのpublic callable名を収集し,3種のresolve操作だけを公開して,
+        BeatmapMirrorServiceのpublic callable名を収集し,4種のresolve操作だけを公開して,
         score処理やqueue操作を公開しないことを確認する.
 
         Returns:
@@ -602,6 +602,7 @@ class TestBeatmapMirrorServiceApiBoundary:
             "resolve_by_beatmap_id",
             "resolve_by_beatmapset_id",
             "resolve_by_checksum",
+            "resolve_known_beatmap",
         }
         # Service should not expose methods for score submission, PP, leaderboard
         forbidden = {

@@ -240,6 +240,7 @@ def test_command_repository_contracts_include_mutations_and_consistency_checks()
     }
     assert _public_async_methods(BeatmapCommandRepository) >= {
         "save_beatmapset_snapshot",
+        "save_beatmapset_snapshot_returning_previous",
         "set_local_status_override",
         "increment_submission_counts",
         "try_mark_fetch_pending",

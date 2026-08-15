@@ -695,19 +695,19 @@ class TestUpdateAvailableBody:
 
 
 class TestShortResponseFailureInvariance:
-    """preparationまたはwarmup例外後も選択済みshort responseを維持することを検証する."""
+    """不要なpreparation省略とwarmup例外後のshort response維持を検証する."""
 
-    def test_metadata_preparation_exception_preserves_update_shape(
+    def test_update_candidate_skips_metadata_preparation_after_local_resolution(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Metadata preparation例外後もcanonical update responseを返すことを検証する.
+        """Local update candidateがmetadata preparationなしで応答することを検証する.
 
         Args:
-            monkeypatch (pytest.MonkeyPatch): public resolver methodを一時置換するfixture.
+            monkeypatch (pytest.MonkeyPatch): 不要なmetadata preparationを検出するfixture.
 
         Returns:
-            None: 選択済みupdate shapeが例外で置換されないことを確認して完了する.
+            None: update shapeとmetadata preparation未実行を確認して完了する.
 
         Raises:
             AssertionError: runtime responseがcanonical update fixtureと異なる場合.
@@ -767,7 +767,7 @@ class TestShortResponseFailureInvariance:
                 )
 
         _assert_getscores_contract_response(response, case.expected_shape_id)
-        assert len(metadata_calls) == 1
+        assert metadata_calls == []
 
     def test_warmup_exception_preserves_unavailable_shape(
         self,

@@ -110,6 +110,7 @@ class BeatmapHttpClient(Protocol):
         *,
         source: str,
         lookup_key: str,
+        headers: Mapping[str, str] | None = None,
     ) -> HttpFetchResult:
         """URL からバイト列を取得します.
 
@@ -117,6 +118,7 @@ class BeatmapHttpClient(Protocol):
             url (str): 取得対象 URL です.
             source (str): error と log に使う取得元 label です.
             lookup_key (str): error と log に使う検索 key です.
+            headers (Mapping[str, str] | None): request に追加する HTTP header です.
 
         Returns:
             HttpFetchResult: 取得した body と filename metadata です.
@@ -133,6 +135,7 @@ class BeatmapHttpClient(Protocol):
         *,
         source: str,
         lookup_key: str,
+        headers: Mapping[str, str] | None = None,
     ) -> dict[str, object] | list[object]:
         """URL から JSON を取得します.
 
@@ -140,6 +143,7 @@ class BeatmapHttpClient(Protocol):
             url (str): 取得対象 URL です.
             source (str): error と log に使う取得元 label です.
             lookup_key (str): error と log に使う検索 key です.
+            headers (Mapping[str, str] | None): request に追加する HTTP header です.
 
         Returns:
             dict[str, object] | list[object]: JSON object または array です.

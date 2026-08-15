@@ -2,24 +2,43 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
+import httpx
 import pytest
 import structlog
 from taskiq import Context, InMemoryBroker, TaskiqMessage, TaskiqState
 
 import osu_server.worker as worker_module
 from osu_server.composition.providers.container import make_worker_container
-from osu_server.composition.providers.test import make_in_memory_runtime_provider_set
+from osu_server.composition.providers.test import (
+    TestProviderSet,
+    make_in_memory_runtime_provider_set,
+    replace_value,
+)
 from osu_server.config import AppConfig
 from osu_server.jobs.chat_persistence import persist_private_message
+from osu_server.jobs.osu_direct import (
+    crawl_osu_direct_id_range,
+    rebuild_osu_direct_external_index,
+    rebuild_osu_direct_search_projection,
+    sync_osu_direct_feed_window,
+    update_osu_direct_external_index,
+)
 from osu_server.services.commands.beatmaps import (
     FetchBeatmapFileUseCase,
     FetchBeatmapMetadataUseCase,
 )
+from osu_server.services.commands.beatmaps.direct_catalog_sync import (
+    DirectCatalogScheduler,
+    DirectFeedSync,
+    DirectRangeCrawl,
+)
+from osu_server.services.commands.beatmaps.direct_indexing import DirectIndexingCommands
 from osu_server.services.commands.chat import (
     PersistChannelMessageUseCase,
     PersistPrivateMessageUseCase,
@@ -44,7 +63,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Iterator
     from pathlib import Path
 
-    from dishka import AsyncContainer
+    from dishka import AsyncContainer, Provider
 
     from osu_server.domain.beatmaps import BeatmapFetchTarget
 
@@ -150,11 +169,18 @@ class FakeBeatmapFetchUseCase:
         self.calls.append(target)
 
 
-def _make_config(tmp_path: Path) -> AppConfig:
+def _make_config(
+    tmp_path: Path,
+    *,
+    beatmap_official_sources_enabled: bool = False,
+    beatmap_metadata_mirror_base_urls: list[str] | None = None,
+) -> AppConfig:
     """Worker startupをin-memoryで実行する最小AppConfigを生成する.
 
     Args:
         tmp_path (Path): logとblob storageを隔離するtest専用directory.
+        beatmap_official_sources_enabled (bool): 公式metadata sourceを有効にするか.
+        beatmap_metadata_mirror_base_urls (list[str] | None): metadata mirror URL一覧.
 
     Returns:
         AppConfig: test environmentとlocal storage pathを持つ設定値.
@@ -166,6 +192,10 @@ def _make_config(tmp_path: Path) -> AppConfig:
             "environment": "test",
             "log_dir": str(tmp_path),
             "blob_storage_local_root": str(tmp_path / "blobs"),
+            "beatmap_official_sources_enabled": beatmap_official_sources_enabled,
+            "beatmap_official_api_client_id": "test-client-id",
+            "beatmap_official_api_client_secret": "test-client-secret",
+            "beatmap_metadata_mirror_base_urls": beatmap_metadata_mirror_base_urls or [],
         }
     )
 
@@ -175,6 +205,7 @@ def _install_in_memory_worker_container(
     *,
     tmp_path: Path,
     config: AppConfig,
+    extra_overrides: tuple[Provider, ...] = (),
 ) -> None:
     """Worker moduleへin-memory Dishka container factoryを接続する.
 
@@ -182,6 +213,7 @@ def _install_in_memory_worker_container(
         monkeypatch (pytest.MonkeyPatch): worker moduleの設定とfactoryを置換するfixture.
         tmp_path (Path): in-memory blob storageのrootに使うtest専用directory.
         config (AppConfig): worker startupに渡すtest設定.
+        extra_overrides (tuple[Provider, ...]): test個別に追加するDishka provider override.
 
     Returns:
         None: module依存を差し替えて完了し,呼び出し側へ値を返さない.
@@ -202,6 +234,7 @@ def _install_in_memory_worker_container(
                 make_in_memory_runtime_provider_set(
                     blob_root=tmp_path / "blobs",
                 ),
+                *extra_overrides,
             ),
         )
 
@@ -227,6 +260,29 @@ def _make_task_context(private_message_use_case: object) -> Context:
     message = TaskiqMessage(
         task_id="worker-test-id",
         task_name="persist_private_message",
+        labels={},
+        args=[],
+        kwargs={},
+    )
+    return Context(message, broker)
+
+
+def _make_osu_direct_task_context(state: TaskiqState) -> Context:
+    """Worker startup済みstateからosu!direct task用Contextを生成する.
+
+    Args:
+        state (TaskiqState): osu!direct use-caseを保持するworker lifecycle state.
+
+    Returns:
+        Context: osu!direct job adapterがruntime dependencyを取得できるtask context.
+    """
+    broker = InMemoryBroker()
+    broker.state.osu_direct_feed_sync = _state_osu_direct_feed_sync(state)
+    broker.state.osu_direct_range_crawl = _state_osu_direct_range_crawl(state)
+    broker.state.osu_direct_indexing_commands = _state_osu_direct_indexing_commands(state)
+    message = TaskiqMessage(
+        task_id="worker-osu-direct-test-id",
+        task_name="osu_direct_worker_test",
         labels={},
         args=[],
         kwargs={},
@@ -359,6 +415,66 @@ def _state_replay_download_accounting_executor(state: TaskiqState) -> object | N
     return cast("object | None", getattr(state, "replay_download_accounting_executor", None))
 
 
+def _state_osu_direct_feed_sync(state: TaskiqState) -> object | None:
+    """Taskiq stateからosu!direct feed sync use caseを取得する.
+
+    Args:
+        state (TaskiqState): lifecycle dependencyを保持するbroker state.
+
+    Returns:
+        object | None: 解決済みfeed sync use case. 未設定時はNone.
+    """
+    return cast("object | None", getattr(state, "osu_direct_feed_sync", None))
+
+
+def _state_osu_direct_range_crawl(state: TaskiqState) -> object | None:
+    """Taskiq stateからosu!direct range crawl use caseを取得する.
+
+    Args:
+        state (TaskiqState): lifecycle dependencyを保持するbroker state.
+
+    Returns:
+        object | None: 解決済みrange crawl use case. 未設定時はNone.
+    """
+    return cast("object | None", getattr(state, "osu_direct_range_crawl", None))
+
+
+def _state_osu_direct_indexing_commands(state: TaskiqState) -> object | None:
+    """Taskiq stateからosu!direct indexing commandを取得する.
+
+    Args:
+        state (TaskiqState): lifecycle dependencyを保持するbroker state.
+
+    Returns:
+        object | None: 解決済みindexing command. 未設定時はNone.
+    """
+    return cast("object | None", getattr(state, "osu_direct_indexing_commands", None))
+
+
+def _state_osu_direct_catalog_scheduler(state: TaskiqState) -> object | None:
+    """Taskiq stateからosu!direct catalog schedulerを取得する.
+
+    Args:
+        state (TaskiqState): lifecycle dependencyを保持するbroker state.
+
+    Returns:
+        object | None: 解決済みcatalog scheduler. 未設定時はNone.
+    """
+    return cast("object | None", getattr(state, "osu_direct_catalog_scheduler", None))
+
+
+def _state_osu_direct_point_lookup_request_count(state: TaskiqState) -> int | None:
+    """Taskiq stateからpoint lookupの最大upstream request数を取得する.
+
+    Args:
+        state (TaskiqState): lifecycle dependencyを保持するbroker state.
+
+    Returns:
+        int | None: 設定済み最大request数. 未設定時はNone.
+    """
+    return cast("int | None", getattr(state, "osu_direct_point_lookup_request_count", None))
+
+
 async def _run_startup(state: TaskiqState) -> None:
     """型付きstartup hookをTaskiq stateで実行する.
 
@@ -443,6 +559,7 @@ async def test_worker_startup_configures_logging(
     parsed = cast("dict[str, object]", json.loads(content.split("\n")[-1]))
     assert parsed["event"] == "worker_test_event"
     assert parsed["password"] == "***"
+    assert parsed["runtime_role"] == "worker"
 
 
 @pytest.mark.asyncio
@@ -463,7 +580,13 @@ async def test_worker_startup_sets_task_use_cases_from_dishka_container(
         None: lifecycle stateの全dependencyを検証して完了し,呼び出し側へ値を返さない.
     """
     state = TaskiqState()
-    config = _make_config(tmp_path)
+    config = _make_config(
+        tmp_path,
+        beatmap_metadata_mirror_base_urls=[
+            "https://mirror-one.example.com",
+            "https://mirror-two.example.com",
+        ],
+    )
     _install_in_memory_worker_container(monkeypatch, tmp_path=tmp_path, config=config)
 
     await _run_startup(state)
@@ -478,6 +601,10 @@ async def test_worker_startup_sets_task_use_cases_from_dishka_container(
             PersistPrivateMessageUseCase,
         )
         assert isinstance(_state_beatmap_metadata_fetch(state), FetchBeatmapMetadataUseCase)
+        assert isinstance(
+            getattr(state, "beatmap_metadata_fetch_semaphore", None),
+            asyncio.Semaphore,
+        )
         assert isinstance(_state_beatmap_file_fetch(state), FetchBeatmapFileUseCase)
         assert isinstance(
             _state_score_performance_calculation_executor(state),
@@ -499,6 +626,11 @@ async def test_worker_startup_sets_task_use_cases_from_dishka_container(
             _state_replay_download_accounting_executor(state),
             ReplayDownloadAccountingUseCase,
         )
+        assert isinstance(_state_osu_direct_feed_sync(state), DirectFeedSync)
+        assert isinstance(_state_osu_direct_range_crawl(state), DirectRangeCrawl)
+        assert isinstance(_state_osu_direct_indexing_commands(state), DirectIndexingCommands)
+        assert isinstance(_state_osu_direct_catalog_scheduler(state), DirectCatalogScheduler)
+        assert _state_osu_direct_point_lookup_request_count(state) == 4
     finally:
         await _run_shutdown(state)
 
@@ -550,11 +682,17 @@ async def test_worker_startup_failure_closes_dishka_container(
     assert _state_persist_channel_message_use_case(state) is None
     assert _state_persist_private_message_use_case(state) is None
     assert _state_beatmap_metadata_fetch(state) is None
+    assert getattr(state, "beatmap_metadata_fetch_semaphore", None) is None
     assert _state_beatmap_file_fetch(state) is None
     assert _state_score_performance_calculation_executor(state) is None
     assert _state_performance_recalculation_batch_processor(state) is None
     assert _state_beatmap_leaderboard_user_rebuild_use_case(state) is None
     assert _state_beatmap_leaderboard_beatmapset_rebuild_use_case(state) is None
+    assert _state_osu_direct_feed_sync(state) is None
+    assert _state_osu_direct_range_crawl(state) is None
+    assert _state_osu_direct_indexing_commands(state) is None
+    assert _state_osu_direct_catalog_scheduler(state) is None
+    assert _state_osu_direct_point_lookup_request_count(state) is None
     assert _state_replay_download_accounting_executor(state) is None
     assert failing_container.close_calls == 1
 
@@ -606,6 +744,91 @@ async def test_worker_runtime_chat_use_case_executes_persistence_task(
 
 
 @pytest.mark.asyncio
+async def test_worker_runtime_osu_direct_catalog_and_index_tasks_execute(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Worker stateのosu!direct use caseがqueue taskから実行できる契約を検証する.
+
+    in-memory workerをstartupし,公式feedだけをMockTransportで応答させる.
+    catalog sync/crawlとindex rebuild/update taskがmissing runtimeで落ちないことを確認する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): worker moduleのruntime dependencyを差し替えるfixture.
+        tmp_path (Path): in-memory storageを隔離するtest専用directory.
+
+    Returns:
+        None: direct catalog/index taskをworker state経由で実行して完了する.
+    """
+    request_count = 0
+    search_requests = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """公式OAuthとbeatmapset searchのmock responseを返す.
+
+        Args:
+            request (httpx.Request): MockTransport handlerへ渡されるHTTP request.
+
+        Returns:
+            httpx.Response: tokenまたは空feed response.
+        """
+        nonlocal request_count, search_requests
+        request_count += 1
+        if request_count == 1:
+            return httpx.Response(
+                200,
+                json={"access_token": "mock-access-token", "expires_in": 3600},
+                request=request,
+            )
+        search_requests += 1
+        return httpx.Response(
+            200,
+            json={"beatmapsets": [], "cursor_string": None, "total": 0},
+            request=request,
+        )
+
+    state = TaskiqState()
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    config = _make_config(tmp_path, beatmap_official_sources_enabled=True)
+    _install_in_memory_worker_container(
+        monkeypatch,
+        tmp_path=tmp_path,
+        config=config,
+        extra_overrides=(TestProviderSet(replace_value(httpx.AsyncClient, http_client)),),
+    )
+
+    started = False
+    try:
+        await _run_startup(state)
+        started = True
+        context = _make_osu_direct_task_context(state)
+
+        await sync_osu_direct_feed_window(
+            source="official",
+            status_scope="ranked",
+            sort_key="ranked",
+            window_key="1",
+            context=context,
+        )
+        await crawl_osu_direct_id_range(
+            source="mirror",
+            status_scope="ranked",
+            from_beatmapset_id=1,
+            to_beatmapset_id=1,
+            context=context,
+        )
+        await rebuild_osu_direct_search_projection(context=context)
+        await rebuild_osu_direct_external_index(context=context)
+        await update_osu_direct_external_index(beatmapset_id=1, context=context)
+
+        assert search_requests == 1
+    finally:
+        if started:
+            await _run_shutdown(state)
+        await http_client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_worker_shutdown_clears_runtime_state() -> None:
     """Worker shutdownが全runtime stateをclearしてcontainerをcloseする契約を検証する.
 
@@ -621,11 +844,17 @@ async def test_worker_shutdown_clears_runtime_state() -> None:
     state.persist_channel_message_use_case = object()
     state.persist_private_message_use_case = object()
     state.beatmap_metadata_fetch = object()
+    state.beatmap_metadata_fetch_semaphore = object()
     state.beatmap_file_fetch = object()
     state.score_performance_calculation_executor = object()
     state.performance_recalculation_batch_processor = object()
     state.beatmap_leaderboard_user_rebuild_use_case = object()
     state.beatmap_leaderboard_beatmapset_rebuild_use_case = object()
+    state.osu_direct_feed_sync = object()
+    state.osu_direct_range_crawl = object()
+    state.osu_direct_indexing_commands = object()
+    state.osu_direct_catalog_scheduler = object()
+    state.osu_direct_point_lookup_request_count = 4
     state.replay_download_accounting_executor = object()
 
     await _run_shutdown(state)
@@ -634,10 +863,16 @@ async def test_worker_shutdown_clears_runtime_state() -> None:
     assert _state_persist_channel_message_use_case(state) is None
     assert _state_persist_private_message_use_case(state) is None
     assert _state_beatmap_metadata_fetch(state) is None
+    assert getattr(state, "beatmap_metadata_fetch_semaphore", None) is None
     assert _state_beatmap_file_fetch(state) is None
     assert _state_score_performance_calculation_executor(state) is None
     assert _state_performance_recalculation_batch_processor(state) is None
     assert _state_beatmap_leaderboard_user_rebuild_use_case(state) is None
     assert _state_beatmap_leaderboard_beatmapset_rebuild_use_case(state) is None
+    assert _state_osu_direct_feed_sync(state) is None
+    assert _state_osu_direct_range_crawl(state) is None
+    assert _state_osu_direct_indexing_commands(state) is None
+    assert _state_osu_direct_catalog_scheduler(state) is None
+    assert _state_osu_direct_point_lookup_request_count(state) is None
     assert _state_replay_download_accounting_executor(state) is None
     assert dishka_container.close_calls == 1

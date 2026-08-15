@@ -11,7 +11,11 @@ from taskiq import AsyncBroker, InMemoryBroker
 from osu_server.composition.providers.repository_adapters import (
     InMemoryRepositoryAdapterFamily,
 )
-from osu_server.domain.beatmaps import BeatmapMetadataProvider
+from osu_server.domain.beatmaps import (
+    BeatmapMetadataProvider,
+    DirectSearchBackend,
+    DirectSearchBackendResult,
+)
 from osu_server.infrastructure.beatmaps import InMemoryBeatmapMetadataProvider
 from osu_server.infrastructure.security.hibp import HIBPClient
 from osu_server.infrastructure.state.interfaces.channel_state_store import ChannelStateStore
@@ -47,6 +51,8 @@ from osu_server.repositories.memory.session_store import InMemorySessionStore
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
+
+    from osu_server.domain.beatmaps import DirectSearchRequest
 
 T_co = TypeVar("T_co", covariant=True)
 
@@ -174,6 +180,29 @@ class PassingHIBPClient:
         return False
 
 
+class InMemoryDirectSearchBackend:
+    """In-memory test graph用のdirect search backendを提供する."""
+
+    async def search(self, request: DirectSearchRequest) -> DirectSearchBackendResult:
+        """外部SQL searchを使わず空のdirect search候補を返す.
+
+        Args:
+            request (DirectSearchRequest): direct search queryから渡された検索条件.
+
+        Returns:
+            DirectSearchBackendResult: in-memory graph用の空検索結果.
+        """
+        _ = request
+        return DirectSearchBackendResult(candidates=(), has_more=False)
+
+    async def validate(self) -> None:
+        """In-memory backendがstartup検証を通過できることを示す.
+
+        Returns:
+            None: 外部DB検証を行わずに完了する.
+        """
+
+
 def make_in_memory_runtime_provider_set(
     *,
     blob_root: str | Path = ".data/test-blobs",
@@ -229,5 +258,9 @@ def make_in_memory_runtime_provider_set(
         replace_value(
             BeatmapMetadataProvider,
             InMemoryBeatmapMetadataProvider(),
+        ),
+        replace_value(
+            DirectSearchBackend,
+            InMemoryDirectSearchBackend(),
         ),
     )

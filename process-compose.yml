@@ -16,6 +16,15 @@ processes:
         printf "unix_socket_directories = '%s'\n" "$PGDATA" >> "$PGDATA/postgresql.conf"
         printf "port = %s\n" "$PGPORT" >> "$PGDATA/postgresql.conf"
       fi
+      if ! grep -Eq "^[[:space:]]*shared_preload_libraries[[:space:]]*=.*pg_search" "$PGDATA/postgresql.conf"; then
+        existing_libraries="$(sed -n "s/^[[:space:]]*shared_preload_libraries[[:space:]]*=[[:space:]]*'\([^']*\)'.*/\1/p" "$PGDATA/postgresql.conf" | tail -n1)"
+        if [ -n "$existing_libraries" ]; then
+          sed -i "/^[[:space:]]*shared_preload_libraries[[:space:]]*=/d" "$PGDATA/postgresql.conf"
+          printf "shared_preload_libraries = '%s,pg_search'\n" "$existing_libraries" >> "$PGDATA/postgresql.conf"
+        else
+          printf "shared_preload_libraries = 'pg_search'\n" >> "$PGDATA/postgresql.conf"
+        fi
+      fi
       exec postgres -D "$PGDATA"
     readiness_probe:
       exec:
@@ -85,22 +94,17 @@ processes:
         condition: process_completed_successfully
       valkey:
         condition: process_healthy
-    readiness_probe:
-      exec:
-        command: >-
-          python -c 'import sys; from urllib.request import urlopen;
-          response = urlopen(sys.argv[1], timeout=2); response.close()'
-          "http://127.0.0.1:${SERVER_PORT:-8000}/health"
-      # Development StatReloadの初回起動をprobe failureとして扱わないgrace period.
-      initial_delay_seconds: 15
-      period_seconds: 2
     shutdown:
       signal: 15
       timeout_seconds: 30
 
   worker:
     # uv wrapperを置き換え、Taskiqが停止signalを直接受け取る.
-    command: exec uv run --directory apps/athena_server taskiq worker osu_server.worker:broker
+    command: >-
+      exec uv run --directory apps/athena_server taskiq worker
+      --reload
+      --reload-dir src
+      osu_server.worker:broker
     depends_on:
       postgres:
         condition: process_healthy

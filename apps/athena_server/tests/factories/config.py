@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from pydantic import PostgresDsn, RedisDsn
 
-from osu_server.config import AppConfig, validate_environment_name
+from osu_server.config import (
+    AppConfig,
+    OsuDirectAccessPolicy,
+    OsuDirectCatalogPriorityPolicy,
+    OsuDirectExternalIndexBackend,
+    OsuDirectSearchBackend,
+    OsuDirectUpstreamSearchProvider,
+    validate_environment_name,
+)
 
 _DEFAULT_DATABASE_URL = "postgresql+asyncpg://user:pass@localhost/osu"
 _DEFAULT_VALKEY_URL = "redis://localhost:6379/0"
@@ -13,7 +21,11 @@ _DEFAULT_VALKEY_URL = "redis://localhost:6379/0"
 def make_app_config(
     *,
     database_url: str | PostgresDsn = _DEFAULT_DATABASE_URL,
+    database_pool_size: int = 5,
+    database_max_overflow: int = 10,
+    database_pool_timeout_seconds: float = 30.0,
     valkey_url: str | RedisDsn = _DEFAULT_VALKEY_URL,
+    beatmap_metadata_fetch_max_concurrency: int = 4,
     environment: str = "development",
     server_host: str = "0.0.0.0",
     server_port: int = 8000,
@@ -51,12 +63,40 @@ def make_app_config(
     beatmap_mirror_refresh_interval_seconds: int = 86_400,
     beatmap_default_bounded_wait_seconds: float = 3.0,
     beatmap_max_bounded_wait_seconds: float = 3.0,
+    osu_direct_access_policy: OsuDirectAccessPolicy = "authenticated",
+    osu_direct_search_backend: OsuDirectSearchBackend = "auto",
+    osu_direct_validate_search_backend_on_startup: bool = True,
+    osu_direct_external_index_backend: OsuDirectExternalIndexBackend = "disabled",
+    osu_direct_meilisearch_url: str | None = None,
+    osu_direct_meilisearch_access_key: str | None = None,
+    osu_direct_meilisearch_index_name: str = "athena_osu_direct_beatmapsets",
+    osu_direct_upstream_search_enabled: bool = True,
+    osu_direct_upstream_search_providers: list[OsuDirectUpstreamSearchProvider] | None = None,
+    osu_direct_upstream_search_wait_seconds: float = 5.0,
+    osu_direct_upstream_search_first_page_refresh_seconds: float = 300.0,
+    osu_direct_hinamizawa_search_url: str = ("https://mirror.hinamizawa.ai/api/v1/hinai/search"),
+    osu_direct_nerinyan_search_url: str = "https://api.nerinyan.moe/v2/search",
+    osu_direct_point_lookup_bounded_wait_seconds: float = 5.0,
+    osu_direct_ranked_sync_interval_seconds: int = 86_400,
+    osu_direct_approved_sync_interval_seconds: int = 86_400,
+    osu_direct_loved_sync_interval_seconds: int = 86_400,
+    osu_direct_qualified_sync_interval_seconds: int = 86_400,
+    osu_direct_pending_sync_interval_seconds: int = 86_400,
+    osu_direct_wip_sync_interval_seconds: int = 86_400,
+    osu_direct_graveyard_sync_interval_seconds: int = 86_400,
+    osu_direct_not_submitted_sync_interval_seconds: int = 86_400,
+    osu_direct_shared_upstream_budget_per_minute: int = 60,
+    osu_direct_catalog_priority_policy: OsuDirectCatalogPriorityPolicy = "point_lookup_first",
 ) -> AppConfig:
     """指定値またはtest default値からAppConfigを作る.
 
     Args:
         database_url (str | PostgresDsn): PostgreSQL接続URL.
+        database_pool_size (int): 通常時に保持するSQLAlchemy DB connection数.
+        database_max_overflow (int): pool size超過時に許可する一時connection数.
+        database_pool_timeout_seconds (float): DB connection取得を待つ最大秒数.
         valkey_url (str | RedisDsn): Valkey接続URL.
+        beatmap_metadata_fetch_max_concurrency (int): worker内metadata fetch同時実行数.
         environment (str): 実行environment名.
         server_host (str): listenするhost.
         server_port (int): listenするport.
@@ -95,6 +135,33 @@ def make_app_config(
         beatmap_mirror_refresh_interval_seconds (int): mirror metadataの更新間隔秒数.
         beatmap_default_bounded_wait_seconds (float): default bounded wait秒数.
         beatmap_max_bounded_wait_seconds (float): 許可する最大bounded wait秒数.
+        osu_direct_access_policy (OsuDirectAccessPolicy): osu!direct access policy.
+        osu_direct_search_backend (OsuDirectSearchBackend): osu!direct検索backend選択名.
+        osu_direct_validate_search_backend_on_startup (bool): 起動時backend検証を行うか.
+        osu_direct_external_index_backend (OsuDirectExternalIndexBackend): 任意の外部index名.
+        osu_direct_meilisearch_url (str | None): Meilisearch backendのbase URL.
+        osu_direct_meilisearch_access_key (str | None): Meilisearch backendのaccess key.
+        osu_direct_meilisearch_index_name (str): Meilisearch index名.
+        osu_direct_upstream_search_enabled (bool): local検索不足時に外部検索を併用するか.
+        osu_direct_upstream_search_providers (list[OsuDirectUpstreamSearchProvider] | None):
+            外部検索providerの照会順. Noneなら既定値.
+        osu_direct_upstream_search_wait_seconds (float): 外部検索補完を待つ最大秒数.
+        osu_direct_upstream_search_first_page_refresh_seconds (float):
+            page 0で外部検索を再試行する最短間隔.
+        osu_direct_hinamizawa_search_url (str): Hinamizawa JSON検索endpoint URL.
+        osu_direct_nerinyan_search_url (str): Nerinyan v2検索endpoint URL.
+        osu_direct_point_lookup_bounded_wait_seconds (float): point lookupの最大待機秒数.
+        osu_direct_ranked_sync_interval_seconds (int): ranked catalog sync間隔の秒数.
+        osu_direct_approved_sync_interval_seconds (int): approved catalog sync間隔の秒数.
+        osu_direct_loved_sync_interval_seconds (int): loved catalog sync間隔の秒数.
+        osu_direct_qualified_sync_interval_seconds (int): qualified catalog sync間隔の秒数.
+        osu_direct_pending_sync_interval_seconds (int): pending catalog sync間隔の秒数.
+        osu_direct_wip_sync_interval_seconds (int): WIP catalog sync間隔の秒数.
+        osu_direct_graveyard_sync_interval_seconds (int): graveyard catalog sync間隔の秒数.
+        osu_direct_not_submitted_sync_interval_seconds (int): not submitted catalog sync間隔の秒数.
+        osu_direct_shared_upstream_budget_per_minute (int): direct系upstream処理の共有分間予算.
+        osu_direct_catalog_priority_policy (OsuDirectCatalogPriorityPolicy):
+            catalog処理の優先policy.
 
     Returns:
         AppConfig: testが型情報を失わずに利用できる設定値.
@@ -103,12 +170,18 @@ def make_app_config(
         banned_passwords = []
     if beatmap_community_mirror_url_templates is None:
         beatmap_community_mirror_url_templates = []
+    if osu_direct_upstream_search_providers is None:
+        osu_direct_upstream_search_providers = ["hinamizawa", "nerinyan"]
 
     return AppConfig(
         database_url=PostgresDsn(str(database_url))
         if isinstance(database_url, str)
         else database_url,
+        database_pool_size=database_pool_size,
+        database_max_overflow=database_max_overflow,
+        database_pool_timeout_seconds=database_pool_timeout_seconds,
         valkey_url=RedisDsn(str(valkey_url)) if isinstance(valkey_url, str) else valkey_url,
+        beatmap_metadata_fetch_max_concurrency=beatmap_metadata_fetch_max_concurrency,
         environment=validate_environment_name(environment),
         server_host=server_host,
         server_port=server_port,
@@ -146,4 +219,38 @@ def make_app_config(
         beatmap_mirror_refresh_interval_seconds=beatmap_mirror_refresh_interval_seconds,
         beatmap_default_bounded_wait_seconds=beatmap_default_bounded_wait_seconds,
         beatmap_max_bounded_wait_seconds=beatmap_max_bounded_wait_seconds,
+        osu_direct_access_policy=osu_direct_access_policy,
+        osu_direct_search_backend=osu_direct_search_backend,
+        osu_direct_validate_search_backend_on_startup=(
+            osu_direct_validate_search_backend_on_startup
+        ),
+        osu_direct_external_index_backend=osu_direct_external_index_backend,
+        osu_direct_meilisearch_url=osu_direct_meilisearch_url,
+        osu_direct_meilisearch_access_key=osu_direct_meilisearch_access_key,
+        osu_direct_meilisearch_index_name=osu_direct_meilisearch_index_name,
+        osu_direct_upstream_search_enabled=osu_direct_upstream_search_enabled,
+        osu_direct_upstream_search_providers=osu_direct_upstream_search_providers,
+        osu_direct_upstream_search_wait_seconds=osu_direct_upstream_search_wait_seconds,
+        osu_direct_upstream_search_first_page_refresh_seconds=(
+            osu_direct_upstream_search_first_page_refresh_seconds
+        ),
+        osu_direct_hinamizawa_search_url=osu_direct_hinamizawa_search_url,
+        osu_direct_nerinyan_search_url=osu_direct_nerinyan_search_url,
+        osu_direct_point_lookup_bounded_wait_seconds=(
+            osu_direct_point_lookup_bounded_wait_seconds
+        ),
+        osu_direct_ranked_sync_interval_seconds=osu_direct_ranked_sync_interval_seconds,
+        osu_direct_approved_sync_interval_seconds=osu_direct_approved_sync_interval_seconds,
+        osu_direct_loved_sync_interval_seconds=osu_direct_loved_sync_interval_seconds,
+        osu_direct_qualified_sync_interval_seconds=osu_direct_qualified_sync_interval_seconds,
+        osu_direct_pending_sync_interval_seconds=osu_direct_pending_sync_interval_seconds,
+        osu_direct_wip_sync_interval_seconds=osu_direct_wip_sync_interval_seconds,
+        osu_direct_graveyard_sync_interval_seconds=osu_direct_graveyard_sync_interval_seconds,
+        osu_direct_not_submitted_sync_interval_seconds=(
+            osu_direct_not_submitted_sync_interval_seconds
+        ),
+        osu_direct_shared_upstream_budget_per_minute=(
+            osu_direct_shared_upstream_budget_per_minute
+        ),
+        osu_direct_catalog_priority_policy=osu_direct_catalog_priority_policy,
     )

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from traceback import FrameSummary
+from typing import TYPE_CHECKING, Protocol, cast
 
 import pytest
 from sqlalchemy import event as sqlalchemy_event
@@ -10,6 +11,7 @@ from sqlalchemy import event as sqlalchemy_event
 from osu_server.infrastructure.database.query_diagnostics import (
     install_query_diagnostics,
 )
+from osu_server.shared import query_diagnostics as query_diagnostics_module
 from osu_server.shared.query_diagnostics import (
     query_diagnostic_scope,
     query_diagnostics_warning_fields,
@@ -92,10 +94,71 @@ def test_scope_records_duplicate_templates_without_parameters() -> None:
     assert duplicate.count == 2
     assert duplicate.sql_prefix == "SELECT * FROM users WHERE email = ? AND id = ?"
     assert duplicate.fingerprint
+    assert duplicate.traceback
+    assert "test_query_diagnostics.py" in repr(duplicate.traceback)
     assert "secret-password" not in repr(summary)
     assert "secret@example.invalid" not in repr(summary)
     assert "user@example.invalid" not in repr(summary)
     assert "other-secret" not in repr(summary)
+
+
+def test_scope_keeps_project_traceback_through_deep_sqlalchemy_stack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SQLAlchemy内部frameが深い場合も呼び出し元project frameを保持することを検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): stack抽出関数を深いSQLAlchemy stack fakeへ置換する.
+
+    Returns:
+        None: duplicate summaryのtracebackにrepository frameが残ることを検証して完了する.
+    """
+    frames = [
+        FrameSummary(
+            "/repo/apps/athena_server/src/osu_server/repositories/sqlalchemy/commands/beatmaps.py",
+            665,
+            "attach_osu_file",
+        ),
+        *(
+            FrameSummary(
+                f"/nix/store/site-packages/sqlalchemy/engine/base_{index}.py",
+                index,
+                "execute",
+            )
+            for index in range(80)
+        ),
+        FrameSummary(
+            "/repo/apps/athena_server/src/osu_server/shared/query_diagnostics.py",
+            390,
+            "_query_traceback",
+        ),
+    ]
+
+    def extract_stack(limit: int | None = None) -> list[FrameSummary]:
+        """Pythonのlimit付きstack抽出と同じ末尾切り詰めを再現する.
+
+        Args:
+            limit (int | None): 返す末尾frame数. Noneの場合は全frameを返す.
+
+        Returns:
+            list[FrameSummary]: test用に構築したframe列.
+        """
+        return frames if limit is None else frames[-limit:]
+
+    monkeypatch.setattr(query_diagnostics_module, "extract_stack", extract_stack)
+
+    with query_diagnostic_scope(
+        scope_kind="test",
+        scope_name="deep sqlalchemy",
+        duplicate_threshold=1,
+    ) as collector:
+        record_query("SELECT * FROM beatmaps WHERE id = $1")
+
+    duplicate = collector.summary().duplicate_queries[0]
+    repository_path = "apps/athena_server/src/osu_server/repositories"
+    module_path = "sqlalchemy/commands/beatmaps.py"
+    expected_frame = f"{repository_path}/{module_path}:665 in attach_osu_file"
+    assert duplicate.traceback == (expected_frame,)
 
 
 def test_scope_redacts_matching_dollar_quoted_literal_tag() -> None:
@@ -223,6 +286,9 @@ def test_duplicate_summary_is_bounded_and_reports_truncation() -> None:
     assert len(summary.duplicate_queries) == 10
     assert fields["duplicate_templates_total"] == 12
     assert fields["duplicates_truncated"] is True
+    duplicates = cast("tuple[dict[str, object], ...]", fields["duplicates"])
+    assert duplicates
+    assert "traceback" in duplicates[0]
 
 
 def test_query_budget_fixture_allows_within_limit(query_budget: QueryBudget) -> None:

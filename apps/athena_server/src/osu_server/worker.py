@@ -8,6 +8,7 @@ shutdown hookでそのstateを解放する.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, cast
 
 import structlog
@@ -26,6 +27,12 @@ from osu_server.services.commands.beatmaps import (
     FetchBeatmapFileUseCase,
     FetchBeatmapMetadataUseCase,
 )
+from osu_server.services.commands.beatmaps.direct_catalog_sync import (
+    DirectCatalogScheduler,
+    DirectFeedSync,
+    DirectRangeCrawl,
+)
+from osu_server.services.commands.beatmaps.direct_indexing import DirectIndexingCommands
 from osu_server.services.commands.chat import (
     PersistChannelMessageUseCase,
     PersistPrivateMessageUseCase,
@@ -48,6 +55,7 @@ if TYPE_CHECKING:
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
 
+_MAX_OFFICIAL_POINT_LOOKUP_REQUEST_COUNT = 2
 _config = load_config()
 
 broker = ListQueueBroker(url=str(_config.valkey_url))
@@ -79,11 +87,17 @@ def _clear_worker_runtime_state(state: TaskiqState) -> None:
     state.persist_channel_message_use_case = None
     state.persist_private_message_use_case = None
     state.beatmap_metadata_fetch = None
+    state.beatmap_metadata_fetch_semaphore = None
     state.beatmap_file_fetch = None
     state.score_performance_calculation_executor = None
     state.performance_recalculation_batch_processor = None
     state.beatmap_leaderboard_user_rebuild_use_case = None
     state.beatmap_leaderboard_beatmapset_rebuild_use_case = None
+    state.osu_direct_feed_sync = None
+    state.osu_direct_range_crawl = None
+    state.osu_direct_indexing_commands = None
+    state.osu_direct_catalog_scheduler = None
+    state.osu_direct_point_lookup_request_count = None
     state.replay_download_accounting_executor = None
 
 
@@ -97,7 +111,7 @@ async def startup(state: TaskiqState) -> None:
     Returns:
         None: logging,Dishka integration,job use-caseをstateへ設定したことを示す.
     """
-    setup_logging(_config)
+    setup_logging(_config, runtime_role="worker")
     worker_container: AsyncContainer | None = None
 
     try:
@@ -113,6 +127,9 @@ async def startup(state: TaskiqState) -> None:
             PersistPrivateMessageUseCase
         )
         state.beatmap_metadata_fetch = await worker_container.get(FetchBeatmapMetadataUseCase)
+        state.beatmap_metadata_fetch_semaphore = asyncio.Semaphore(
+            _config.beatmap_metadata_fetch_max_concurrency
+        )
         state.beatmap_file_fetch = await worker_container.get(FetchBeatmapFileUseCase)
         state.score_performance_calculation_executor = await worker_container.get(
             ExecutePerformanceCalculationUseCase
@@ -125,6 +142,14 @@ async def startup(state: TaskiqState) -> None:
         )
         state.beatmap_leaderboard_beatmapset_rebuild_use_case = await worker_container.get(
             RebuildBeatmapLeaderboardsForBeatmapsetUseCase
+        )
+        state.osu_direct_feed_sync = await worker_container.get(DirectFeedSync)
+        state.osu_direct_range_crawl = await worker_container.get(DirectRangeCrawl)
+        state.osu_direct_indexing_commands = await worker_container.get(DirectIndexingCommands)
+        state.osu_direct_catalog_scheduler = await worker_container.get(DirectCatalogScheduler)
+        state.osu_direct_point_lookup_request_count = (
+            _MAX_OFFICIAL_POINT_LOOKUP_REQUEST_COUNT
+            + len(_config.beatmap_metadata_mirror_base_urls)
         )
         state.replay_download_accounting_executor = await worker_container.get(
             ReplayDownloadAccountingUseCase

@@ -28,7 +28,7 @@ RUNTIME_DEPENDENCIES = [
     "httpx>=0.28.1",
     "python-multipart>=0.0.29",
     "structlog>=25.5.0",
-    "taskiq>=0.11",
+    "taskiq[reload]>=0.11",
     "taskiq-redis>=1.0",
     "typer>=0.26.7",
     "inquirerpy>=0.3.4",
@@ -36,6 +36,8 @@ RUNTIME_DEPENDENCIES = [
     "dishka",
     "starlette-dishka",
     "rosu-pp-py==4.0.2",
+    "sqlalchemy-paradedb==0.10.0",
+    "meilisearch-python-sdk>=7.4.1",
 ]
 
 

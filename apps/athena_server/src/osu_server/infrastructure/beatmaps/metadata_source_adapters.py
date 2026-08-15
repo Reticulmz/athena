@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from http import HTTPStatus
 from typing import TYPE_CHECKING, cast
 from urllib.parse import urlencode, urlparse
@@ -28,6 +29,19 @@ if TYPE_CHECKING:
     from osu_server.infrastructure.http.interfaces import BeatmapHttpClient
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
+
+
+@dataclass(slots=True, frozen=True)
+class OsuApiBeatmapsetSearchResult:
+    """公式osu! API v2のbeatmapset search結果を表す.
+
+    Attributes:
+        beatmapsets (tuple[BeatmapsetSnapshot, ...]): search feedで返されたbeatmapset snapshot列.
+        cursor (str | None): responseが返した次cursor. 未提供または空文字列ならNone.
+    """
+
+    beatmapsets: tuple[BeatmapsetSnapshot, ...]
+    cursor: str | None
 
 
 class InMemoryBeatmapMetadataProvider:
@@ -192,6 +206,107 @@ class OsuApiMetadataProviderService:
             f"/beatmaps/lookup?checksum={checksum_md5}",
             lookup_key=checksum_md5,
         )
+
+    async def search_beatmapsets(
+        self,
+        params: Mapping[str, str],
+    ) -> OsuApiBeatmapsetSearchResult:
+        """公式APIのbeatmapsets/search endpointを照会する.
+
+        Args:
+            params (Mapping[str, str]): `q`, `s`, `m`, `page`, `sort` など公式APIへ渡すquery.
+
+        Returns:
+            OsuApiBeatmapsetSearchResult: response内のbeatmapset snapshot列とcursor.
+
+        Raises:
+            BeatmapSourceError: OAuth取得,HTTP request,JSON形式,またはHTTP statusが正常でない場合.
+        """
+        source_label = "osu_api_v2"
+        token = await self._get_token()
+        query = urlencode(params)
+        url = f"{self._base_url}/beatmapsets/search"
+        if query:
+            url = f"{url}?{query}"
+
+        client = self._http_client.get_client()
+        try:
+            response = await client.get(
+                url,
+                headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            )
+        except httpx.TimeoutException as exc:
+            raise BeatmapSourceError(
+                category=BeatmapSourceErrorCategory.TIMEOUT,
+                source=source_label,
+                lookup_key="beatmapsets/search",
+                message=f"Request failed: {exc}",
+                original_error=exc,
+            ) from exc
+        except Exception as exc:
+            raise BeatmapSourceError(
+                category=BeatmapSourceErrorCategory.TEMPORARY_UNAVAILABLE,
+                source=source_label,
+                lookup_key="beatmapsets/search",
+                message=f"Request failed: {exc}",
+                original_error=exc,
+            ) from exc
+
+        if response.status_code != HTTPStatus.OK:
+            _raise_osu_api_response_error(response.status_code, source=source_label)
+
+        try:
+            parsed: object = response.json()
+        except Exception as exc:
+            raise BeatmapSourceError(
+                category=BeatmapSourceErrorCategory.INVALID_RESPONSE,
+                source=source_label,
+                lookup_key="beatmapsets/search",
+                message=f"Invalid JSON from {source_label}",
+                original_error=exc,
+            ) from exc
+        if not isinstance(parsed, dict):
+            actual = type(parsed).__name__
+            raise BeatmapSourceError(
+                category=BeatmapSourceErrorCategory.INVALID_RESPONSE,
+                source=source_label,
+                lookup_key="beatmapsets/search",
+                message=f"Expected JSON object from {source_label}, got {actual}",
+            )
+
+        data = cast("Mapping[str, object]", parsed)
+        raw_beatmapsets = data.get("beatmapsets")
+        if not isinstance(raw_beatmapsets, list):
+            raise BeatmapSourceError(
+                category=BeatmapSourceErrorCategory.INVALID_RESPONSE,
+                source=source_label,
+                lookup_key="beatmapsets/search",
+                message="Search response missing beatmapsets array",
+            )
+
+        snapshots: list[BeatmapsetSnapshot] = []
+        for item in cast("list[object]", raw_beatmapsets):
+            if not isinstance(item, dict):
+                raise BeatmapSourceError(
+                    category=BeatmapSourceErrorCategory.INVALID_RESPONSE,
+                    source=source_label,
+                    lookup_key="beatmapsets/search",
+                    message="Search response beatmapsets entry is not an object",
+                )
+            try:
+                snapshots.append(beatmap_json_to_snapshot(cast("dict[str, object]", item)))
+            except (AttributeError, KeyError, TypeError, ValueError) as exc:
+                raise BeatmapSourceError(
+                    category=BeatmapSourceErrorCategory.INVALID_RESPONSE,
+                    source=source_label,
+                    lookup_key="beatmapsets/search",
+                    message="Search response beatmapsets entry is malformed",
+                    original_error=exc,
+                ) from exc
+
+        raw_cursor = data.get("cursor_string")
+        cursor = raw_cursor if isinstance(raw_cursor, str) and raw_cursor else None
+        return OsuApiBeatmapsetSearchResult(beatmapsets=tuple(snapshots), cursor=cursor)
 
     async def _lookup(self, path: str, *, lookup_key: str) -> BeatmapsetSnapshot | None:
         """OAuth tokenを付けて公式APIのmetadata endpointを照会する.
@@ -429,6 +544,35 @@ def _is_nerinyan_url(base_url: str) -> bool:
     """
     hostname = urlparse(base_url).hostname
     return hostname is not None and "nerinyan" in hostname.lower()
+
+
+def _raise_osu_api_response_error(status_code: int, *, source: str) -> None:
+    """公式APIのHTTP statusを分類済みBeatmapSourceErrorとして送出する.
+
+    Args:
+        status_code (int): 公式API responseのHTTP status code.
+        source (str): errorへ記録するmetadata source label.
+
+    Returns:
+        None: 正常終了せず例外を送出する.
+
+    Raises:
+        BeatmapSourceError: status codeに対応したsource error.
+    """
+    if status_code == HTTPStatus.UNAUTHORIZED:
+        category = BeatmapSourceErrorCategory.UNAUTHORIZED
+    elif status_code == HTTPStatus.TOO_MANY_REQUESTS:
+        category = BeatmapSourceErrorCategory.RATE_LIMITED
+    elif 500 <= status_code < 600:  # noqa: PLR2004
+        category = BeatmapSourceErrorCategory.TEMPORARY_UNAVAILABLE
+    else:
+        category = BeatmapSourceErrorCategory.INVALID_RESPONSE
+    raise BeatmapSourceError(
+        category=category,
+        source=source,
+        lookup_key="beatmapsets/search",
+        message=f"HTTP {status_code} from {source}",
+    )
 
 
 class MirrorMetadataProviderService:

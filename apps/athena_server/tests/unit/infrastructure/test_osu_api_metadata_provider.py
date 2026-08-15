@@ -308,6 +308,111 @@ class TestSuccessfulLookups:
         assert result.beatmaps[0].checksum_md5 == "a" * 32
 
 
+class TestBeatmapsetSearch:
+    """公式beatmapsets/search responseをsnapshot列へ正規化する契約を検証する."""
+
+    async def test_search_beatmapsets_returns_snapshots_and_cursor(self) -> None:
+        """公式search endpointへqueryを渡しsnapshot列とcursorを返すことを検証する.
+
+        Returns:
+            None: request URLと正規化結果を検証して完了し,呼び出し側へ値を返さない.
+        """
+        requested_urls: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            """OAuthとsearch endpointのmock responseを返す.
+
+            Args:
+                request (httpx.Request): MockTransport handlerへ渡されるHTTP request.
+
+            Returns:
+                httpx.Response: tokenまたはsearch response.
+            """
+            url = _request_url(request)
+            requested_urls.append(url)
+            if "/oauth/token" in url:
+                return httpx.Response(200, json=_TOKEN_BODY, request=request)
+            return httpx.Response(
+                200,
+                json={
+                    "beatmapsets": [_BEATMAPSET_BODY],
+                    "cursor_string": "next-cursor",
+                    "search": {"sort": "ranked_desc"},
+                    "total": 1,
+                },
+                request=request,
+            )
+
+        provider = _make_provider(httpx.MockTransport(handler))
+
+        result = await provider.search_beatmapsets(
+            {"s": "ranked", "page": "1", "sort": "ranked_desc"}
+        )
+
+        assert requested_urls == [
+            _TOKEN_URL,
+            f"{_BASE_URL}/beatmapsets/search?s=ranked&page=1&sort=ranked_desc",
+        ]
+        assert result.cursor == "next-cursor"
+        assert len(result.beatmapsets) == 1
+        assert result.beatmapsets[0].beatmapset_id == 1
+
+    async def test_search_beatmapsets_rejects_missing_beatmapsets_array(self) -> None:
+        """Search responseにbeatmapsets配列がない場合はsource errorにする.
+
+        Returns:
+            None: INVALID_RESPONSE分類の例外を検証して完了し,呼び出し側へ値を返さない.
+        """
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            """OAuth後に不正なsearch responseを返す.
+
+            Args:
+                request (httpx.Request): MockTransport handlerへ渡されるHTTP request.
+
+            Returns:
+                httpx.Response: tokenまたは不正search response.
+            """
+            if "/oauth/token" in _request_url(request):
+                return httpx.Response(200, json=_TOKEN_BODY, request=request)
+            return httpx.Response(200, json={"total": 0}, request=request)
+
+        provider = _make_provider(httpx.MockTransport(handler))
+
+        with pytest.raises(BeatmapSourceError) as exc_info:
+            _ = await provider.search_beatmapsets({"s": "ranked", "page": "1"})
+
+        assert exc_info.value.category is BeatmapSourceErrorCategory.INVALID_RESPONSE
+
+    async def test_search_beatmapsets_wraps_malformed_nested_beatmap(self) -> None:
+        """Search responseの子beatmap不正形をsource errorに包む契約を検証する.
+
+        Returns:
+            None: mapper由来のAttributeErrorをINVALID_RESPONSE分類へ変換することを確認する.
+        """
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            """OAuth後に子beatmapだけ不正なsearch responseを返す.
+
+            Args:
+                request (httpx.Request): MockTransport handlerへ渡されるHTTP request.
+
+            Returns:
+                httpx.Response: tokenまたは不正search response.
+            """
+            if "/oauth/token" in _request_url(request):
+                return httpx.Response(200, json=_TOKEN_BODY, request=request)
+            beatmapset = {**_BEATMAPSET_BODY, "beatmaps": ["not-an-object"]}
+            return httpx.Response(200, json={"beatmapsets": [beatmapset]}, request=request)
+
+        provider = _make_provider(httpx.MockTransport(handler))
+
+        with pytest.raises(BeatmapSourceError) as exc_info:
+            _ = await provider.search_beatmapsets({"s": "ranked", "page": "1"})
+
+        assert exc_info.value.category is BeatmapSourceErrorCategory.INVALID_RESPONSE
+
+
 # ---------------------------------------------------------------------------
 # Not found
 # ---------------------------------------------------------------------------

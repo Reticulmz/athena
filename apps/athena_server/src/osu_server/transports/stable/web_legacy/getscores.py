@@ -152,8 +152,10 @@ class StableGetscoresExchange:
                 user_id=user_id,
             )
 
-        await self._prepare_metadata(request_obj, user_id=user_id)
         outcome = await self._getscores_query.resolve(request_obj, user_id=user_id)
+        if outcome.kind is GetscoresOutcomeKind.UNAVAILABLE:
+            await self._prepare_metadata(request_obj, user_id=user_id)
+            outcome = await self._getscores_query.resolve(request_obj, user_id=user_id)
 
         if outcome.kind is GetscoresOutcomeKind.UNAVAILABLE:
             await self._request_beatmap_file_warmup(

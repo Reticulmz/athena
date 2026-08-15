@@ -107,6 +107,14 @@ Start the credential-free core development profile:
 just dev
 ```
 
+If an older worktree-local PostgreSQL cluster already exists, reset it before
+starting the PostgreSQL 18 profile:
+
+```bash
+rm -rf .state/postgres
+just dev
+```
+
 Use the optional tunnel profile only after Cloudflare tunnel state has been set up:
 
 ```bash

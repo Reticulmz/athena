@@ -11,6 +11,8 @@ from osu_server.domain.beatmaps import BeatmapFetchTarget
 from osu_server.infrastructure.jobs.registry import jobs
 
 if TYPE_CHECKING:
+    import asyncio
+
     from taskiq import TaskiqState
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)  # pyright: ignore[reportAny]
@@ -76,6 +78,43 @@ def get_beatmap_file_fetch(state: TaskiqState) -> WorkerBeatmapFileFetch | None:
     )
 
 
+def get_beatmap_metadata_fetch_semaphore(state: TaskiqState) -> asyncio.Semaphore | None:
+    """Taskiq stateからmetadata fetch同時実行制限semaphoreを返す.
+
+    Args:
+        state (TaskiqState): worker runtimeが保持するTaskiq state.
+
+    Returns:
+        asyncio.Semaphore | None: 登録済みsemaphoreまたは未登録時のNone.
+    """
+    return cast(
+        "asyncio.Semaphore | None",
+        getattr(state, "beatmap_metadata_fetch_semaphore", None),
+    )
+
+
+async def run_beatmap_metadata_fetch(
+    use_case: WorkerBeatmapMetadataFetch,
+    target: BeatmapFetchTarget,
+    semaphore: asyncio.Semaphore | None,
+) -> None:
+    """Configured semaphoreがあればmetadata fetch同時実行数を制限する.
+
+    Args:
+        use_case (WorkerBeatmapMetadataFetch): 実行するmetadata fetch use-case.
+        target (BeatmapFetchTarget): metadata fetch対象.
+        semaphore (asyncio.Semaphore | None): 同時実行数制限. 未設定なら制限しない.
+
+    Returns:
+        None: use-case実行を完了する.
+    """
+    if semaphore is None:
+        await use_case.execute(target)
+        return
+    async with semaphore:
+        await use_case.execute(target)
+
+
 @jobs.register(task_name="fetch_beatmap_metadata")
 async def fetch_beatmap_metadata(
     target_type: str,
@@ -114,7 +153,8 @@ async def fetch_beatmap_metadata(
         target_key=target_key,
         force_refresh=force_refresh,
     )
-    await use_case.execute(target)
+    semaphore = get_beatmap_metadata_fetch_semaphore(context.state)
+    await run_beatmap_metadata_fetch(use_case, target, semaphore)
 
 
 @jobs.register(task_name="fetch_beatmap_file")
@@ -165,4 +205,6 @@ __all__ = [
     "fetch_beatmap_metadata",
     "get_beatmap_file_fetch",
     "get_beatmap_metadata_fetch",
+    "get_beatmap_metadata_fetch_semaphore",
+    "run_beatmap_metadata_fetch",
 ]

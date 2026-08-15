@@ -114,7 +114,12 @@ class InfrastructureProviderSet(Provider):
         Notes:
             APP scope終了時にfinally節でengineをdisposeするため, consumerは直接disposeしない.
         """
-        engine = create_engine(str(config.database_url))
+        engine = create_engine(
+            str(config.database_url),
+            pool_size=config.database_pool_size,
+            max_overflow=config.database_max_overflow,
+            pool_timeout=config.database_pool_timeout_seconds,
+        )
         try:
             yield engine
         finally:

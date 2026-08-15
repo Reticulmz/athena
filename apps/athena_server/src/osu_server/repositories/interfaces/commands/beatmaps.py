@@ -14,6 +14,9 @@ if TYPE_CHECKING:
         BeatmapFetchTarget,
         BeatmapFileAttachment,
         BeatmapSet,
+        BeatmapSetSearchDocument,
+        DirectCoverageRecord,
+        DirectExternalIndexState,
         LocalBeatmapStatus,
     )
 
@@ -120,6 +123,74 @@ class BeatmapCommandRepository(Protocol):
         Raises:
             ValueError: Snapshot 内または保存済み Beatmap と,同じ checksum を異なる Beatmap ID に
                 対応付けようとした場合に送出する.
+        """
+        ...
+
+    async def save_beatmapset_snapshot_returning_previous(
+        self,
+        snapshot: BeatmapSet,
+    ) -> BeatmapSet | None:
+        """取得済みBeatmapSet snapshotを保存し保存前の値を返す.
+
+        Args:
+            snapshot (BeatmapSet): 保存する取得済みBeatmapSet snapshot.
+
+        Returns:
+            BeatmapSet | None: 保存前のBeatmapSet. 初回保存ではNone.
+
+        Raises:
+            ValueError: Snapshot 内または保存済み Beatmap と,同じ checksum を異なる Beatmap ID に
+                対応付けようとした場合に送出する.
+        """
+        ...
+
+    async def get_search_document(self, beatmapset_id: int) -> BeatmapSetSearchDocument | None:
+        """External indexing用に保存済み検索projectionを返す.
+
+        Args:
+            beatmapset_id (int): 取得するbeatmapset検索projectionの識別子.
+
+        Returns:
+            BeatmapSetSearchDocument | None: 保存済みprojection. 存在しない場合はNone.
+        """
+        ...
+
+    async def list_search_documents(
+        self,
+        *,
+        after_beatmapset_id: int = 0,
+        limit: int | None = None,
+    ) -> tuple[BeatmapSetSearchDocument, ...]:
+        """External index rebuild用に検索projectionを列挙する.
+
+        Args:
+            after_beatmapset_id (int): このBeatmapSet IDより大きいprojectionだけを返す.
+            limit (int | None): 返す最大件数. Noneなら全件を返す.
+
+        Returns:
+            tuple[BeatmapSetSearchDocument, ...]: beatmapset ID順の検索projection.
+        """
+        ...
+
+    async def rebuild_search_projection(self, *, now: datetime) -> int:
+        """保存済みmetadataから検索projectionを再構築する.
+
+        Args:
+            now (datetime): 変更されたprojectionへ設定するUTC timestamp.
+
+        Returns:
+            int: 再構築対象として処理したbeatmapset数.
+        """
+        ...
+
+    async def record_index_state(self, state: DirectExternalIndexState) -> None:
+        """External index documentの同期状態を記録する.
+
+        Args:
+            state (DirectExternalIndexState): 保存するsuccessまたはfailure state.
+
+        Returns:
+            None: stateがUnit of Workへ反映されたことを示す.
         """
         ...
 
@@ -234,5 +305,16 @@ class BeatmapCommandRepository(Protocol):
 
         Returns:
             None: 失敗状態が Unit of Work に反映されたことを示す.
+        """
+        ...
+
+    async def record_direct_coverage(self, record: DirectCoverageRecord) -> None:
+        """osu!direct catalog coverage recordを保存する.
+
+        Args:
+            record (DirectCoverageRecord): feed windowまたはid range crawlのcoverage record.
+
+        Returns:
+            None: coverage stateがUnit of Workへ反映されたことを示す.
         """
         ...

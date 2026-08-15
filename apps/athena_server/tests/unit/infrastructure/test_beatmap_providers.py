@@ -397,6 +397,8 @@ class TestBeatmapMetadataMapper:
                     "artist": "Camellia",
                     "title": "Exit This Earth's Atomosphere",
                     "creator": "Realazy",
+                    "source": "album source",
+                    "tags": "speed core",
                     "last_update": "2026-06-29 12:34:56",
                 }
             ],
@@ -404,14 +406,54 @@ class TestBeatmapMetadataMapper:
         )
 
         assert snapshot is not None
+        assert snapshot.official_last_updated_at == datetime(2026, 6, 29, 12, 34, 56, tzinfo=UTC)
         assert snapshot.beatmaps[0].official_last_updated_at == datetime(
             2026, 6, 29, 12, 34, 56, tzinfo=UTC
         )
+        assert snapshot.source_text == "album source"
+        assert snapshot.tags == "speed core"
+
+    def test_v1_mapper_skips_unsavable_child_rows(self) -> None:
+        """V1 metadataで保存不能なchild rowを除外する契約を検証する.
+
+        Returns:
+            None: 有効なchildだけがsnapshotに残ることを確認して完了する.
+        """
+        snapshot = beatmap_v1_json_to_snapshot(
+            [
+                {
+                    "beatmap_id": "0",
+                    "beatmapset_id": "1000",
+                    "file_md5": "11111111111111111111111111111111",
+                    "mode": "0",
+                    "version": "Missing ID",
+                },
+                {
+                    "beatmap_id": "2000",
+                    "beatmapset_id": "1000",
+                    "file_md5": "00000000000000000000000000000000",
+                    "mode": "0",
+                    "version": "Zero checksum",
+                },
+                {
+                    "beatmap_id": "2001",
+                    "beatmapset_id": "1000",
+                    "file_md5": "A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6",
+                    "mode": "0",
+                    "version": "Normal",
+                },
+            ],
+            now=datetime(2026, 6, 30, tzinfo=UTC),
+        )
+
+        assert snapshot is not None
+        assert [beatmap.beatmap_id for beatmap in snapshot.beatmaps] == [2001]
+        assert snapshot.beatmaps[0].checksum_md5 == "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
 
     def test_v2_last_updated_maps_to_official_last_updated_at(self) -> None:
-        """V2 beatmap last_updatedとset fallbackをofficial日時へ写す契約を検証する.
+        """V2 beatmapset日時とchild last_updatedをofficial日時へ写す契約を検証する.
 
-        v2 JSONをsnapshotへ変換し, explicit日時とset日時fallbackが各childに入ることを確認する.
+        v2 JSONをsnapshotへ変換し, set-level日時とchild fallbackが保存されることを確認する.
 
         Returns:
             None: v2 timestamp mappingを検証して完了し, 呼び出し側へ値を返さない.
@@ -422,7 +464,11 @@ class TestBeatmapMetadataMapper:
                 "artist": "Camellia",
                 "title": "Exit This Earth's Atomosphere",
                 "creator": "Realazy",
+                "source": "compilation",
+                "tags": ["speed", "core"],
                 "status": "ranked",
+                "submitted_date": "2026-06-27T00:00:00Z",
+                "ranked_date": "2026-06-27T12:00:00Z",
                 "last_updated": "2026-06-28T00:00:00Z",
                 "beatmaps": [
                     {
@@ -447,10 +493,84 @@ class TestBeatmapMetadataMapper:
             now=datetime(2026, 6, 30, tzinfo=UTC),
         )
 
+        assert snapshot.official_submitted_at == datetime(2026, 6, 27, tzinfo=UTC)
+        assert snapshot.official_ranked_at == datetime(2026, 6, 27, 12, tzinfo=UTC)
+        assert snapshot.official_last_updated_at == datetime(2026, 6, 28, tzinfo=UTC)
         assert snapshot.beatmaps[0].official_last_updated_at == datetime(
             2026, 6, 29, 12, 34, 56, tzinfo=UTC
         )
         assert snapshot.beatmaps[1].official_last_updated_at == datetime(2026, 6, 28, tzinfo=UTC)
+        assert snapshot.source_text == "compilation"
+        assert snapshot.tags == "speed core"
+
+    def test_v2_single_beatmap_uses_top_level_beatmapset_id_when_parent_omits_id(
+        self,
+    ) -> None:
+        """V2単体beatmap JSONが親ID欠損時にtop-level beatmapset_idを使う契約を検証する.
+
+        `/api/v2/beatmaps/{id}` のような単体beatmap responseで埋め込みbeatmapsetにidがなくても、
+        保存する親set IDとchild beatmapset_idが一致することを確認する.
+
+        Returns:
+            None: snapshotの親子beatmapset IDが一致することを検証して完了する.
+        """
+        snapshot = beatmap_json_to_snapshot(
+            {
+                "id": 1593926,
+                "beatmapset_id": 757681,
+                "checksum": "699c3008a5a455db6736f0e659141571",
+                "mode": "osu",
+                "version": "Alheak's Extra",
+                "status": "ranked",
+                "beatmapset": {
+                    "artist": "yumemidoll",
+                    "title": "Lyrith -Meikyuu Lyrith-",
+                    "creator": "Annabel",
+                    "status": "ranked",
+                },
+            },
+            now=datetime(2026, 8, 14, tzinfo=UTC),
+        )
+
+        assert snapshot.beatmapset_id == 757681
+        assert snapshot.beatmaps[0].beatmapset_id == 757681
+
+    def test_v2_mapper_skips_unsavable_child_rows(self) -> None:
+        """V2 metadataで保存不能なchild rowを除外する契約を検証する.
+
+        Returns:
+            None: checksumを正規化しつつ有効childだけが残ることを確認して完了する.
+        """
+        snapshot = beatmap_json_to_snapshot(
+            {
+                "id": 1000,
+                "artist": "Camellia",
+                "title": "Exit This Earth's Atomosphere",
+                "creator": "Realazy",
+                "status": "ranked",
+                "beatmaps": [
+                    {
+                        "id": 0,
+                        "beatmapset_id": 1000,
+                        "checksum": "11111111111111111111111111111111",
+                    },
+                    {
+                        "id": 2000,
+                        "beatmapset_id": 1000,
+                        "checksum": "00000000000000000000000000000000",
+                    },
+                    {
+                        "id": 2001,
+                        "beatmapset_id": 1000,
+                        "checksum": "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+                    },
+                ],
+            },
+            now=datetime(2026, 6, 30, tzinfo=UTC),
+        )
+
+        assert [beatmap.beatmap_id for beatmap in snapshot.beatmaps] == [2001]
+        assert snapshot.beatmaps[0].checksum_md5 == "ffffffffffffffffffffffffffffffff"
 
 
 # ---------------------------------------------------------------------------
@@ -683,6 +803,9 @@ class TestBeatmapsetSnapshot:
         )
         assert snap.artist_unicode is None
         assert snap.title_unicode is None
+        assert snap.official_submitted_at is None
+        assert snap.official_ranked_at is None
+        assert snap.official_last_updated_at is None
 
     def test_equals_by_value(self) -> None:
         """同一field値のBeatmapsetSnapshot同士がvalue equalityとなる契約を検証する.

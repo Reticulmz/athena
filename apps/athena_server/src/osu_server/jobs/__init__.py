@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 _JOB_MODULES = (
     "osu_server.jobs.chat_persistence",
     "osu_server.jobs.beatmap_fetch",
+    "osu_server.jobs.osu_direct",
     "osu_server.jobs.score_performance",
     "osu_server.jobs.beatmap_leaderboards",
     "osu_server.jobs.replay_download_accounting",

@@ -97,16 +97,17 @@ def test_starlette_lifespan_attaches_dishka_container(
         blob_storage_local_root=str(tmp_path / "blobs"),
     )
 
-    def setup_logging(_config: AppConfig) -> None:
+    def setup_logging(_config: AppConfig, *, runtime_role: str = "app_server") -> None:
         """Test 中に実際の logging 設定を行わない stub.
 
         Args:
             _config (AppConfig): lifecycle が読み込んだ app config.
+            runtime_role (str): lifecycleが渡すruntime role名.
 
         Returns:
             None: logging を変更せず, 呼び出し側へ値を返さない.
         """
-        return
+        _ = runtime_role
 
     monkeypatch.setattr(lifespan_module, "load_config", lambda: config)
     monkeypatch.setattr(lifespan_module, "setup_logging", setup_logging)
@@ -169,16 +170,17 @@ def test_starlette_lifespan_surfaces_dishka_startup_failure(
         _ = overrides
         return failing_container
 
-    def setup_logging(_: AppConfig) -> None:
+    def setup_logging(_config: AppConfig, *, runtime_role: str = "app_server") -> None:
         """Test 中に実際の logging 設定を行わない stub.
 
         Args:
-            _ (AppConfig): lifecycle が読み込んだ app config.
+            _config (AppConfig): lifecycle が読み込んだ app config.
+            runtime_role (str): lifecycleが渡すruntime role名.
 
         Returns:
             None: logging を変更せず, 呼び出し側へ値を返さない.
         """
-        return
+        _ = runtime_role
 
     monkeypatch.setattr(lifespan_module, "load_config", lambda: config)
     monkeypatch.setattr(lifespan_module, "setup_logging", setup_logging)

@@ -3,20 +3,34 @@
 環境変数と環境別`.env` fileから設定を読み込み,起動前に型と運用上の制約を検証する.
 """
 
+import math
 import os
 import re
 from pathlib import Path
 from string import Formatter
-from typing import Annotated, ClassVar, Literal, Self
+from typing import Annotated, ClassVar, Literal, Self, cast
 from urllib.parse import urlparse
 
-from pydantic import Field, PostgresDsn, RedisDsn, TypeAdapter, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    Field,
+    PostgresDsn,
+    RedisDsn,
+    TypeAdapter,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Valkey は redis:// スキーマを使用するため、RedisDsn のバリデーションをそのまま活用
 ValkeyDsn = RedisDsn
 
 type EnvironmentName = Literal["development", "test", "production"]
+type OsuDirectAccessPolicy = Literal["authenticated", "disabled", "supporter_entitlement"]
+type OsuDirectCatalogPriorityPolicy = Literal["point_lookup_first"]
+type OsuDirectExternalIndexBackend = Literal["disabled", "meilisearch"]
+type OsuDirectSearchBackend = Literal["auto", "paradedb", "meilisearch", "tsvector"]
+type OsuDirectUpstreamSearchProvider = Literal["hinamizawa", "nerinyan"]
 
 SUPPORTED_ENVIRONMENTS: frozenset[EnvironmentName] = frozenset(
     {"development", "test", "production"}
@@ -34,6 +48,28 @@ _TEST_ENVIRONMENT = "test"
 _DEVELOPMENT_ENVIRONMENT = "development"
 _BEATMAP_URL_TEMPLATE_FIELD = "beatmap_id"
 type _BeatmapUrlTemplateField = tuple[str, str | None, str | None]
+
+
+def _normalize_choice(value: str, *, field_name: str, choices: dict[str, str]) -> str:
+    """設定値をunderscore形式へ正規化して許可値へ写像する.
+
+    Args:
+        value (str): environmentから読み込んだ文字列値.
+        field_name (str): validation errorに含める設定field名.
+        choices (dict[str, str]): 正規化済み入力値から保存値への対応.
+
+    Returns:
+        str: 許可された保存値.
+
+    Raises:
+        ValueError: 正規化後の値がchoicesに存在しない場合.
+    """
+    normalized = value.lower().replace("-", "_")
+    result = choices.get(normalized)
+    if result is not None:
+        return result
+    msg = f"Invalid {field_name}: {value!r}. Valid: {', '.join(dict.fromkeys(choices.values()))}"
+    raise ValueError(msg)
 
 
 class UnsupportedEnvironmentError(ValueError):
@@ -115,7 +151,11 @@ class AppConfig(BaseSettings):
 
     Attributes:
         database_url (PostgresDsn): PostgreSQLへの接続DSN.
+        database_pool_size (int): 通常時に保持するSQLAlchemy DB connection数.
+        database_max_overflow (int): pool_size超過時に一時作成できるDB connection数.
+        database_pool_timeout_seconds (float): DB connection取得を待つ最大秒数.
         valkey_url (ValkeyDsn): Valkeyへの接続DSN.
+        beatmap_metadata_fetch_max_concurrency (int): worker process内のmetadata fetch同時実行数.
         environment (EnvironmentName): 実行環境名. 未指定時はdevelopment.
         server_host (str): ASGI serverがlistenするhost.
         server_port (int): ASGI serverがlistenするport.
@@ -157,6 +197,33 @@ class AppConfig(BaseSettings):
         beatmap_mirror_refresh_interval_seconds (int): mirror情報更新間隔の秒数.
         beatmap_default_bounded_wait_seconds (float): beatmap取得時の標準待機時間の秒数.
         beatmap_max_bounded_wait_seconds (float): beatmap取得時に許可する最大待機時間の秒数.
+        osu_direct_access_policy (OsuDirectAccessPolicy): osu!directへのaccess policy.
+        osu_direct_search_backend (OsuDirectSearchBackend): osu!direct検索backend選択名.
+        osu_direct_validate_search_backend_on_startup (bool): 起動時backend検証を行うか.
+        osu_direct_external_index_backend (OsuDirectExternalIndexBackend): 任意の外部index名.
+        osu_direct_meilisearch_url (str | None): Meilisearch backendのbase URL.
+        osu_direct_meilisearch_access_key (str | None): Meilisearch backendのaccess key.
+        osu_direct_meilisearch_index_name (str): Meilisearch index名.
+        osu_direct_upstream_search_enabled (bool): local検索不足時に外部検索を併用するか.
+        osu_direct_upstream_search_providers (list[OsuDirectUpstreamSearchProvider]):
+            外部検索providerの照会順.
+        osu_direct_upstream_search_wait_seconds (float): 外部検索補完を待つ最大秒数.
+        osu_direct_upstream_search_first_page_refresh_seconds (float):
+            page 0で外部検索を再試行する最短間隔.
+        osu_direct_hinamizawa_search_url (str): Hinamizawa JSON検索endpoint URL.
+        osu_direct_nerinyan_search_url (str): Nerinyan v2検索endpoint URL.
+        osu_direct_point_lookup_bounded_wait_seconds (float): point lookupの最大待機秒数.
+        osu_direct_ranked_sync_interval_seconds (int): ranked catalog sync間隔の秒数.
+        osu_direct_approved_sync_interval_seconds (int): approved catalog sync間隔の秒数.
+        osu_direct_loved_sync_interval_seconds (int): loved catalog sync間隔の秒数.
+        osu_direct_qualified_sync_interval_seconds (int): qualified catalog sync間隔の秒数.
+        osu_direct_pending_sync_interval_seconds (int): pending catalog sync間隔の秒数.
+        osu_direct_wip_sync_interval_seconds (int): WIP catalog sync間隔の秒数.
+        osu_direct_graveyard_sync_interval_seconds (int): graveyard catalog sync間隔の秒数.
+        osu_direct_not_submitted_sync_interval_seconds (int): not submitted catalog sync間隔の秒数.
+        osu_direct_shared_upstream_budget_per_minute (int): direct系upstream処理の共有分間予算.
+        osu_direct_catalog_priority_policy (OsuDirectCatalogPriorityPolicy):
+            catalog処理の優先policy.
         model_config (ClassVar[SettingsConfigDict]): environment variableを直接読むSettings設定.
 
     Notes:
@@ -165,7 +232,11 @@ class AppConfig(BaseSettings):
     """
 
     database_url: PostgresDsn
+    database_pool_size: int = 5
+    database_max_overflow: int = 10
+    database_pool_timeout_seconds: float = 30.0
     valkey_url: ValkeyDsn
+    beatmap_metadata_fetch_max_concurrency: int = 4
     environment: EnvironmentName = DEFAULT_ENVIRONMENT
     server_host: str = "0.0.0.0"
     server_port: int = 8000
@@ -215,6 +286,49 @@ class AppConfig(BaseSettings):
     beatmap_mirror_refresh_interval_seconds: int = 86_400
     beatmap_default_bounded_wait_seconds: float = 3.0
     beatmap_max_bounded_wait_seconds: float = 3.0
+
+    osu_direct_access_policy: OsuDirectAccessPolicy = "authenticated"
+    osu_direct_search_backend: OsuDirectSearchBackend = Field(
+        default="auto",
+        validation_alias=AliasChoices(
+            "osu_direct_search_backend",
+            "OSU_DIRECT_SEARCH_BACKEND",
+            "osu_direct_sql_search_backend",
+            "OSU_DIRECT_SQL_SEARCH_BACKEND",
+        ),
+    )
+    osu_direct_validate_search_backend_on_startup: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "osu_direct_validate_search_backend_on_startup",
+            "OSU_DIRECT_VALIDATE_SEARCH_BACKEND_ON_STARTUP",
+            "osu_direct_validate_sql_search_backend_on_startup",
+            "OSU_DIRECT_VALIDATE_SQL_SEARCH_BACKEND_ON_STARTUP",
+        ),
+    )
+    osu_direct_external_index_backend: OsuDirectExternalIndexBackend = "disabled"
+    osu_direct_meilisearch_url: str | None = None
+    osu_direct_meilisearch_access_key: str | None = None
+    osu_direct_meilisearch_index_name: str = "athena_osu_direct_beatmapsets"
+    osu_direct_upstream_search_enabled: bool = True
+    osu_direct_upstream_search_providers: Annotated[
+        list[OsuDirectUpstreamSearchProvider], NoDecode
+    ] = Field(default_factory=lambda: ["hinamizawa", "nerinyan"])
+    osu_direct_upstream_search_wait_seconds: float = 5.0
+    osu_direct_upstream_search_first_page_refresh_seconds: float = 300.0
+    osu_direct_hinamizawa_search_url: str = "https://mirror.hinamizawa.ai/api/v1/hinai/search"
+    osu_direct_nerinyan_search_url: str = "https://api.nerinyan.moe/v2/search"
+    osu_direct_point_lookup_bounded_wait_seconds: float = 5.0
+    osu_direct_ranked_sync_interval_seconds: int = 86_400
+    osu_direct_approved_sync_interval_seconds: int = 86_400
+    osu_direct_loved_sync_interval_seconds: int = 86_400
+    osu_direct_qualified_sync_interval_seconds: int = 86_400
+    osu_direct_pending_sync_interval_seconds: int = 86_400
+    osu_direct_wip_sync_interval_seconds: int = 86_400
+    osu_direct_graveyard_sync_interval_seconds: int = 86_400
+    osu_direct_not_submitted_sync_interval_seconds: int = 86_400
+    osu_direct_shared_upstream_budget_per_minute: int = 60
+    osu_direct_catalog_priority_policy: OsuDirectCatalogPriorityPolicy = "point_lookup_first"
 
     @property
     def query_diagnostics_effective_enabled(self) -> bool:
@@ -285,6 +399,129 @@ class AppConfig(BaseSettings):
             raise ValueError(msg)
         return lower
 
+    @field_validator("osu_direct_access_policy", mode="before")
+    @classmethod
+    def _validate_osu_direct_access_policy(cls, v: str) -> OsuDirectAccessPolicy:
+        """osu!direct access policyを正規化して許可値を検証する.
+
+        Args:
+            v (str): environmentから読み込んだaccess policy名.
+
+        Returns:
+            OsuDirectAccessPolicy: 小文字化済みの許可されたaccess policy.
+
+        Raises:
+            ValueError: policy名がauthenticated,disabled,supporter_entitlement以外の場合.
+        """
+        return cast(
+            "OsuDirectAccessPolicy",
+            _normalize_choice(
+                v,
+                field_name="osu_direct_access_policy",
+                choices={
+                    "authenticated": "authenticated",
+                    "disabled": "disabled",
+                    "supporter_entitlement": "supporter_entitlement",
+                },
+            ),
+        )
+
+    @field_validator("osu_direct_search_backend", mode="before")
+    @classmethod
+    def _validate_osu_direct_search_backend(cls, v: str) -> OsuDirectSearchBackend:
+        """検索backend選択を正規化して許可値を検証する.
+
+        Args:
+            v (str): environmentから読み込んだsearch backend選択名.
+
+        Returns:
+            OsuDirectSearchBackend: 小文字化済みの許可されたbackend選択名.
+
+        Raises:
+            ValueError: search backendがauto,paradedb,meilisearch,tsvector以外の場合.
+        """
+        return cast(
+            "OsuDirectSearchBackend",
+            _normalize_choice(
+                v,
+                field_name="osu_direct_search_backend",
+                choices={
+                    "auto": "auto",
+                    "paradedb": "paradedb",
+                    "pg_search": "paradedb",
+                    "meilisearch": "meilisearch",
+                    "tsvector": "tsvector",
+                },
+            ),
+        )
+
+    @field_validator("osu_direct_external_index_backend", mode="before")
+    @classmethod
+    def _validate_osu_direct_external_index_backend(cls, v: str) -> OsuDirectExternalIndexBackend:
+        """任意の外部index backendを正規化して許可値を検証する.
+
+        Args:
+            v (str): environmentから読み込んだexternal index backend名.
+
+        Returns:
+            OsuDirectExternalIndexBackend: 小文字化済みのbackend名.
+
+        Raises:
+            ValueError: backend名がdisabledまたはmeilisearch以外の場合.
+        """
+        return cast(
+            "OsuDirectExternalIndexBackend",
+            _normalize_choice(
+                v,
+                field_name="osu_direct_external_index_backend",
+                choices={"disabled": "disabled", "meilisearch": "meilisearch"},
+            ),
+        )
+
+    @field_validator("osu_direct_upstream_search_providers", mode="before")
+    @classmethod
+    def _parse_osu_direct_upstream_search_providers(cls, v: object) -> object:
+        """外部検索provider一覧をcomma-separated textから復元して正規化する.
+
+        Args:
+            v (object): Pydanticがvalidatorへ渡した未加工の設定値.
+
+        Returns:
+            object: 文字列listへ変換したprovider名列. 文字列以外はそのまま返す.
+        """
+        parsed = cls._parse_url_list(v)
+        if not isinstance(parsed, list):
+            return parsed
+        items = cast("list[object]", parsed)
+        return [
+            item.lower().replace("-", "_") if isinstance(item, str) else item for item in items
+        ]
+
+    @field_validator("osu_direct_catalog_priority_policy", mode="before")
+    @classmethod
+    def _validate_osu_direct_catalog_priority_policy(
+        cls, v: str
+    ) -> OsuDirectCatalogPriorityPolicy:
+        """Catalog workの優先policyを正規化して許可値を検証する.
+
+        Args:
+            v (str): environmentから読み込んだcatalog priority policy名.
+
+        Returns:
+            OsuDirectCatalogPriorityPolicy: 小文字化済みの`point_lookup_first`.
+
+        Raises:
+            ValueError: priority policyが`point_lookup_first`以外の場合.
+        """
+        return cast(
+            "OsuDirectCatalogPriorityPolicy",
+            _normalize_choice(
+                v,
+                field_name="osu_direct_catalog_priority_policy",
+                choices={"point_lookup_first": "point_lookup_first"},
+            ),
+        )
+
     @field_validator("log_max_files")
     @classmethod
     def _validate_log_max_files(cls, v: int) -> int:
@@ -301,6 +538,82 @@ class AppConfig(BaseSettings):
         """
         if v < 0:
             msg = f"log_max_files must be greater than or equal to 0, got {v}"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("database_pool_size")
+    @classmethod
+    def _validate_database_pool_size(cls, v: int) -> int:
+        """SQLAlchemy DB pool sizeが正であることを検証する.
+
+        Args:
+            v (int): environmentから読み込んだ通常connection数.
+
+        Returns:
+            int: 検証済みのpool size.
+
+        Raises:
+            ValueError: pool sizeが1未満の場合.
+        """
+        if v < 1:
+            msg = "database_pool_size must be greater than 0"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("database_max_overflow")
+    @classmethod
+    def _validate_database_max_overflow(cls, v: int) -> int:
+        """SQLAlchemy DB pool overflow数が非負であることを検証する.
+
+        Args:
+            v (int): environmentから読み込んだoverflow connection数.
+
+        Returns:
+            int: 検証済みのmax overflow.
+
+        Raises:
+            ValueError: max overflowが0未満の場合.
+        """
+        if v < 0:
+            msg = "database_max_overflow must be greater than or equal to 0"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("database_pool_timeout_seconds")
+    @classmethod
+    def _validate_database_pool_timeout_seconds(cls, v: float) -> float:
+        """SQLAlchemy DB connection checkout timeoutが正であることを検証する.
+
+        Args:
+            v (float): environmentから読み込んだconnection checkout待機秒数.
+
+        Returns:
+            float: 検証済みのtimeout秒数.
+
+        Raises:
+            ValueError: timeout秒数が0以下の場合.
+        """
+        if not math.isfinite(v) or v <= 0:
+            msg = "database_pool_timeout_seconds must be a finite value greater than 0"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("beatmap_metadata_fetch_max_concurrency")
+    @classmethod
+    def _validate_beatmap_metadata_fetch_max_concurrency(cls, v: int) -> int:
+        """Worker内metadata fetch同時実行数が正であることを検証する.
+
+        Args:
+            v (int): environmentから読み込んだ同時実行数上限.
+
+        Returns:
+            int: 検証済みの同時実行数上限.
+
+        Raises:
+            ValueError: 同時実行数上限が1未満の場合.
+        """
+        if v < 1:
+            msg = "beatmap_metadata_fetch_max_concurrency must be greater than 0"
             raise ValueError(msg)
         return v
 
@@ -471,7 +784,105 @@ class AppConfig(BaseSettings):
             msg = "beatmap default bounded wait cannot exceed the maximum bounded wait"
             raise ValueError(msg)
 
+        osu_direct_runtime_values = (
+            self.osu_direct_point_lookup_bounded_wait_seconds,
+            self.osu_direct_ranked_sync_interval_seconds,
+            self.osu_direct_approved_sync_interval_seconds,
+            self.osu_direct_loved_sync_interval_seconds,
+            self.osu_direct_qualified_sync_interval_seconds,
+            self.osu_direct_pending_sync_interval_seconds,
+            self.osu_direct_wip_sync_interval_seconds,
+            self.osu_direct_graveyard_sync_interval_seconds,
+            self.osu_direct_not_submitted_sync_interval_seconds,
+            self.osu_direct_shared_upstream_budget_per_minute,
+            self.osu_direct_upstream_search_wait_seconds,
+            self.osu_direct_upstream_search_first_page_refresh_seconds,
+        )
+        if _has_invalid_positive_finite_value(osu_direct_runtime_values):
+            msg = "osu_direct runtime values must be finite values greater than 0"
+            raise ValueError(msg)
+        self._validate_osu_direct_upstream_search_config(environment)
+        if not self.osu_direct_meilisearch_index_name.strip():
+            msg = "osu_direct_meilisearch_index_name must not be empty"
+            raise ValueError(msg)
+        if (
+            self.osu_direct_search_backend == "meilisearch"
+            and self.osu_direct_external_index_backend != "meilisearch"
+        ):
+            msg = (
+                "osu_direct_external_index_backend must be meilisearch when "
+                "osu_direct_search_backend is meilisearch"
+            )
+            raise ValueError(msg)
+        if (
+            self.osu_direct_external_index_backend == "meilisearch"
+            or self.osu_direct_search_backend == "meilisearch"
+        ) and not self.osu_direct_meilisearch_url:
+            msg = (
+                "osu_direct_meilisearch_url is required when "
+                "Meilisearch is configured for osu!direct"
+            )
+            raise ValueError(msg)
+        if self.osu_direct_meilisearch_url:
+            self._validate_beatmap_http_url(
+                self.osu_direct_meilisearch_url,
+                field_name="osu_direct_meilisearch_url",
+                environment=environment,
+                absolute_url_label="URL",
+            )
+        self._validate_database_runtime_config()
         return self
+
+    def _validate_database_runtime_config(self) -> None:
+        """Database poolとDB-heavy worker同時実行数の相互制約を検証する.
+
+        Returns:
+            None: database runtime設定を検証して完了する.
+
+        Raises:
+            ValueError: metadata fetch同時実行数が通常pool sizeを超える場合.
+        """
+        if self.beatmap_metadata_fetch_max_concurrency > self.database_pool_size:
+            msg = (
+                "beatmap_metadata_fetch_max_concurrency must be less than or equal to "
+                "database_pool_size"
+            )
+            raise ValueError(msg)
+
+    def _validate_osu_direct_upstream_search_config(self, environment: str) -> None:
+        """Osu!direct外部検索provider設定の相互制約を検証する.
+
+        Args:
+            environment (str): test環境以外でHTTPSを必須化する実行環境名.
+
+        Returns:
+            None: 外部検索provider設定を検証して完了する.
+
+        Raises:
+            ValueError: 外部検索が有効でproviderが空,またはendpoint URLが不正な場合.
+        """
+        if (
+            self.osu_direct_upstream_search_enabled
+            and not self.osu_direct_upstream_search_providers
+        ):
+            msg = "osu_direct_upstream_search_providers must not be empty when enabled"
+            raise ValueError(msg)
+        if not self.osu_direct_upstream_search_enabled:
+            return
+        if "hinamizawa" in self.osu_direct_upstream_search_providers:
+            self._validate_beatmap_http_url(
+                self.osu_direct_hinamizawa_search_url,
+                field_name="osu_direct_hinamizawa_search_url",
+                environment=environment,
+                absolute_url_label="URL",
+            )
+        if "nerinyan" in self.osu_direct_upstream_search_providers:
+            self._validate_beatmap_http_url(
+                self.osu_direct_nerinyan_search_url,
+                field_name="osu_direct_nerinyan_search_url",
+                environment=environment,
+                absolute_url_label="URL",
+            )
 
     @staticmethod
     def _validate_beatmap_url_template(
@@ -700,6 +1111,21 @@ class AppConfig(BaseSettings):
         )
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_prefix="")
+
+
+def _has_invalid_positive_finite_value(values: tuple[int | float, ...]) -> bool:
+    """正で有限な数値だけを含むか検証する.
+
+    Args:
+        values (tuple[int | float, ...]): runtime設定から集めた数値列.
+
+    Returns:
+        bool: 0以下, 非有限float, またはfloat変換不能な巨大整数を含む場合はTrue.
+    """
+    try:
+        return any(not math.isfinite(value) or value <= 0 for value in values)
+    except OverflowError:
+        return True
 
 
 class RoutingConfig(BaseSettings):

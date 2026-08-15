@@ -9,6 +9,7 @@ from dishka import Provider, Scope
 
 from osu_server.composition.providers._dishka import provide
 from osu_server.config import AppConfig
+from osu_server.domain.beatmaps import DirectAccessPolicyMode
 from osu_server.domain.identity.system_users import SystemUserIdentity
 from osu_server.infrastructure.country.interfaces import CountryResolver
 from osu_server.infrastructure.messaging.local import LocalEventBus
@@ -115,6 +116,7 @@ class StableBanchoProviderSet(Provider):
         current_user_stats_query: CurrentUserStatsQuery,
         stable_user_status_store: StableUserStatusStore,
         bot_identity: SystemUserIdentity,
+        config: AppConfig,
     ) -> LoginResponseBuilder:
         """Stable login responseを組み立てるworkflow collaboratorを構成する.
 
@@ -130,6 +132,7 @@ class StableBanchoProviderSet(Provider):
                 login userのscore statsを取得するquery.
             stable_user_status_store (StableUserStatusStore): stable client向けstatusを読むstore.
             bot_identity (SystemUserIdentity): system botのidentityを表すvalue object.
+            config (AppConfig): osu!direct access policyを持つ実行時設定.
 
         Returns:
             LoginResponseBuilder: channel,friend,presence,stats packetを含むlogin response
@@ -143,6 +146,10 @@ class StableBanchoProviderSet(Provider):
             current_user_stats_query=current_user_stats_query,
             stable_user_status_store=stable_user_status_store,
             bot_identity=bot_identity,
+            grant_stable_supporter_feature_bit=(
+                DirectAccessPolicyMode(config.osu_direct_access_policy)
+                is DirectAccessPolicyMode.AUTHENTICATED
+            ),
         )
 
     @provide

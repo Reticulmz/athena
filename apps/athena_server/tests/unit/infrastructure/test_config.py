@@ -50,6 +50,167 @@ def test_environment_file_path_is_independent_of_current_working_directory(
     assert environment_file_path("test") == server_root / ".env.test"
 
 
+def test_osu_direct_upstream_search_defaults_to_hinamizawa_then_nerinyan() -> None:
+    """osu!direct hybrid検索の既定provider順と待機秒数を検証する.
+
+    Returns:
+        None: default config値を検証して完了し値を返さない.
+    """
+    config = AppConfig.model_validate(
+        {"database_url": _TEST_DATABASE_URL, "valkey_url": _TEST_VALKEY_URL}
+    )
+
+    assert config.osu_direct_upstream_search_enabled is True
+    assert config.osu_direct_upstream_search_providers == ["hinamizawa", "nerinyan"]
+    assert config.osu_direct_upstream_search_wait_seconds == 5.0
+    assert config.osu_direct_upstream_search_first_page_refresh_seconds == 300.0
+
+
+def test_osu_direct_upstream_search_provider_list_accepts_comma_text() -> None:
+    """外部検索provider一覧をcomma-separated textから読む契約を検証する.
+
+    Returns:
+        None: provider名の正規化結果を検証して完了し値を返さない.
+    """
+    config = AppConfig.model_validate(
+        {
+            "database_url": _TEST_DATABASE_URL,
+            "valkey_url": _TEST_VALKEY_URL,
+            "osu_direct_upstream_search_providers": "Hinamizawa,nerinyan",
+        }
+    )
+
+    assert config.osu_direct_upstream_search_providers == ["hinamizawa", "nerinyan"]
+
+
+def test_osu_direct_upstream_search_enabled_requires_provider() -> None:
+    """外部検索が有効な場合はprovider一覧を空にできない契約を検証する.
+
+    Returns:
+        None: ValidationErrorを検証して完了し値を返さない.
+    """
+    with pytest.raises(ValidationError, match="osu_direct_upstream_search_providers"):
+        _ = AppConfig.model_validate(
+            {
+                "database_url": _TEST_DATABASE_URL,
+                "valkey_url": _TEST_VALKEY_URL,
+                "osu_direct_upstream_search_providers": [],
+            }
+        )
+
+
+def test_disabled_osu_direct_upstream_search_ignores_unused_provider_urls() -> None:
+    """外部検索無効時は未使用provider URLを起動拒否に使わない契約を検証する.
+
+    Returns:
+        None: 無効な未使用URLを持つ設定が生成できることを確認して完了する.
+    """
+    config = AppConfig.model_validate(
+        {
+            "database_url": _TEST_DATABASE_URL,
+            "valkey_url": _TEST_VALKEY_URL,
+            "environment": "production",
+            "osu_direct_upstream_search_enabled": False,
+            "osu_direct_hinamizawa_search_url": "",
+            "osu_direct_nerinyan_search_url": "",
+        }
+    )
+
+    assert config.osu_direct_upstream_search_enabled is False
+
+
+class TestAppConfigDatabaseRuntime:
+    """Database poolとworker metadata fetch制限のruntime設定契約を検証する."""
+
+    def test_database_pool_defaults(self) -> None:
+        """Database poolとmetadata fetch制限が安全な既定値を持つことを検証する.
+
+        Returns:
+            None: default値を検証して完了する.
+        """
+        config = AppConfig.model_validate(
+            {"database_url": _TEST_DATABASE_URL, "valkey_url": _TEST_VALKEY_URL}
+        )
+
+        assert config.database_pool_size == 5
+        assert config.database_max_overflow == 10
+        assert config.database_pool_timeout_seconds == 30.0
+        assert config.beatmap_metadata_fetch_max_concurrency == 4
+
+    def test_database_pool_overrides_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Database pool設定を環境変数からoverrideできることを検証する.
+
+        Args:
+            monkeypatch (pytest.MonkeyPatch): runtime設定環境変数を設定するfixture.
+
+        Returns:
+            None: override結果を検証して完了する.
+        """
+        monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
+        monkeypatch.setenv("VALKEY_URL", _TEST_VALKEY_URL)
+        monkeypatch.setenv("DATABASE_POOL_SIZE", "8")
+        monkeypatch.setenv("DATABASE_MAX_OVERFLOW", "4")
+        monkeypatch.setenv("DATABASE_POOL_TIMEOUT_SECONDS", "12.5")
+        monkeypatch.setenv("BEATMAP_METADATA_FETCH_MAX_CONCURRENCY", "3")
+
+        config = load_config()
+
+        assert config.database_pool_size == 8
+        assert config.database_max_overflow == 4
+        assert config.database_pool_timeout_seconds == 12.5
+        assert config.beatmap_metadata_fetch_max_concurrency == 3
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("database_pool_size", 0),
+            ("database_max_overflow", -1),
+            ("database_pool_timeout_seconds", 0),
+            ("database_pool_timeout_seconds", float("nan")),
+            ("database_pool_timeout_seconds", float("inf")),
+            ("beatmap_metadata_fetch_max_concurrency", 0),
+        ],
+    )
+    def test_rejects_invalid_database_runtime_values(
+        self,
+        field: str,
+        value: float,
+    ) -> None:
+        """DB runtime制限の不正値をvalidationが拒否することを検証する.
+
+        Args:
+            field (str): 不正値を入れる設定field名.
+            value (float): validationで拒否される値.
+
+        Returns:
+            None: ValidationErrorを検証して完了する.
+        """
+        with pytest.raises(ValidationError, match=field):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    field: value,
+                }
+            )
+
+    def test_metadata_fetch_concurrency_must_fit_database_pool(self) -> None:
+        """DB-heavy metadata fetch同時実行数が通常poolを超える設定を拒否する.
+
+        Returns:
+            None: database_pool_sizeとの相互制約ValidationErrorを検証して完了する.
+        """
+        with pytest.raises(ValidationError, match="database_pool_size"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "database_pool_size": 2,
+                    "beatmap_metadata_fetch_max_concurrency": 3,
+                }
+            )
+
+
 class TestAppConfigEnvVarReading:
     """AppConfigが環境変数とenvironment別env fileを読む契約を検証するtest群."""
 
@@ -1140,6 +1301,306 @@ class TestBeatmapMirrorConfig:
                     "beatmap_max_bounded_wait_seconds": 1.0,
                 }
             )
+
+
+class TestOsuDirectConfig:
+    """osu!direct runtime policyとbackend configuration契約を検証するtest群."""
+
+    def test_defaults_enable_authenticated_access_and_auto_search_backend(self) -> None:
+        """Defaultのosu!direct設定がcredential不要のauto検索構成になることを検証する.
+
+        必須service URLだけでAppConfigを生成する.
+        access policy、search backend、bounded wait、sync interval、budgetが安全なdefaultを
+        持ち、optional external index credentialを要求しないことを確認する.
+
+        Returns:
+            None: default osu!direct設定を検証して完了し値を返さない.
+        """
+        config = AppConfig.model_validate(
+            {"database_url": _TEST_DATABASE_URL, "valkey_url": _TEST_VALKEY_URL}
+        )
+
+        assert config.osu_direct_access_policy == "authenticated"
+        assert config.osu_direct_search_backend == "auto"
+        assert config.osu_direct_validate_search_backend_on_startup is True
+        assert config.osu_direct_external_index_backend == "disabled"
+        assert config.osu_direct_meilisearch_url is None
+        assert config.osu_direct_meilisearch_access_key is None
+        assert config.osu_direct_point_lookup_bounded_wait_seconds == 5.0
+        assert config.osu_direct_upstream_search_first_page_refresh_seconds == 300.0
+        assert config.osu_direct_catalog_priority_policy == "point_lookup_first"
+        assert config.osu_direct_shared_upstream_budget_per_minute == 60
+
+        sync_intervals = {
+            config.osu_direct_ranked_sync_interval_seconds,
+            config.osu_direct_approved_sync_interval_seconds,
+            config.osu_direct_loved_sync_interval_seconds,
+            config.osu_direct_qualified_sync_interval_seconds,
+            config.osu_direct_pending_sync_interval_seconds,
+            config.osu_direct_wip_sync_interval_seconds,
+            config.osu_direct_graveyard_sync_interval_seconds,
+            config.osu_direct_not_submitted_sync_interval_seconds,
+        }
+        assert sync_intervals == {86_400}
+
+    @pytest.mark.parametrize("access_policy", ["disabled", "supporter-entitlement"])
+    def test_accepts_policy_modes_reserved_by_osu_direct_design(self, access_policy: str) -> None:
+        """Disabledとsupporter entitlementのaccess policyを受け付けることを検証する.
+
+        Configured policy値をAppConfigへ渡す.
+        hyphen表記を含む入力がruntime用の小文字underscore表記へ正規化されることを確認する.
+
+        Args:
+            access_policy (str): 検証対象のosu!direct access policy入力値.
+
+        Returns:
+            None: access policy modeの受理と正規化を検証して完了し値を返さない.
+        """
+        config = AppConfig.model_validate(
+            {
+                "database_url": _TEST_DATABASE_URL,
+                "valkey_url": _TEST_VALKEY_URL,
+                "osu_direct_access_policy": access_policy,
+            }
+        )
+
+        assert config.osu_direct_access_policy == access_policy.replace("-", "_")
+
+    def test_rejects_invalid_osu_direct_access_policy(self) -> None:
+        """未定義のosu!direct access policyを拒否する契約を検証する.
+
+        public policyをAppConfigへ渡す.
+        access policy fieldを示すValidationErrorが送出されることを確認する.
+
+        Returns:
+            None: invalid access policy拒否を検証して完了し値を返さない.
+        """
+        with pytest.raises(ValidationError, match="osu_direct_access_policy"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "osu_direct_access_policy": "public",
+                }
+            )
+
+    def test_rejects_disabled_search_backend(self) -> None:
+        """未定義の検索backendを拒否する契約を検証する.
+
+        disabledをsearch backendとしてAppConfigへ渡す.
+        search backend fieldを示すValidationErrorが送出されることを確認する.
+
+        Returns:
+            None: search backendの無効化拒否を検証して完了し値を返さない.
+        """
+        with pytest.raises(ValidationError, match="osu_direct_search_backend"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "osu_direct_search_backend": "disabled",
+                }
+            )
+
+    @pytest.mark.parametrize(
+        "search_backend",
+        ["auto", "paradedb", "meilisearch", "tsvector", "pg-search"],
+    )
+    def test_accepts_search_backend_selection(self, search_backend: str) -> None:
+        """Search backend選択値を受け付けて正規化する契約を検証する.
+
+        Configured backend値をAppConfigへ渡す.
+        hyphen表記を含む入力がruntime用の小文字underscore表記へ正規化されることを確認する.
+
+        Args:
+            search_backend (str): 検証対象のsearch backend入力値.
+
+        Returns:
+            None: backend選択値の受理と正規化を検証して完了する.
+        """
+        payload = {
+            "database_url": _TEST_DATABASE_URL,
+            "valkey_url": _TEST_VALKEY_URL,
+            "osu_direct_search_backend": search_backend,
+        }
+        if search_backend == "meilisearch":
+            payload.update(
+                {
+                    "environment": "test",
+                    "osu_direct_external_index_backend": "meilisearch",
+                    "osu_direct_meilisearch_url": "http://meilisearch.test:7700",
+                }
+            )
+        config = AppConfig.model_validate(payload)
+
+        expected = "paradedb" if search_backend == "pg-search" else search_backend
+        assert config.osu_direct_search_backend == expected
+
+    def test_accepts_legacy_sql_search_backend_alias(self) -> None:
+        """旧SQL backend設定名をsearch backend互換aliasとして読むことを検証する.
+
+        旧field名でAppConfigへ値を渡す.
+        新しいsearch backend fieldへ値が正規化されて入ることを確認する.
+
+        Returns:
+            None: legacy aliasの互換読込を検証して完了する.
+        """
+        config = AppConfig.model_validate(
+            {
+                "database_url": _TEST_DATABASE_URL,
+                "valkey_url": _TEST_VALKEY_URL,
+                "osu_direct_sql_search_backend": "pg-search",
+                "osu_direct_validate_sql_search_backend_on_startup": False,
+            }
+        )
+
+        assert config.osu_direct_search_backend == "paradedb"
+        assert config.osu_direct_validate_search_backend_on_startup is False
+
+    def test_accepts_meilisearch_external_index_settings_without_access_key(self) -> None:
+        """Optional Meilisearch設定がaccess keyなしでも構成できることを検証する.
+
+        test environmentでMeilisearch backendとHTTP URLをAppConfigへ渡す.
+        backend、URL、index名が保持され、external credentialを要求しないことを確認する.
+
+        Returns:
+            None: optional external index設定を検証して完了し値を返さない.
+        """
+        config = AppConfig.model_validate(
+            {
+                "database_url": _TEST_DATABASE_URL,
+                "valkey_url": _TEST_VALKEY_URL,
+                "environment": "test",
+                "osu_direct_external_index_backend": "meilisearch",
+                "osu_direct_meilisearch_url": "http://meilisearch.test:7700",
+                "osu_direct_meilisearch_index_name": "direct-test",
+            }
+        )
+
+        assert config.osu_direct_external_index_backend == "meilisearch"
+        assert config.osu_direct_meilisearch_url == "http://meilisearch.test:7700"
+        assert config.osu_direct_meilisearch_access_key is None
+        assert config.osu_direct_meilisearch_index_name == "direct-test"
+
+    def test_rejects_meilisearch_backend_without_url(self) -> None:
+        """Meilisearch backend有効時に接続URLを必須にする契約を検証する.
+
+        URLなしでMeilisearch backendをAppConfigへ渡す.
+        meilisearch URL要件を示すValidationErrorが送出されることを確認する.
+
+        Returns:
+            None: missing Meilisearch URL拒否を検証して完了し値を返さない.
+        """
+        with pytest.raises(ValidationError, match="osu_direct_meilisearch_url"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "osu_direct_external_index_backend": "meilisearch",
+                }
+            )
+
+    def test_rejects_insecure_meilisearch_url_outside_test(self) -> None:
+        """Test以外でHTTP Meilisearch URLを拒否する契約を検証する.
+
+        productionでHTTP Meilisearch URLをAppConfigへ渡す.
+        HTTPS要件を示すValidationErrorが送出されることを確認する.
+
+        Returns:
+            None: insecure Meilisearch URL拒否を検証して完了し値を返さない.
+        """
+        with pytest.raises(ValidationError, match="HTTPS"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "environment": "production",
+                    "osu_direct_external_index_backend": "meilisearch",
+                    "osu_direct_meilisearch_url": "http://meilisearch.local:7700",
+                }
+            )
+
+    @pytest.mark.parametrize(
+        ("field_name", "value"),
+        [
+            ("osu_direct_point_lookup_bounded_wait_seconds", 0),
+            ("osu_direct_point_lookup_bounded_wait_seconds", float("nan")),
+            ("osu_direct_point_lookup_bounded_wait_seconds", float("inf")),
+            ("osu_direct_upstream_search_first_page_refresh_seconds", 0),
+            ("osu_direct_ranked_sync_interval_seconds", 0),
+            ("osu_direct_shared_upstream_budget_per_minute", 0),
+        ],
+    )
+    def test_rejects_non_positive_osu_direct_runtime_values(
+        self, field_name: str, value: float
+    ) -> None:
+        """正数が必要なosu!direct runtime設定の不正値を拒否する契約を検証する.
+
+        対象fieldへ0, NaN, infinityを渡してAppConfigを生成する.
+        osu!direct runtime valueのValidationErrorが送出されることを確認する.
+
+        Args:
+            field_name (str): 0を設定するAppConfig field名.
+            value (float): validationで拒否される非正数または非有限値.
+
+        Returns:
+            None: non-positive runtime設定拒否を検証して完了し値を返さない.
+        """
+        with pytest.raises(ValidationError, match="osu_direct runtime values"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    field_name: value,
+                }
+            )
+
+    def test_rejects_overflowing_osu_direct_integer_runtime_value(self) -> None:
+        """巨大整数のosu!direct runtime設定をValidationErrorとして拒否する契約を検証する.
+
+        Returns:
+            None: math.isfinite由来のOverflowErrorを漏らさないことを確認する.
+        """
+        with pytest.raises(ValidationError, match="osu_direct runtime values"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "osu_direct_shared_upstream_budget_per_minute": 10**500,
+                }
+            )
+
+    def test_load_config_reads_osu_direct_environment_values(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """osu!direct環境変数がload_configでAppConfigへ反映される契約を検証する.
+
+        必須service URLとosu!direct関連環境変数を設定してload_configを実行する.
+        文字列環境変数が正しい型と正規化済み値として保持されることを確認する.
+
+        Args:
+            monkeypatch (pytest.MonkeyPatch): test用環境変数を設定するpytest helper.
+
+        Returns:
+            None: osu!direct environment読込を検証して完了し値を返さない.
+        """
+        monkeypatch.setenv("DATABASE_URL", _TEST_DATABASE_URL)
+        monkeypatch.setenv("VALKEY_URL", _TEST_VALKEY_URL)
+        monkeypatch.setenv("OSU_DIRECT_ACCESS_POLICY", "DISABLED")
+        monkeypatch.setenv("OSU_DIRECT_EXTERNAL_INDEX_BACKEND", "MEILISEARCH")
+        monkeypatch.setenv("OSU_DIRECT_MEILISEARCH_URL", "https://meilisearch.example.com")
+        monkeypatch.setenv("OSU_DIRECT_POINT_LOOKUP_BOUNDED_WAIT_SECONDS", "2.5")
+        monkeypatch.setenv("OSU_DIRECT_UPSTREAM_SEARCH_FIRST_PAGE_REFRESH_SECONDS", "120")
+        monkeypatch.setenv("OSU_DIRECT_SHARED_UPSTREAM_BUDGET_PER_MINUTE", "30")
+
+        config = load_config()
+
+        assert config.osu_direct_access_policy == "disabled"
+        assert config.osu_direct_external_index_backend == "meilisearch"
+        assert config.osu_direct_meilisearch_url == "https://meilisearch.example.com"
+        assert config.osu_direct_point_lookup_bounded_wait_seconds == 2.5
+        assert config.osu_direct_upstream_search_first_page_refresh_seconds == 120.0
+        assert config.osu_direct_shared_upstream_budget_per_minute == 30
 
 
 class TestAppConfigQueryDiagnostics:

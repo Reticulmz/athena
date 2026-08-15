@@ -78,7 +78,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        image: paradedb/paradedb:0.25.1-pg18
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -179,7 +179,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        image: paradedb/paradedb:0.25.1-pg18
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -199,6 +199,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Just
         uses: extractions/setup-just@v3
@@ -219,22 +221,8 @@ jobs:
       - name: Rebuild editable crypto extension
         run: uv sync --locked --reinstall-package athena-crypto
 
-      - name: Validate migration chain
+      - name: Migration check
         run: just migration-check
-
-  nix:
-    name: Nix
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31
-
-      - name: Validate Flake
-        run: nix flake check
 
   audit:
     name: Audit
@@ -266,5 +254,19 @@ jobs:
       - name: Rebuild editable crypto extension
         run: uv sync --locked --reinstall-package athena-crypto
 
-      - name: Audit monorepo ownership
+      - name: Monorepo audit
         run: just audit-monorepo
+
+  nix:
+    name: Nix
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Validate Flake
+        run: nix flake check

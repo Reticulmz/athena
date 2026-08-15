@@ -313,6 +313,31 @@ class _RecordingBeatmapResolver:
         )
         return self._fresh_beatmapset_result()
 
+    async def resolve_known_beatmap(
+        self,
+        beatmap: Beatmap,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapResolveResult:
+        """解決済みbeatmapのrefresh要求を記録してresultを返す.
+
+        Args:
+            beatmap (Beatmap): handlerがscore listingで取得済みのbeatmap.
+            options (BeatmapResolveOptions | None): file requirementを指定するoptional options.
+
+        Returns:
+            BeatmapResolveResult: 指定beatmapを持つfresh result.
+        """
+        opts = options or BeatmapResolveOptions()
+        self.calls.append(
+            (
+                "known_beatmap",
+                str(beatmap.id),
+                opts.require_osu_file,
+                opts.wait_timeout_seconds,
+            )
+        )
+        return _resolve_result(beatmap, self.beatmapset)
+
     def _fresh_beatmapset_result(self) -> BeatmapSetResolveResult:
         """設定済みfresh beatmapset resultをrepositoryへ反映して返す.
 
@@ -430,6 +455,31 @@ class _UnavailableBeatmapResolver:
             next_refresh_at=None,
             reason="pending",
         )
+
+    async def resolve_known_beatmap(
+        self,
+        beatmap: Beatmap,
+        options: BeatmapResolveOptions | None = None,
+    ) -> BeatmapResolveResult:
+        """解決済みbeatmapのrefresh要求を記録してpending resultを返す.
+
+        Args:
+            beatmap (Beatmap): handlerがscore listingで取得済みのbeatmap.
+            options (BeatmapResolveOptions | None): file requirementを指定するoptional options.
+
+        Returns:
+            BeatmapResolveResult: beatmapなしのpending metadata result.
+        """
+        opts = options or BeatmapResolveOptions()
+        self.calls.append(
+            (
+                "known_beatmap",
+                str(beatmap.id),
+                opts.require_osu_file,
+                opts.wait_timeout_seconds,
+            )
+        )
+        return _metadata_pending_result()
 
 
 @final
@@ -677,6 +727,43 @@ async def test_getscores_resolves_metadata_before_returning_not_found() -> None:
     ]
 
 
+async def test_getscores_local_hit_requests_warmup_without_metadata_resolve() -> None:
+    """Local hitのGetscoresがmetadata resolveを再実行せずwarmupする契約を検証する.
+
+    保存済みbeatmapを先にrepositoryへ入れ, response後のfile warmupはbeatmap IDで要求される
+    ことを確認する.
+
+    Returns:
+        None: header response, metadata resolve未実行, beatmap ID warmupを確認して完了する.
+    """
+    repository = _ScoreListingRepository()
+    beatmap = _make_beatmap()
+    beatmapset = _make_beatmapset(beatmap=beatmap)
+    repository.beatmaps_by_checksum[_CHECKSUM] = beatmap
+    repository.beatmapsets_by_id[beatmapset.id] = beatmapset
+    resolver = _RecordingBeatmapResolver(repository, beatmap, beatmapset)
+    warmup = _RecordingWarmupUseCase(BeatmapFileWarmupOutcome.REQUESTED)
+    handler = _make_handler(
+        repository=repository,
+        resolver=resolver,
+        warmup=warmup,
+        auth_result=LegacyWebAuthResult(user_id=2, username="PlayerOne"),
+    )
+
+    response = await handler(_request(_query()))
+
+    assert response.status_code == HTTPStatus.OK
+    assert bytes(response.body).split(b"\n")[0] == b"2|false|75|955866|0||"
+    assert resolver.calls == []
+    assert warmup.requests == [
+        BeatmapFileWarmupRequest(
+            entrance=BeatmapFileWarmupEntrance.STABLE_GETSCORES,
+            user_id=2,
+            beatmap_id=75,
+        )
+    ]
+
+
 async def test_getscores_auth_failure_does_not_request_metadata_fetch() -> None:
     """Authentication failureがmetadata resolveとwarmupを開始しないcontractを検証する.
 
@@ -861,11 +948,11 @@ async def test_getscores_uses_beatmapset_hint_after_checksum_metadata_miss_for_u
     ]
 
 
-async def test_getscores_warmup_failure_does_not_change_response_body() -> None:
-    """Warmup failureがsuccessful Getscores response bodyを変えないcontractを検証する.
+async def test_getscores_warmup_failure_result_does_not_change_response_body() -> None:
+    """Warmup failure resultがGetscores response bodyを変えないcontractを検証する.
 
     Returns:
-        None: header responseと記録済みfailed warmup requestを確認して完了する.
+        None: header responseと記録済みwarmup requestを確認して完了する.
     """
     repository = _ScoreListingRepository()
     beatmap = _make_beatmap()
@@ -883,6 +970,9 @@ async def test_getscores_warmup_failure_does_not_change_response_body() -> None:
 
     assert response.status_code == HTTPStatus.OK
     assert bytes(response.body).split(b"\n")[0] == b"2|false|75|955866|0||"
+    assert resolver.calls == [
+        ("beatmapset_id", "955866", False, _default_metadata_wait_seconds()),
+    ]
     assert warmup.requests == [
         BeatmapFileWarmupRequest(
             entrance=BeatmapFileWarmupEntrance.STABLE_GETSCORES,
@@ -921,6 +1011,13 @@ async def test_getscores_default_wait_covers_menu_transition_metadata_fetch() ->
     assert bytes(response.body).split(b"\n")[0] == b"2|false|75|955866|0||"
     assert resolver.calls == [
         ("beatmapset_id", "955866", False, _default_metadata_wait_seconds()),
+    ]
+    assert warmup.requests == [
+        BeatmapFileWarmupRequest(
+            entrance=BeatmapFileWarmupEntrance.STABLE_GETSCORES,
+            user_id=2,
+            beatmap_id=75,
+        )
     ]
 
 

@@ -824,6 +824,65 @@ async def test_beatmap_and_legacy_getscores_queries_are_read_only() -> None:
     assert fixture.session.closed is True
 
 
+async def test_beatmapset_query_loads_current_attachments_in_bulk() -> None:
+    """Beatmapset hydrationでchildごとのattachment lookupが増えないことを検証する.
+
+    複数child beatmapを持つbeatmapsetを取得し、current file attachment queryが1回だけ
+    実行されることを確認する.
+
+    Returns:
+        None: 取得したbeatmapsetとattachment query回数を検証して完了する.
+    """
+    beatmapset_model = _beatmapset_model()
+    beatmap_models = (
+        _beatmap_model(beatmap_id=7, checksum_md5="b" * 32, version="Insane"),
+        _beatmap_model(beatmap_id=8, checksum_md5="c" * 32, version="Extra"),
+    )
+    attachment_models = (
+        _attachment_model(attachment_id=80, beatmap_id=7, checksum_md5="b" * 32),
+        _attachment_model(attachment_id=81, beatmap_id=8, checksum_md5="c" * 32),
+    )
+    attachment_query_count = 0
+
+    def execute(statement: Executable) -> FakeResult:
+        """Beatmapset hydration用のchild beatmapとattachment結果を返す.
+
+        Args:
+            statement (Executable): repositoryが発行したSQLAlchemy statement.
+
+        Returns:
+            FakeResult: child beatmapまたはattachment result. 一致しない場合は空結果.
+        """
+        nonlocal attachment_query_count
+        text = _sql_text(statement)
+        if "FROM beatmaps WHERE beatmaps.beatmapset_id" in text:
+            return FakeResult(values=beatmap_models)
+        if "FROM beatmap_file_attachments" in text:
+            attachment_query_count += 1
+            return FakeResult(values=attachment_models)
+        return FakeResult()
+
+    session = FakeQuerySession(
+        get_handler=lambda model_type, identity: (
+            beatmapset_model if model_type is BeatmapSetModel and identity == 6 else None
+        ),
+        execute_handler=execute,
+    )
+    session_factory = cast(
+        "SQLAlchemyQuerySessionFactory", cast("object", FakeSessionFactory(session))
+    )
+    repository: BeatmapQueryRepository = SQLAlchemyBeatmapQueryRepository(session_factory)
+
+    beatmapset = await repository.get_beatmapset(6)
+
+    assert beatmapset is not None
+    assert [beatmap.id for beatmap in beatmapset.beatmaps] == [7, 8]
+    attachments = [beatmap.file_attachment for beatmap in beatmapset.beatmaps]
+    assert all(attachment is not None for attachment in attachments)
+    assert [attachment.id for attachment in attachments if attachment is not None] == [80, 81]
+    assert attachment_query_count == 1
+
+
 async def test_chat_history_query_repository_returns_display_read_models() -> None:
     """Chat history query adapterが表示用read modelを返す契約を検証する.
 
@@ -1407,26 +1466,41 @@ def _beatmapset_model() -> BeatmapSetModel:
         creator="mapper",
         artist_unicode="artist",
         title_unicode="title",
+        source_text="",
+        tags="",
+        direct_search_text="artist title mapper diff",
         official_status=BeatmapRankStatus.RANKED.value,
         official_status_source=BeatmapMetadataSource.OFFICIAL.value,
         official_status_verified=True,
         last_fetched_at=_NOW,
         next_refresh_at=None,
+        search_document_version=1,
+        search_document_updated_at=_NOW,
     )
 
 
-def _beatmap_model() -> BeatmapModel:
+def _beatmap_model(
+    *,
+    beatmap_id: int = 7,
+    checksum_md5: str = "b" * 32,
+    version: str = "Insane",
+) -> BeatmapModel:
     """Beatmap query testで使うranked osu beatmap modelを構築する.
+
+    Args:
+        beatmap_id (int): 構築するbeatmapのprimary key.
+        checksum_md5 (str): beatmap fileのMD5 checksum.
+        version (str): difficulty名として保存するversion.
 
     Returns:
         BeatmapModel: beatmapset ID/checksum/verified statusを持つfixture.
     """
     return BeatmapModel(
-        id=7,
+        id=beatmap_id,
         beatmapset_id=6,
-        checksum_md5="b" * 32,
+        checksum_md5=checksum_md5,
         mode=BeatmapMode.OSU.value,
-        version="Insane",
+        version=version,
         total_length=120,
         hit_length=110,
         max_combo=500,

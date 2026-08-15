@@ -11,6 +11,17 @@ if TYPE_CHECKING:
 from osu_server.infrastructure.database import engine as engine_module
 
 
+def _ignore_engine(_: object) -> None:
+    """Query diagnostics installerを無効化するtest helper.
+
+    Args:
+        _ (object): create_engineが渡すfake engine.
+
+    Returns:
+        None: installer処理を行わずに完了する.
+    """
+
+
 class _CreateAsyncEngineRecorder:
     """create_async_engine呼び出しを記録して固定engineを返すtest double.
 
@@ -60,5 +71,38 @@ def test_create_engine_enables_pool_pre_ping(monkeypatch: pytest.MonkeyPatch) ->
 
     assert result is recorder.engine
     assert recorder.url == "postgresql+asyncpg://user:pass@localhost/osu"
-    assert recorder.kwargs == {"pool_pre_ping": True}
+    assert recorder.kwargs == {
+        "pool_pre_ping": True,
+        "pool_size": 5,
+        "max_overflow": 10,
+        "pool_timeout": 30.0,
+    }
     assert installed_engines == [recorder.engine]
+
+
+def test_create_engine_accepts_pool_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """engine作成時に呼び出し側指定のpool設定を渡すことを検証する.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): engine factoryをrecording fakeへ置換するfixture.
+
+    Returns:
+        None: pool設定のkeyword argsを検証して完了する.
+    """
+    recorder = _CreateAsyncEngineRecorder()
+    monkeypatch.setattr(engine_module, "create_async_engine", recorder)
+    monkeypatch.setattr(engine_module, "install_query_diagnostics", _ignore_engine)
+
+    _ = engine_module.create_engine(
+        "postgresql://user:pass@localhost/osu",
+        pool_size=8,
+        max_overflow=2,
+        pool_timeout=12.5,
+    )
+
+    assert recorder.kwargs == {
+        "pool_pre_ping": True,
+        "pool_size": 8,
+        "max_overflow": 2,
+        "pool_timeout": 12.5,
+    }
