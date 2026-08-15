@@ -220,16 +220,10 @@ class ParadeDBSearchBackend:
             KeyError: SQL result rowに必須fieldがない場合.
             TypeError: SQL result rowの必須field型が期待値と異なる場合.
         """
-        async with self._session_factory() as session:
-            rows = cast(
-                "Sequence[Mapping[str, object]]",
-                (await session.execute(_search_statement(request))).mappings().all(),
-            )
-
-        candidate_rows = rows[: request.page_size]
-        return DirectSearchBackendResult(
-            candidates=tuple(_candidate_from_mapping(row) for row in candidate_rows),
-            has_more=len(rows) > request.page_size,
+        return await _execute_search(
+            self._session_factory,
+            request,
+            _search_statement,
         )
 
     async def validate(self) -> None:
@@ -305,16 +299,10 @@ class TsvectorSearchBackend:
             KeyError: SQL result rowに必須fieldがない場合.
             TypeError: SQL result rowの必須field型が期待値と異なる場合.
         """
-        async with self._session_factory() as session:
-            rows = cast(
-                "Sequence[Mapping[str, object]]",
-                (await session.execute(_tsvector_search_statement(request))).mappings().all(),
-            )
-
-        candidate_rows = rows[: request.page_size]
-        return DirectSearchBackendResult(
-            candidates=tuple(_candidate_from_mapping(row) for row in candidate_rows),
-            has_more=len(rows) > request.page_size,
+        return await _execute_search(
+            self._session_factory,
+            request,
+            _tsvector_search_statement,
         )
 
     async def validate(self) -> None:
@@ -345,6 +333,39 @@ class TsvectorSearchBackend:
             raise TsvectorSearchBackendUnavailableError(msg)
 
 
+async def _execute_search(
+    session_factory: SQLAlchemyQuerySessionFactory,
+    request: DirectSearchRequest,
+    statement_factory: Callable[[DirectSearchRequest], Executable],
+) -> DirectSearchBackendResult:
+    """Backend固有statementを実行して共通のpage結果へ変換する.
+
+    Args:
+        session_factory (SQLAlchemyQuerySessionFactory): queryごとに閉じるread session factory.
+        request (DirectSearchRequest): page sizeを含む検索条件.
+        statement_factory (Callable[[DirectSearchRequest], Executable]): backend固有SELECT builder.
+
+    Returns:
+        DirectSearchBackendResult: page内候補と次page有無.
+
+    Raises:
+        SQLAlchemyError: sessionのreadまたはrow取得に失敗した場合.
+        KeyError: SQL result rowに必須fieldがない場合.
+        TypeError: SQL result rowの必須field型が期待値と異なる場合.
+    """
+    async with session_factory() as session:
+        rows = cast(
+            "Sequence[Mapping[str, object]]",
+            (await session.execute(statement_factory(request))).mappings().all(),
+        )
+
+    candidate_rows = rows[: request.page_size]
+    return DirectSearchBackendResult(
+        candidates=tuple(_candidate_from_mapping(row) for row in candidate_rows),
+        has_more=len(rows) > request.page_size,
+    )
+
+
 def _search_statement(request: DirectSearchRequest) -> Executable:
     """Direct search requestをParadeDB検索SELECTへ変換する.
 
@@ -359,20 +380,7 @@ def _search_statement(request: DirectSearchRequest) -> Executable:
     mode = request.mode.value if request.mode is not None else None
     if uses_text_search:
         return _paradedb_text_search_statement(request, query_text, mode=mode)
-
-    score = literal(_FALLBACK_SCORE).label("score")
-    statement = select(
-        BeatmapSetModel.id.label("beatmapset_id"),
-        score,
-    ).where(*_search_scope_filters(request, mode=mode))
-
-    last_update_at = _last_update_at_expression()
-    statement = statement.order_by(
-        last_update_at.desc().nulls_last(),
-        BeatmapSetModel.id.desc(),
-    )
-
-    return statement.offset(request.page * request.page_size).limit(request.page_size + 1)
+    return _fallback_search_statement(request, mode=mode)
 
 
 def _paradedb_text_search_statement(
@@ -440,34 +448,58 @@ def _tsvector_search_statement(request: DirectSearchRequest) -> Executable:
     uses_text_search = _uses_text_search(request)
     query_text = request.query_text.strip()
     mode = request.mode.value if request.mode is not None else None
-    score = _tsvector_score_expression(query_text, uses_text_search, mode=mode).label("score")
+    if not uses_text_search:
+        return _fallback_search_statement(request, mode=mode)
+
+    score = _tsvector_score_expression(query_text, mode=mode).label("score")
     statement = select(
         BeatmapSetModel.id.label("beatmapset_id"),
         score,
-    ).where(*_search_scope_filters(request, mode=mode))
-
-    if uses_text_search:
-        statement = statement.where(
-            _text_or_difficulty_search_filter(
-                _tsvector_text_search_filter(query_text),
-                query_text,
-                mode=mode,
-            )
-        )
+    ).where(
+        *_search_scope_filters(request, mode=mode),
+        _text_or_difficulty_search_filter(
+            _tsvector_text_search_filter(query_text),
+            query_text,
+            mode=mode,
+        ),
+    )
 
     last_update_at = _last_update_at_expression()
-    if uses_text_search:
-        statement = statement.order_by(
-            score.desc(),
-            last_update_at.desc().nulls_last(),
-            BeatmapSetModel.id.desc(),
-        )
-    else:
-        statement = statement.order_by(
-            last_update_at.desc().nulls_last(),
-            BeatmapSetModel.id.desc(),
-        )
+    statement = statement.order_by(
+        score.desc(),
+        last_update_at.desc().nulls_last(),
+        BeatmapSetModel.id.desc(),
+    )
 
+    return statement.offset(request.page * request.page_size).limit(request.page_size + 1)
+
+
+def _fallback_search_statement(
+    request: DirectSearchRequest,
+    *,
+    mode: str | None,
+) -> Executable:
+    """Backend非依存のlisting SELECTとfallback順を構築する.
+
+    Args:
+        request (DirectSearchRequest): filterとpageを持つ検索条件.
+        mode (str | None): 絞り込むmode. Noneならmodeを問わない.
+
+    Returns:
+        Executable: fallback scoreと更新日時順を持つ候補SELECT.
+    """
+    score = literal(_FALLBACK_SCORE).label("score")
+    statement = (
+        select(
+            BeatmapSetModel.id.label("beatmapset_id"),
+            score,
+        )
+        .where(*_search_scope_filters(request, mode=mode))
+        .order_by(
+            _last_update_at_expression().desc().nulls_last(),
+            BeatmapSetModel.id.desc(),
+        )
+    )
     return statement.offset(request.page * request.page_size).limit(request.page_size + 1)
 
 
@@ -618,36 +650,32 @@ def _text_search_filter(query_text: str) -> ColumnElement[bool]:
 
 def _tsvector_score_expression(
     query_text: str,
-    uses_text_search: bool,
     *,
     mode: str | None,
 ) -> ColumnElement[float]:
-    """検索種別に応じたtsvector score式を返す.
+    """Tsvector一致とdifficulty名完全一致を比較するscore式を返す.
 
     Args:
         query_text (str): 空白除去済みの検索文字列.
-        uses_text_search (bool): tsvector text検索を行う場合はTrue.
         mode (str | None): 絞り込むmode. Noneならmodeを問わない.
 
     Returns:
-        ColumnElement[float]: ts_rank_cd scoreまたはfallback scoreのSQL expression.
+        ColumnElement[float]: difficulty名一致を優先するts_rank_cd score expression.
     """
-    if uses_text_search:
-        return cast(
-            "ColumnElement[float]",
-            case(
-                (
-                    _difficulty_name_search_filter(query_text, mode=mode),
-                    literal(_DIFFICULTY_NAME_EXACT_SCORE),
-                ),
-                (
-                    _tsvector_text_search_filter(query_text),
-                    func.ts_rank_cd(_tsvector_document(), _tsquery_expression(query_text)),
-                ),
-                else_=literal(_FALLBACK_SCORE),
+    return cast(
+        "ColumnElement[float]",
+        case(
+            (
+                _difficulty_name_search_filter(query_text, mode=mode),
+                literal(_DIFFICULTY_NAME_EXACT_SCORE),
             ),
-        )
-    return literal(_FALLBACK_SCORE)
+            (
+                _tsvector_text_search_filter(query_text),
+                func.ts_rank_cd(_tsvector_document(), _tsquery_expression(query_text)),
+            ),
+            else_=literal(_FALLBACK_SCORE),
+        ),
+    )
 
 
 def _tsvector_text_search_filter(query_text: str) -> ColumnElement[bool]:

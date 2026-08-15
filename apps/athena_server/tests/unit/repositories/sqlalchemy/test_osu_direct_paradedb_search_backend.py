@@ -278,19 +278,23 @@ async def test_tsvector_search_returns_candidates_and_compiles_declared_filters(
         DirectSearchListing.MOST_PLAYED,
     ],
 )
+@pytest.mark.parametrize("backend_type", [ParadeDBSearchBackend, TsvectorSearchBackend])
 async def test_special_listing_uses_fallback_order_without_text_predicate(
+    backend_type: type[ParadeDBSearchBackend] | type[TsvectorSearchBackend],
     listing: DirectSearchListing,
 ) -> None:
     """Special listingがliteral text検索を行わずfallback順だけを使うことを検証する.
 
     Args:
+        backend_type (type[ParadeDBSearchBackend] | type[TsvectorSearchBackend]):
+            共通fallbackを使うbackend型.
         listing (DirectSearchListing): stable special queryから導出されるlisting種別.
 
     Returns:
         None: special listing用SQLのsort/predicate contractを検証して完了する.
     """
     session = FakeSearchSession([FakeMappingResult(({"beatmapset_id": 21, "score": 0.0},))])
-    backend = ParadeDBSearchBackend(_session_factory(session))
+    backend = backend_type(_session_factory(session))
 
     result = await backend.search(
         DirectSearchRequest(
