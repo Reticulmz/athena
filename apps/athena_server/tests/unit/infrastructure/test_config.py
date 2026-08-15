@@ -1529,7 +1529,6 @@ class TestOsuDirectConfig:
             ("osu_direct_upstream_search_first_page_refresh_seconds", 0),
             ("osu_direct_ranked_sync_interval_seconds", 0),
             ("osu_direct_shared_upstream_budget_per_minute", 0),
-            ("osu_direct_shared_upstream_budget_per_minute", 10**500),
         ],
     )
     def test_rejects_non_positive_osu_direct_runtime_values(
@@ -1553,6 +1552,21 @@ class TestOsuDirectConfig:
                     "database_url": _TEST_DATABASE_URL,
                     "valkey_url": _TEST_VALKEY_URL,
                     field_name: value,
+                }
+            )
+
+    def test_rejects_overflowing_osu_direct_integer_runtime_value(self) -> None:
+        """巨大整数のosu!direct runtime設定をValidationErrorとして拒否する契約を検証する.
+
+        Returns:
+            None: math.isfinite由来のOverflowErrorを漏らさないことを確認する.
+        """
+        with pytest.raises(ValidationError, match="osu_direct runtime values"):
+            _ = AppConfig.model_validate(
+                {
+                    "database_url": _TEST_DATABASE_URL,
+                    "valkey_url": _TEST_VALKEY_URL,
+                    "osu_direct_shared_upstream_budget_per_minute": 10**500,
                 }
             )
 

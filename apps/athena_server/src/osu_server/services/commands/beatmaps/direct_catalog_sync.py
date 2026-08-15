@@ -231,13 +231,6 @@ class DirectCatalogScheduler:
         if request_count <= 0:
             msg = "request_count must be positive"
             raise ValueError(msg)
-        if request_count > self._request_budget_per_minute:
-            return DirectCatalogScheduleResult(
-                work_kind=work_kind,
-                outcome=DirectCatalogScheduleOutcome.FAILED,
-                retry_eligible=False,
-                failure_reason="request_count exceeds upstream budget",
-            )
         if _is_catalog_work(work_kind):
             # ponytail: one event-loop tick is enough priority for current worker concurrency.
             await asyncio.sleep(0)
@@ -290,6 +283,9 @@ class DirectCatalogScheduler:
                 self._used_budget = 0
                 window_age = 0
 
+            if request_count > self._request_budget_per_minute and self._used_budget == 0:
+                self._used_budget = self._request_budget_per_minute
+                return None
             if self._used_budget + request_count > self._request_budget_per_minute:
                 retry_after_seconds = math.ceil(_UPSTREAM_BUDGET_WINDOW_SECONDS - window_age)
                 return max(1, retry_after_seconds)
@@ -329,15 +325,7 @@ class DirectCatalogScheduler:
         Returns:
             None: log出力のみを行い値を返さない.
         """
-        if not _is_catalog_work(result.work_kind):
-            return
-        _logger.warning(
-            "osu_direct_catalog_sync_failed",
-            work_kind=result.work_kind.value,
-            exception_type=type(exc).__name__,
-            retry_eligible=result.retry_eligible,
-            failure_reason=result.failure_reason,
-        )
+        _log_catalog_failure(result, exc)
 
     def _log_completion(self, result: DirectCatalogScheduleResult) -> None:
         """Catalog workの完了状態を構造化logへ出力する.
@@ -537,10 +525,29 @@ class DirectRangeCrawl:
                 await uow.beatmaps.record_direct_coverage(coverage)
                 await uow.commit()
 
+        try:
+            request_count = self._range_crawl_fetcher.request_count_for_chunk(chunk)
+        except Exception as exc:
+            result = DirectCatalogScheduleResult(
+                work_kind=DirectCatalogWorkKind.ID_RANGE_CRAWL,
+                outcome=DirectCatalogScheduleOutcome.FAILED,
+                retry_eligible=False,
+                failure_reason=_sanitize_failure_reason(
+                    DirectCatalogWorkKind.ID_RANGE_CRAWL,
+                    exc,
+                ),
+            )
+            _log_catalog_failure(result, exc)
+            await self._record_failed_coverage(
+                chunk,
+                failure_reason=result.failure_reason or "catalog work failed",
+            )
+            return result
+
         result = await self._scheduler.run(
             DirectCatalogWorkKind.ID_RANGE_CRAWL,
             work,
-            request_count=self._range_crawl_fetcher.request_count_for_chunk(chunk),
+            request_count=request_count,
         )
         if result.outcome is DirectCatalogScheduleOutcome.FAILED:
             await self._record_failed_coverage(
@@ -616,6 +623,27 @@ def _is_catalog_work(work_kind: DirectCatalogWorkKind) -> bool:
         bool: feed syncまたはid range crawlならTrue.
     """
     return work_kind is not DirectCatalogWorkKind.POINT_LOOKUP
+
+
+def _log_catalog_failure(result: DirectCatalogScheduleResult, exc: Exception) -> None:
+    """Catalog workの失敗とretry stateを構造化logへ出力する.
+
+    Args:
+        result (DirectCatalogScheduleResult): failure結果.
+        exc (Exception): sanitize対象の例外.
+
+    Returns:
+        None: catalog workであればfailure eventを出力する.
+    """
+    if not _is_catalog_work(result.work_kind):
+        return
+    _logger.warning(
+        "osu_direct_catalog_sync_failed",
+        work_kind=result.work_kind.value,
+        exception_type=type(exc).__name__,
+        retry_eligible=result.retry_eligible,
+        failure_reason=result.failure_reason,
+    )
 
 
 def _sanitize_failure_reason(work_kind: DirectCatalogWorkKind, exc: Exception) -> str:

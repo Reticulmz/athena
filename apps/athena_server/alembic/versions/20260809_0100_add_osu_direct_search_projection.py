@@ -7,10 +7,11 @@ Create Date: 2026-08-09 01:00:00.000000
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.exc import DBAPIError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -36,6 +37,7 @@ _SEARCH_DOCUMENT_PARADEDB_FIELDS = (
 _PG_AVAILABLE_EXTENSION = sa.table("pg_available_extensions", sa.column("name", sa.String()))
 _PARADEDB_EXTENSION = "pg_search"
 _VECTOR_EXTENSION = "vector"
+_INSUFFICIENT_PRIVILEGE_SQLSTATE = "42501"
 _SEARCH_DOCUMENT_VERSION_COLUMN = sa.column("search_document_version", sa.Integer())
 _COVERAGE_FROM_BEATMAPSET_ID_COLUMN = sa.column("from_beatmapset_id", sa.Integer())
 _COVERAGE_TO_BEATMAPSET_ID_COLUMN = sa.column("to_beatmapset_id", sa.Integer())
@@ -45,6 +47,28 @@ _COVERAGE_FAILURE_REASON_COLUMN = sa.column("failure_reason", sa.Text())
 _INDEX_STATE_DOCUMENT_VERSION_COLUMN = sa.column("document_version", sa.Integer())
 _INDEX_STATE_FAILURE_REASON_COLUMN = sa.column("failure_reason", sa.Text())
 _INDEX_STATE_STATUS_COLUMN = sa.column("status", sa.String(length=16))
+
+
+@runtime_checkable
+class _SqlStateCarrier(Protocol):
+    """DBAPI例外が持つPostgreSQL SQLSTATE属性を表す.
+
+    Attributes:
+        sqlstate (str): PostgreSQL error code.
+    """
+
+    sqlstate: str
+
+
+@runtime_checkable
+class _PgCodeCarrier(Protocol):
+    """DBAPI例外が持つpsycopg系error code属性を表す.
+
+    Attributes:
+        pgcode (str): PostgreSQL error code.
+    """
+
+    pgcode: str
 
 
 def _checked_string_enum(
@@ -130,7 +154,7 @@ def upgrade() -> None:
             作成したことを示す.
 
     Raises:
-        SQLAlchemyError: pg_search extension利用可能環境で有効化またはBM25 index作成に失敗した場合.
+        SQLAlchemyError: pg_search extension作成済み環境でBM25 index作成に失敗した場合.
     """
     op.add_column(
         _BEATMAPSET_TABLE,
@@ -306,8 +330,8 @@ def _create_search_document_bm25_index() -> None:
     create_index_sql = f"CREATE INDEX CONCURRENTLY {_SEARCH_DOCUMENT_BM25_INDEX} "
     create_index_sql += f"ON {_BEATMAPSET_TABLE} USING paradedb ({fields}) WITH (key_field='id')"
     with op.get_context().autocommit_block():
-        _create_extension_if_missing(_VECTOR_EXTENSION)
-        _create_extension_if_missing(_PARADEDB_EXTENSION)
+        if not _create_paradedb_extensions_if_allowed():
+            return
         op.execute(sa.text(create_index_sql))
 
 
@@ -350,6 +374,44 @@ def _create_extension_if_missing(extension_name: str) -> None:
         None: extension作成DDLを発行して完了する.
     """
     op.execute(sa.text(f"CREATE EXTENSION IF NOT EXISTS {extension_name}"))
+
+
+def _create_paradedb_extensions_if_allowed() -> bool:
+    """ParadeDB依存extensionを作成し,権限不足ならoptional indexをskipする.
+
+    Returns:
+        bool: extension作成済みまたは作成成功ならTrue. migration roleの権限不足ならFalse.
+
+    Raises:
+        SQLAlchemyError: 権限不足以外のextension作成失敗が発生した場合.
+    """
+    try:
+        _create_extension_if_missing(_VECTOR_EXTENSION)
+        _create_extension_if_missing(_PARADEDB_EXTENSION)
+    except DBAPIError as exc:
+        if _is_insufficient_privilege_error(exc):
+            return False
+        raise
+    return True
+
+
+def _is_insufficient_privilege_error(exc: DBAPIError) -> bool:
+    """PostgreSQLの権限不足errorか判定する.
+
+    Args:
+        exc (sa.exc.DBAPIError): SQLAlchemyがDBAPI例外から包んだ例外.
+
+    Returns:
+        bool: SQLSTATE 42501の場合はTrue.
+    """
+    original: object = exc.orig
+    return (
+        isinstance(original, _SqlStateCarrier)
+        and original.sqlstate == _INSUFFICIENT_PRIVILEGE_SQLSTATE
+    ) or (
+        isinstance(original, _PgCodeCarrier)
+        and original.pgcode == _INSUFFICIENT_PRIVILEGE_SQLSTATE
+    )
 
 
 def _drop_search_document_bm25_index() -> None:

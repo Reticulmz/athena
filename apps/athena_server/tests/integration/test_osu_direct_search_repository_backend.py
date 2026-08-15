@@ -202,8 +202,7 @@ async def session_factory(
     yield factory
     try:
         await _cleanup_rows(factory)
-    except (OSError, SQLAlchemyError) as exc:
-        _ = exc
+    except OSError, SQLAlchemyError:
         return
 
 

@@ -220,6 +220,40 @@ class FailingRangeCrawlFetcher:
         raise RuntimeError(self.secret_value)
 
 
+class UnconfiguredRangeCrawlFetcher:
+    """request count算出時にrange crawl未設定を再現するtest double."""
+
+    def request_count_for_chunk(self, chunk: DirectRangeCrawlChunk) -> int:
+        """Range crawl開始前にsource未設定を送出する.
+
+        Args:
+            chunk (DirectRangeCrawlChunk): crawl対象のid range chunk.
+
+        Returns:
+            int: 常に例外を送出するため返らない.
+
+        Raises:
+            RuntimeError: source未設定を再現するため常に送出する.
+        """
+        _ = chunk
+        raise RuntimeError("mirror metadata source is not configured")
+
+    async def fetch_id_range(
+        self,
+        chunk: DirectRangeCrawlChunk,
+    ) -> DirectRangeCrawlFetchResult:
+        """Fetchが呼ばれたらtestを失敗させる.
+
+        Args:
+            chunk (DirectRangeCrawlChunk): crawl対象のid range chunk.
+
+        Returns:
+            DirectRangeCrawlFetchResult: 呼ばれない契約のため返らない.
+        """
+        _ = chunk
+        raise AssertionError("fetch_id_range must not run")
+
+
 async def test_concurrent_point_lookup_consumes_budget_before_catalog_crawl() -> None:
     """同時に競合するpoint lookupがcatalog crawlより先に共有budgetを使う契約を検証する.
 
@@ -351,11 +385,11 @@ async def test_shared_budget_rejects_non_positive_request_count() -> None:
     assert calls == []
 
 
-async def test_shared_budget_rejects_range_larger_than_window_budget_without_retry() -> None:
-    """Window上限より大きいrequest_countを非retry失敗として返す契約を検証する.
+async def test_shared_budget_runs_oversized_range_when_window_is_empty() -> None:
+    """Window上限より大きいrequest_countも空windowなら実行する契約を検証する.
 
     Returns:
-        None: oversized workがdelay retryにならずworkを実行しないことを確認する.
+        None: oversized workを失敗として捨てずに実行することを確認する.
     """
     calls: list[str] = []
     scheduler = DirectCatalogScheduler(request_budget_per_minute=3)
@@ -366,10 +400,9 @@ async def test_shared_budget_rejects_range_larger_than_window_budget_without_ret
         request_count=4,
     )
 
-    assert result.outcome is DirectCatalogScheduleOutcome.FAILED
+    assert result.outcome is DirectCatalogScheduleOutcome.COMPLETED
     assert result.retry_eligible is False
-    assert result.failure_reason == "request_count exceeds upstream budget"
-    assert calls == []
+    assert calls == ["range"]
 
 
 async def test_catalog_failure_returns_sanitized_retry_diagnostics() -> None:
@@ -574,6 +607,36 @@ async def test_range_crawl_reserves_reported_upstream_request_count() -> None:
     assert result.retry_eligible is True
     assert fetcher.calls == []
     assert factory.snapshot().direct_coverage_records_by_scope == {}
+
+
+async def test_range_crawl_request_count_failure_records_failed_coverage_without_fetch() -> None:
+    """Range crawlのrequest count算出失敗ではfetchせず失敗coverageだけを残す.
+
+    Returns:
+        None: source未設定がcompleted coverageにならずoperator向けfailure logを出すことを確認する.
+    """
+    factory = InMemoryUnitOfWorkFactory(InMemoryCommandRepositoryState())
+    chunk = _make_range_chunk(from_beatmapset_id=2_000, to_beatmapset_id=2_004)
+    crawl = DirectRangeCrawl(
+        unit_of_work_factory=factory,
+        scheduler=DirectCatalogScheduler(request_budget_per_minute=10),
+        range_crawl_fetcher=UnconfiguredRangeCrawlFetcher(),
+    )
+
+    with capture_logs() as logs:
+        result = await crawl.execute(chunk)
+
+    snapshot = factory.snapshot()
+    coverage = snapshot.direct_coverage_records_by_scope[_range_coverage_key(chunk)]
+    assert result.outcome is DirectCatalogScheduleOutcome.FAILED
+    assert result.retry_eligible is False
+    assert coverage.completed_at is None
+    assert coverage.failed_at is not None
+    assert coverage.failure_reason == result.failure_reason
+    assert snapshot.beatmaps_by_id == {}
+    events = [entry for entry in logs if entry["event"] == "osu_direct_catalog_sync_failed"]
+    assert len(events) == 1
+    assert events[0]["retry_eligible"] is False
 
 
 async def test_range_crawl_failure_records_failed_chunk_without_metadata() -> None:

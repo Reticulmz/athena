@@ -14,6 +14,8 @@ from osu_server.domain.beatmaps import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from osu_server.domain.beatmaps import BeatmapSetSearchDocument
     from osu_server.repositories.interfaces.unit_of_work import UnitOfWorkFactory
 
@@ -163,12 +165,15 @@ class DirectIndexingCommands:
                 await uow.commit()
             if not documents:
                 break
+            states: list[DirectExternalIndexState] = []
             for document in documents:
-                result = await self._sync_document(document)
-                if result.outcome is DirectExternalIndexUpdateOutcome.SUCCEEDED:
+                state = await self._sync_document_state(document)
+                states.append(state)
+                if state.status is DirectExternalIndexStatus.SUCCEEDED:
                     succeeded_count += 1
-                elif result.outcome is DirectExternalIndexUpdateOutcome.FAILED:
+                else:
                     failed_count += 1
+            await self._record_index_states(states)
             after_beatmapset_id = documents[-1].beatmapset_id
         return DirectExternalIndexRebuildResult(
             succeeded_count=succeeded_count,
@@ -187,68 +192,70 @@ class DirectIndexingCommands:
         Returns:
             DirectExternalIndexUpdateResult: 同期結果.
         """
-        attempted_at = datetime.now(UTC)
-        if self._external_index_backend is None:
-            await self._record_index_state(
-                document=document,
-                attempted_at=attempted_at,
-                status=DirectExternalIndexStatus.FAILED,
-                failure_reason="external index backend unavailable",
-            )
-            return DirectExternalIndexUpdateResult(outcome=DirectExternalIndexUpdateOutcome.FAILED)
-
-        try:
-            await self._external_index_backend.index_document(document)
-        except Exception as exc:
-            await self._record_index_state(
-                document=document,
-                attempted_at=attempted_at,
-                status=DirectExternalIndexStatus.FAILED,
-                failure_reason=_sanitize_failure_reason(exc),
-            )
-            return DirectExternalIndexUpdateResult(outcome=DirectExternalIndexUpdateOutcome.FAILED)
-
-        await self._record_index_state(
-            document=document,
-            attempted_at=attempted_at,
-            status=DirectExternalIndexStatus.SUCCEEDED,
-            failure_reason=None,
+        state = await self._sync_document_state(document)
+        await self._record_index_states((state,))
+        outcome = (
+            DirectExternalIndexUpdateOutcome.SUCCEEDED
+            if state.status is DirectExternalIndexStatus.SUCCEEDED
+            else DirectExternalIndexUpdateOutcome.FAILED
         )
-        return DirectExternalIndexUpdateResult(outcome=DirectExternalIndexUpdateOutcome.SUCCEEDED)
+        return DirectExternalIndexUpdateResult(outcome=outcome)
 
-    async def _record_index_state(
+    async def _sync_document_state(
         self,
-        *,
         document: BeatmapSetSearchDocument,
-        attempted_at: datetime,
-        status: DirectExternalIndexStatus,
-        failure_reason: str | None,
-    ) -> None:
-        """External index同期状態を新しいUnit of Workで記録する.
+    ) -> DirectExternalIndexState:
+        """1件のprojectionをexternal indexへ同期して記録用stateを返す.
 
         Args:
-            document (BeatmapSetSearchDocument): state記録対象のprojection.
-            attempted_at (datetime): external index更新を試行したUTC timestamp.
-            status (DirectExternalIndexStatus): 記録する同期結果.
-            failure_reason (str | None): 失敗時のsanitized reason.
+            document (BeatmapSetSearchDocument): committed storageから読んだprojection.
 
         Returns:
-            None: index stateをcommitして完了する.
+            DirectExternalIndexState: commit前のdocument単位同期結果.
         """
+        attempted_at = datetime.now(UTC)
+        if self._external_index_backend is None:
+            status = DirectExternalIndexStatus.FAILED
+            failure_reason = "external index backend unavailable"
+        else:
+            try:
+                await self._external_index_backend.index_document(document)
+            except Exception as exc:
+                status = DirectExternalIndexStatus.FAILED
+                failure_reason = _sanitize_failure_reason(exc)
+            else:
+                status = DirectExternalIndexStatus.SUCCEEDED
+                failure_reason = None
+
+        return DirectExternalIndexState(
+            backend=self._backend,
+            beatmapset_id=document.beatmapset_id,
+            document_version=document.document_version,
+            status=status,
+            last_attempted_at=attempted_at,
+            last_succeeded_at=(
+                attempted_at if status is DirectExternalIndexStatus.SUCCEEDED else None
+            ),
+            failure_reason=failure_reason,
+        )
+
+    async def _record_index_states(
+        self,
+        states: Sequence[DirectExternalIndexState],
+    ) -> None:
+        """External index同期状態を1つのUnit of Workで記録する.
+
+        Args:
+            states (Sequence[DirectExternalIndexState]): 保存するdocument単位の同期結果.
+
+        Returns:
+            None: index state群をcommitして完了する.
+        """
+        if not states:
+            return
         async with self._unit_of_work_factory() as uow:
-            await uow.beatmaps.record_index_state(
-                DirectExternalIndexState(
-                    backend=self._backend,
-                    beatmapset_id=document.beatmapset_id,
-                    document_version=document.document_version,
-                    status=status,
-                    last_attempted_at=attempted_at,
-                    last_succeeded_at=(
-                        attempted_at if status is DirectExternalIndexStatus.SUCCEEDED else None
-                    ),
-                    failure_reason=failure_reason,
-                )
-            )
+            for state in states:
+                await uow.beatmaps.record_index_state(state)
             await uow.commit()
 
 

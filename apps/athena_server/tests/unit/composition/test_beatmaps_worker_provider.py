@@ -110,10 +110,10 @@ async def test_direct_catalog_fetcher_routes_mirror_range_to_mirror_provider() -
 
 @pytest.mark.asyncio
 async def test_direct_catalog_fetcher_routes_official_range_to_official_provider() -> None:
-    """Official sourceのrange crawlがofficial providerを使うことを検証する.
+    """Official sourceのrange crawlがofficial providerとtoken予算を使うことを検証する.
 
     Returns:
-        None: official providerだけが呼ばれ, request countがID数と一致することを確認する.
+        None: official providerだけが呼ばれ, request countがtoken分を含むことを確認する.
     """
     official_snapshot = _snapshot(20, source=BeatmapMetadataSource.OFFICIAL)
     mirror_provider = RecordingMetadataProvider()
@@ -132,7 +132,29 @@ async def test_direct_catalog_fetcher_routes_official_range_to_official_provider
     assert result.beatmapsets == (official_snapshot,)
     assert official_provider.beatmapset_lookup_ids == [20, 21]
     assert mirror_provider.beatmapset_lookup_ids == []
-    assert fetcher.request_count_for_chunk(chunk) == 2
+    assert fetcher.request_count_for_chunk(chunk) == 3
+
+
+@pytest.mark.asyncio
+async def test_direct_catalog_fetcher_rejects_mirror_range_when_mirror_source_missing() -> None:
+    """Mirror source未設定時のrange crawlが明示的に失敗することを検証する.
+
+    Returns:
+        None: request count算出とfetchの両方がRuntimeErrorになることを確認する.
+    """
+    mirror_provider = RecordingMetadataProvider()
+    fetcher = DirectCatalogFetcher(
+        official_provider=None,
+        mirror_provider=mirror_provider,
+        mirror_lookup_request_count=0,
+    )
+    chunk = _chunk(source=BeatmapMetadataSource.MIRROR, from_beatmapset_id=10, to_beatmapset_id=11)
+
+    with pytest.raises(RuntimeError, match="mirror metadata source is not configured"):
+        _ = fetcher.request_count_for_chunk(chunk)
+    with pytest.raises(RuntimeError, match="mirror metadata source is not configured"):
+        _ = await fetcher.fetch_id_range(chunk)
+    assert mirror_provider.beatmapset_lookup_ids == []
 
 
 @pytest.mark.asyncio

@@ -164,6 +164,8 @@ def test_osu_direct_search_migration_creates_tables_indexes_and_rollback() -> No
     assert '_VECTOR_EXTENSION = "vector"' in migration
     assert '_PARADEDB_EXTENSION = "pg_search"' in migration
     assert "CREATE EXTENSION IF NOT EXISTS {extension_name}" in migration
+    assert "_create_paradedb_extensions_if_allowed()" in migration
+    assert '_INSUFFICIENT_PRIVILEGE_SQLSTATE = "42501"' in migration
     assert "if not _paradedb_extensions_available()" in migration
     assert "CREATE INDEX CONCURRENTLY" in migration
     assert "USING paradedb" in migration

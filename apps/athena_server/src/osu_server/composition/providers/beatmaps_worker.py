@@ -73,6 +73,7 @@ class DirectCatalogFetcher:
             provider.
         _mirror_provider (BeatmapMetadataProvider): mirror range crawlで使うprovider.
         _mirror_lookup_request_count (int): mirror ID lookup 1件で試行しうるHTTP request数.
+            0ならmirror source未設定.
     """
 
     _official_provider: OsuApiMetadataProviderService | None
@@ -92,12 +93,13 @@ class DirectCatalogFetcher:
             official_provider (OsuApiMetadataProviderService | None): feed search用provider.
             mirror_provider (BeatmapMetadataProvider): mirror source指定時のprovider.
             mirror_lookup_request_count (int): mirror fallbackを含む1 IDあたりの最大試行数.
+                0ならmirror source未設定.
 
         Raises:
-            ValueError: mirror_lookup_request_countが正でない場合.
+            ValueError: mirror_lookup_request_countが負値の場合.
         """
-        if mirror_lookup_request_count <= 0:
-            msg = "mirror_lookup_request_count must be positive"
+        if mirror_lookup_request_count < 0:
+            msg = "mirror_lookup_request_count must not be negative"
             raise ValueError(msg)
         self._official_provider = official_provider
         self._mirror_provider = mirror_provider
@@ -110,12 +112,19 @@ class DirectCatalogFetcher:
             chunk (DirectRangeCrawlChunk): crawl対象のid range chunk.
 
         Returns:
-            int: mirror fallbackではbase URL数を掛けた最大HTTP試行数.
+            int: mirror fallbackではbase URL数を掛けた最大HTTP試行数. officialでは
+            token取得を含む最大HTTP試行数.
+
+        Raises:
+            RuntimeError: mirror sourceが要求されたがmirror base URLが未設定の場合.
         """
         range_size = chunk.to_beatmapset_id - chunk.from_beatmapset_id + 1
         if chunk.source is BeatmapMetadataSource.MIRROR:
+            if self._mirror_lookup_request_count == 0:
+                msg = "mirror metadata source is not configured"
+                raise RuntimeError(msg)
             return range_size * self._mirror_lookup_request_count
-        return range_size
+        return range_size + 1
 
     async def fetch_feed_window(
         self,
@@ -179,9 +188,12 @@ class DirectCatalogFetcher:
             BeatmapMetadataProvider: sourceに対応するprovider.
 
         Raises:
-            RuntimeError: 公式sourceが要求されたがproviderが無効な場合.
+            RuntimeError: sourceに対応するproviderが無効な場合.
         """
         if source is BeatmapMetadataSource.MIRROR:
+            if self._mirror_lookup_request_count == 0:
+                msg = "mirror metadata source is not configured"
+                raise RuntimeError(msg)
             return self._mirror_provider
         if self._official_provider is None:
             msg = "official metadata source is not configured"
@@ -244,7 +256,7 @@ class BeatmapWorkerProviderSet(Provider):
         return DirectCatalogFetcher(
             official_provider=official_provider,
             mirror_provider=mirror_provider,
-            mirror_lookup_request_count=max(1, len(config.beatmap_metadata_mirror_base_urls)),
+            mirror_lookup_request_count=len(config.beatmap_metadata_mirror_base_urls),
         )
 
     @provide
