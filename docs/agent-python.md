@@ -46,15 +46,21 @@ Dishka is Athena's composition tool, not an application service locator.
   adapters. Runtime adapters may use framework-specific injection only at route or job function
   boundaries. Do not pass `AsyncContainer`, `FromDishka`, `Provider`, or `Scope` into use-case
   inputs or domain objects.
-- Use `Scope.APP` for process-lifetime dependencies: config, engines, clients, brokers, storage,
-  state stores, stateless services, and stateless adapters. Use `Scope.REQUEST` only for
-  per-request or per-job state and resources with a shorter lifetime. Use `Scope.SESSION` only
-  when the integration exposes a long-lived connection/session scope. Do not put mutable
-  request, user, or connection state in `Scope.APP`.
+- Use `Scope.APP` only for process-lifetime dependencies whose full dependency chain is
+  APP-compatible: config, engines, clients, brokers, storage, state stores, and stateless
+  services or adapters that do not depend on REQUEST/SESSION objects. Use `Scope.REQUEST` for
+  per-request or per-job state, resources, and services that depend on request/job-scoped
+  objects. Use `Scope.SESSION` only when the integration exposes a long-lived connection/session
+  scope. Do not put mutable request, user, connection state, or child-scope dependencies in
+  `Scope.APP`.
 - Providers that own closable runtime resources must yield them from generator factories and
   release them after `yield`; use async generators for Athena async resources. Consumers do not
   close Dishka-owned objects. Scope-specific finalization runs when the owning scope exits, and
-  app/worker shutdown closes the top-level APP container.
+  app/worker shutdown closes the top-level APP container. Current production providers use only
+  `Scope.APP`; if `Scope.REQUEST` or `Scope.SESSION` is introduced, the integration that enters
+  the child scope must close that child container when the request, session, or job completes.
+  Starlette `ContainerMiddleware` manages HTTP request/session scopes, and Taskiq
+  `ContainerMiddleware` manages job request scopes.
 - If a provider needs framework context such as Starlette `Request`, `WebSocket`, or Taskiq
   context, pass it through Dishka integration context data such as `from_context`, not globals or
   ad hoc attributes. Keep framework context at the adapter/composition boundary.
