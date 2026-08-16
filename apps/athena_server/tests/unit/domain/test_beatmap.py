@@ -190,19 +190,22 @@ def test_fetch_target_restores_worker_queue_payload() -> None:
         ("metadata:beatmap", "0"),
         ("metadata:beatmapset", "-1"),
         ("file:beatmap", "not-an-id"),
+        ("metadata:beatmap", "01"),
+        ("metadata:beatmapset", " 1"),
+        ("file:beatmap", "+1"),
     ],
 )
-def test_fetch_target_rejects_non_positive_id_key(target_type: str, target_key: str) -> None:
-    """ID型fetch targetが正の整数でないkeyを生成時に拒否することを検証する.
+def test_fetch_target_rejects_invalid_id_key(target_type: str, target_key: str) -> None:
+    """ID型fetch targetが正規形の正整数でないkeyを生成時に拒否することを検証する.
 
     Args:
         target_type (str): IDをlookup keyに使うfetch target type.
-        target_key (str): 0,負数,または整数でない拒否対象key.
+        target_key (str): 0,負数,非整数,または非正規形の拒否対象key.
 
     Returns:
         None: 不正なID keyがValueErrorになることを検証して完了する.
     """
-    with pytest.raises(ValueError, match="target_key must be a positive integer"):
+    with pytest.raises(ValueError, match="target_key must be a canonical positive integer"):
         _ = BeatmapFetchTarget.from_queue_payload(
             target_type=target_type,
             target_key=target_key,

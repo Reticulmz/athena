@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from osu_server.domain.beatmaps._validation import validate_local_override, validate_md5
+from osu_server.domain.beatmaps._validation import (
+    validate_beatmapset_child_ownership,
+    validate_local_override,
+    validate_md5,
+)
 from osu_server.domain.beatmaps.states import (
     BeatmapFetchState,
     BeatmapFileSource,
@@ -207,7 +211,8 @@ class BeatmapSet:
         Raises:
             ValueError: child beatmapのbeatmapset IDがこのset IDと一致しない場合.
         """
-        for beatmap in self.beatmaps:
-            if beatmap.beatmapset_id != self.id:
-                msg = "beatmap.beatmapset_id must match BeatmapSet.id"
-                raise ValueError(msg)
+        validate_beatmapset_child_ownership(
+            (beatmap.beatmapset_id for beatmap in self.beatmaps),
+            self.id,
+            mismatch_message="beatmap.beatmapset_id must match BeatmapSet.id",
+        )

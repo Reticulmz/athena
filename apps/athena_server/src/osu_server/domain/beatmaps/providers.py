@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from osu_server.domain.beatmaps._validation import validate_md5
+from osu_server.domain.beatmaps._validation import (
+    validate_beatmapset_child_ownership,
+    validate_md5,
+)
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -141,10 +144,13 @@ class BeatmapsetSnapshot:
         Raises:
             ValueError: child snapshotのbeatmapset IDがこのsnapshot IDと一致しない場合.
         """
-        for snapshot in self.beatmaps:
-            if snapshot.beatmapset_id != self.beatmapset_id:
-                msg = "snapshot.beatmapset_id must match BeatmapsetSnapshot.beatmapset_id"
-                raise ValueError(msg)
+        validate_beatmapset_child_ownership(
+            (snapshot.beatmapset_id for snapshot in self.beatmaps),
+            self.beatmapset_id,
+            mismatch_message=(
+                "snapshot.beatmapset_id must match BeatmapsetSnapshot.beatmapset_id"
+            ),
+        )
 
 
 @runtime_checkable

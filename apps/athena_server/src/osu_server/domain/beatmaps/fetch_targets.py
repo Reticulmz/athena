@@ -110,7 +110,7 @@ class BeatmapFetchTarget:
 
         Raises:
             ValueError: target_typeが未対応,target_keyが空文字列,またはID targetのkeyが
-                正の整数でない場合.
+                正規形の正整数でない場合.
         """
         kind = self.kind
         if not self.target_key:
@@ -120,10 +120,10 @@ class BeatmapFetchTarget:
         try:
             target_id = int(self.target_key)
         except ValueError as exc:
-            msg = f"target_key must be a positive integer: {self.target_key}"
+            msg = f"target_key must be a canonical positive integer: {self.target_key}"
             raise ValueError(msg) from exc
-        if target_id <= 0:
-            msg = f"target_key must be a positive integer: {self.target_key}"
+        if target_id <= 0 or str(target_id) != self.target_key:
+            msg = f"target_key must be a canonical positive integer: {self.target_key}"
             raise ValueError(msg)
 
     @property
