@@ -128,17 +128,21 @@ class Beatmap:
     local_status_override_changed_at: datetime | None = None
 
     def __post_init__(self) -> None:
-        """MD5 checksumとローカルstatus上書きの不変条件を検証する.
+        """Checksum,ローカルstatus上書き,attachment所有IDを検証する.
 
         Returns:
-            None: checksumとlocal_status_overrideを検証して完了する.
+            None: checksum,local_status_override,attachment所有IDを検証して完了する.
 
         Raises:
             TypeError: local_status_overrideがLocalBeatmapStatusまたはNoneでない場合.
-            ValueError: checksum_md5が無効か,APPROVEDをローカル上書きに指定した場合.
+            ValueError: checksum_md5が無効,APPROVEDをローカル上書きに指定,または
+                file_attachmentの所有IDが一致しない場合.
         """
         validate_md5(self.checksum_md5)
         validate_local_override(self.local_status_override)
+        if self.file_attachment is not None and self.file_attachment.beatmap_id != self.id:
+            msg = "file_attachment.beatmap_id must match Beatmap.id"
+            raise ValueError(msg)
 
     @property
     def effective_status(self) -> BeatmapRankStatus:
@@ -193,3 +197,17 @@ class BeatmapSet:
     official_last_updated_at: datetime | None = None
     source_text: str = ""
     tags: str = ""
+
+    def __post_init__(self) -> None:
+        """全difficultyがこのbeatmapsetに属することを検証する.
+
+        Returns:
+            None: child beatmapの所有IDを検証して完了する.
+
+        Raises:
+            ValueError: child beatmapのbeatmapset IDがこのset IDと一致しない場合.
+        """
+        for beatmap in self.beatmaps:
+            if beatmap.beatmapset_id != self.id:
+                msg = "beatmap.beatmapset_id must match BeatmapSet.id"
+                raise ValueError(msg)

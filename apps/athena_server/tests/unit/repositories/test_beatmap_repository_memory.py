@@ -100,6 +100,7 @@ def _make_beatmap(
 
 def _make_beatmapset(
     *beatmaps: Beatmap,
+    beatmapset_id: int = 1_000,
     status: BeatmapRankStatus = BeatmapRankStatus.RANKED,
     official_submitted_at: datetime | None = None,
     official_ranked_at: datetime | None = None,
@@ -109,6 +110,7 @@ def _make_beatmapset(
 
     Args:
         beatmaps (Beatmap): snapshotへ含めるchild Beatmap.
+        beatmapset_id (int): BeatmapSetのID.
         status (BeatmapRankStatus): BeatmapSetのofficial rank status.
         official_submitted_at (datetime | None): sourceが報告した投稿日時.
         official_ranked_at (datetime | None): sourceが報告したranked日時.
@@ -118,7 +120,7 @@ def _make_beatmapset(
         BeatmapSet: fixed metadata/timestampsと指定childを持つsnapshot fixture.
     """
     return BeatmapSet(
-        id=1_000,
+        id=beatmapset_id,
         artist="Camellia",
         title="Exit This Earth's Atomosphere",
         creator="Realazy",
@@ -268,15 +270,13 @@ async def test_list_search_documents_returns_bounded_page_after_beatmapset_id() 
     repo = _repo()
     for beatmapset_id in (1_000, 2_000, 3_000):
         await repo.save_beatmapset_snapshot(
-            replace(
-                _make_beatmapset(
-                    _make_beatmap(
-                        beatmap_id=beatmapset_id + 100_000,
-                        beatmapset_id=beatmapset_id,
-                        checksum_md5=f"{beatmapset_id:032x}",
-                    )
+            _make_beatmapset(
+                _make_beatmap(
+                    beatmap_id=beatmapset_id + 100_000,
+                    beatmapset_id=beatmapset_id,
+                    checksum_md5=f"{beatmapset_id:032x}",
                 ),
-                id=beatmapset_id,
+                beatmapset_id=beatmapset_id,
             )
         )
 
@@ -780,7 +780,7 @@ async def test_filename_lookup_scoped_to_beatmapset() -> None:
         checksum_md5=_OTHER_CHECKSUM,
         file_attachment=attachment_b,
     )
-    await repo.save_beatmapset_snapshot(replace(_make_beatmapset(beatmap_b), id=2_000))
+    await repo.save_beatmapset_snapshot(_make_beatmapset(beatmap_b, beatmapset_id=2_000))
 
     # "shared.osu" exists in set 1000 but NOT in set 2000
     assert await repo.get_beatmap_by_filename_in_beatmapset(1_000, "shared.osu") is not None

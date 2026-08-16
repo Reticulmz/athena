@@ -175,6 +175,26 @@ def test_pending_like_status_refreshes_when_interval_has_elapsed() -> None:
     assert decision.reason == "stale"
 
 
+def test_explicit_stale_state_requests_refresh_without_deadline() -> None:
+    """明示的なSTALE状態が更新期限なしでもrefreshを要求することを検証する.
+
+    Returns:
+        None: STALE状態がstale理由の更新判断になることを検証して完了する.
+    """
+    beatmap = _make_beatmap(
+        BeatmapRankStatus.PENDING,
+        last_fetched_at=None,
+        next_refresh_at=None,
+        metadata_fetch_state=BeatmapFetchState.STALE,
+    )
+
+    decision = _make_policy().evaluate(beatmap, now=_NOW)
+
+    assert decision.is_stale is True
+    assert decision.should_refresh is True
+    assert decision.reason == "stale"
+
+
 def test_next_refresh_placeholder_uses_policy_deadline() -> None:
     """placeholderの更新時刻を公式状態のpolicy期限へ置換することを検証する.
 

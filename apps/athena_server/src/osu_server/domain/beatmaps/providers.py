@@ -132,6 +132,20 @@ class BeatmapsetSnapshot:
     source_text: str = ""
     tags: str = ""
 
+    def __post_init__(self) -> None:
+        """全child snapshotがこのbeatmapsetに属することを検証する.
+
+        Returns:
+            None: child snapshotの所有IDを検証して完了する.
+
+        Raises:
+            ValueError: child snapshotのbeatmapset IDがこのsnapshot IDと一致しない場合.
+        """
+        for snapshot in self.beatmaps:
+            if snapshot.beatmapset_id != self.beatmapset_id:
+                msg = "snapshot.beatmapset_id must match BeatmapsetSnapshot.beatmapset_id"
+                raise ValueError(msg)
+
 
 @runtime_checkable
 class BeatmapMetadataProvider(Protocol):

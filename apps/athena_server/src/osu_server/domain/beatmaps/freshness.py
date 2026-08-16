@@ -99,7 +99,9 @@ class BeatmapFreshnessPolicy:
             次回予定日時に関わらず公式再取得を要求する.
         """
         next_refresh_at = self._effective_next_refresh_at(beatmap)
-        is_stale = next_refresh_at is not None and next_refresh_at <= now
+        is_stale = beatmap.metadata_fetch_state is BeatmapFetchState.STALE or (
+            next_refresh_at is not None and next_refresh_at <= now
+        )
 
         if force_refresh:
             return BeatmapFreshnessDecision(

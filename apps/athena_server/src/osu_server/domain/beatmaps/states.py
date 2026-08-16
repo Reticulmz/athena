@@ -143,6 +143,7 @@ _EXTERNAL_STATUS_MAP: dict[str, BeatmapRankStatus] = {
     "pending": BeatmapRankStatus.PENDING,
     "wip": BeatmapRankStatus.WIP,
     "graveyard": BeatmapRankStatus.GRAVEYARD,
+    "not_submitted": BeatmapRankStatus.NOT_SUBMITTED,
 }
 
 

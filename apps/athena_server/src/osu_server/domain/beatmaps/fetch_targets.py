@@ -103,17 +103,28 @@ class BeatmapFetchTarget:
     force_refresh: bool = field(default=False, compare=False, hash=False)
 
     def __post_init__(self) -> None:
-        """Target typeと非空lookup keyの不変条件を検証する.
+        """Target typeとlookup keyの不変条件を検証する.
 
         Returns:
             None: target_typeとtarget_keyを検証して完了する.
 
         Raises:
-            ValueError: target_typeが未対応か,target_keyが空文字列の場合.
+            ValueError: target_typeが未対応,target_keyが空文字列,またはID targetのkeyが
+                正の整数でない場合.
         """
-        _ = self.kind
+        kind = self.kind
         if not self.target_key:
             raise ValueError("target_key must not be empty")
+        if kind is BeatmapFetchTargetKind.METADATA_BY_CHECKSUM:
+            return
+        try:
+            target_id = int(self.target_key)
+        except ValueError as exc:
+            msg = f"target_key must be a positive integer: {self.target_key}"
+            raise ValueError(msg) from exc
+        if target_id <= 0:
+            msg = f"target_key must be a positive integer: {self.target_key}"
+            raise ValueError(msg)
 
     @property
     def kind(self) -> BeatmapFetchTargetKind:
@@ -180,7 +191,7 @@ class BeatmapFetchTarget:
             int: target_keyを整数化したbeatmap ID.
 
         Raises:
-            ValueError: target_typeがfile fetchでないか,target_keyを整数へ変換できない場合.
+            ValueError: target_typeがfile fetchでないか,target_keyが正の整数でない場合.
         """
         if self.kind is not BeatmapFetchTargetKind.FILE_BY_BEATMAP_ID:
             msg = f"unsupported file fetch target type: {self.target_type}"

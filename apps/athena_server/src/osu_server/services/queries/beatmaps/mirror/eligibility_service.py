@@ -11,7 +11,9 @@ from osu_server.domain.beatmaps import (
     BeatmapMetadataSource,
     BeatmapRankStatus,
     BeatmapSourceVerification,
-    LocalBeatmapStatus,
+)
+from osu_server.domain.beatmaps._validation import (
+    validate_local_override as validate_domain_local_override,
 )
 
 if TYPE_CHECKING:
@@ -51,14 +53,7 @@ class BeatmapStatusResolver:
             ValueError: statusがAPPROVEDの場合.
             TypeError: statusがNoneでもLocalBeatmapStatusでもない場合.
         """
-        if status is None:
-            return
-        if status is BeatmapRankStatus.APPROVED:
-            msg = "Approved cannot be used as a local override"
-            raise ValueError(msg)
-        if not isinstance(status, LocalBeatmapStatus):
-            msg = "local override must be a LocalBeatmapStatus or None"
-            raise TypeError(msg)
+        validate_domain_local_override(status)
 
 
 class BeatmapEligibilityService:
