@@ -31,6 +31,46 @@ Read this before editing first-party Python, Python tests, local `.pyi` stubs, o
 - Use library-first judgment, but get user approval before adding dependencies.
 - Avoid unnecessary abstraction.
 
+## Dishka Dependency Injection Policy
+
+Dishka is Athena's composition tool, not an application service locator.
+
+- Define production providers under `apps/athena_server/src/osu_server/composition/providers/`.
+  Graph assembly belongs in `providers/container.py`; framework integration belongs in
+  `composition/*_integration.py` or lifespan code.
+- Use `Provider` subclasses with a class-level `scope` and factory methods decorated with
+  `osu_server.composition.providers._dishka.provide`. Do not use imperative `.provide(...)`
+  registration in production provider modules; keep it in test override helpers such as
+  `TestProviderSet`.
+- Keep Dishka imports out of domain code, services, repository interfaces, and infrastructure
+  adapters. Runtime adapters may use framework-specific injection only at route or job function
+  boundaries. Do not pass `AsyncContainer`, `FromDishka`, `Provider`, or `Scope` into use-case
+  inputs or domain objects.
+- Use `Scope.APP` only for process-lifetime dependencies whose full dependency chain is
+  APP-compatible: config, engines, clients, brokers, storage, state stores, and stateless
+  services or adapters that do not depend on REQUEST/SESSION objects. Use `Scope.REQUEST` for
+  per-request or per-job state, resources, and services that depend on request/job-scoped
+  objects. Use `Scope.SESSION` only when the integration exposes a long-lived connection/session
+  scope. Do not put mutable request, user, connection state, or child-scope dependencies in
+  `Scope.APP`.
+- Providers that own closable runtime resources must yield them from generator factories and
+  release them after `yield`; use async generators for Athena async resources. Consumers do not
+  close Dishka-owned objects. Scope-specific finalization runs when the owning scope exits, and
+  app/worker shutdown closes the top-level APP container. Current production providers use only
+  `Scope.APP`; if `Scope.REQUEST` or `Scope.SESSION` is introduced, the integration that enters
+  the child scope must close that child container when the request, session, or job completes.
+  Starlette `ContainerMiddleware` manages HTTP request/session scopes, and Taskiq
+  `ContainerMiddleware` manages job request scopes.
+- If a provider needs framework context such as Starlette `Request`, `WebSocket`, or Taskiq
+  context, pass it through Dishka integration context data such as `from_context`, not globals or
+  ad hoc attributes. Keep framework context at the adapter/composition boundary.
+- Tests replace dependencies by passing override providers after the production provider set.
+  Prefer `TestProviderSet`, `replace_value`, and `replace_factory`, which register
+  `override=True`. Do not branch production providers on `config.environment == "test"`.
+- Do not use `skip_validation=True` in app or worker container construction. If a graph change
+  adds or replaces a provider, add or run a focused provider graph test that resolves the new
+  dependency and closes the container.
+
 ## Python Docstring Standard
 
 この節はAthenaのPython docstring品質に関する唯一の規範である。README、architecture
