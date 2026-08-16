@@ -1,16 +1,11 @@
 """Beatmap domain modelの共通不変条件を検証するmodule."""
 
-from typing import TYPE_CHECKING
-
 from osu_server.domain.beatmaps.states import BeatmapRankStatus, LocalBeatmapStatus
 from osu_server.shared.checksums import MD5_HEX_LENGTH, is_lowercase_md5_hexdigest
 
-if TYPE_CHECKING:
-    from collections.abc import Iterable
-
 
 def validate_beatmapset_child_ownership(
-    child_beatmapset_ids: Iterable[int],
+    child_beatmapset_ids: tuple[int, ...],
     beatmapset_id: int,
     *,
     mismatch_message: str,
@@ -18,7 +13,7 @@ def validate_beatmapset_child_ownership(
     """全childのbeatmapset IDが親IDと一致することを検証する.
 
     Args:
-        child_beatmapset_ids (Iterable[int]): 検証するchildのbeatmapset ID群.
+        child_beatmapset_ids (tuple[int, ...]): 検証するchildのbeatmapset ID群.
         beatmapset_id (int): 親beatmapsetのID.
         mismatch_message (str): 所有ID不一致時のerror message.
 

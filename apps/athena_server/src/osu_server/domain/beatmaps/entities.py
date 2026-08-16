@@ -212,7 +212,7 @@ class BeatmapSet:
             ValueError: child beatmapのbeatmapset IDがこのset IDと一致しない場合.
         """
         validate_beatmapset_child_ownership(
-            (beatmap.beatmapset_id for beatmap in self.beatmaps),
+            tuple(beatmap.beatmapset_id for beatmap in self.beatmaps),
             self.id,
             mismatch_message="beatmap.beatmapset_id must match BeatmapSet.id",
         )

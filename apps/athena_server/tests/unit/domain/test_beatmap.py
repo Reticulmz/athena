@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import fields, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
+from typing import get_type_hints
 
 import pytest
 
@@ -31,10 +32,22 @@ from osu_server.domain.beatmaps import (
     LocalBeatmapStatus,
     map_external_status,
 )
+from osu_server.domain.beatmaps._validation import validate_beatmapset_child_ownership
 
 _NOW = datetime(2026, 6, 4, tzinfo=UTC)
 _NEXT_REFRESH = _NOW + timedelta(days=30)
 _CHECKSUM = "0123456789abcdef0123456789abcdef"
+
+
+def test_beatmapset_child_validator_annotations_resolve_at_runtime() -> None:
+    """共通所有ID validatorのannotationをruntimeで解決できることを検証する.
+
+    Returns:
+        None: get_type_hintsが未定義名を参照せず完了することを検証する.
+    """
+    annotations = get_type_hints(validate_beatmapset_child_ownership)
+
+    assert "child_beatmapset_ids" in annotations
 
 
 def _make_beatmap(

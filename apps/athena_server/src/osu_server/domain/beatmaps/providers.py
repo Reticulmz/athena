@@ -145,7 +145,7 @@ class BeatmapsetSnapshot:
             ValueError: child snapshotのbeatmapset IDがこのsnapshot IDと一致しない場合.
         """
         validate_beatmapset_child_ownership(
-            (snapshot.beatmapset_id for snapshot in self.beatmaps),
+            tuple(snapshot.beatmapset_id for snapshot in self.beatmaps),
             self.beatmapset_id,
             mismatch_message=(
                 "snapshot.beatmapset_id must match BeatmapsetSnapshot.beatmapset_id"
