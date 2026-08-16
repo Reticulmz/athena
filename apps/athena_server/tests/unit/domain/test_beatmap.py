@@ -5,9 +5,10 @@ Official statusとローカル上書きおよびworker queue payloadのdomain不
 
 from __future__ import annotations
 
-from dataclasses import fields
+from dataclasses import fields, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
+from typing import get_type_hints
 
 import pytest
 
@@ -25,13 +26,28 @@ from osu_server.domain.beatmaps import (
     BeatmapMode,
     BeatmapRankStatus,
     BeatmapSet,
+    BeatmapsetSnapshot,
+    BeatmapSnapshot,
     BeatmapSourceVerification,
     LocalBeatmapStatus,
+    map_external_status,
 )
+from osu_server.domain.beatmaps._validation import validate_beatmapset_child_ownership
 
 _NOW = datetime(2026, 6, 4, tzinfo=UTC)
 _NEXT_REFRESH = _NOW + timedelta(days=30)
 _CHECKSUM = "0123456789abcdef0123456789abcdef"
+
+
+def test_beatmapset_child_validator_annotations_resolve_at_runtime() -> None:
+    """共通所有ID validatorのannotationをruntimeで解決できることを検証する.
+
+    Returns:
+        None: get_type_hintsが未定義名を参照せず完了することを検証する.
+    """
+    annotations = get_type_hints(validate_beatmapset_child_ownership)
+
+    assert "child_beatmapset_ids" in annotations
 
 
 def _make_beatmap(
@@ -131,6 +147,15 @@ def test_local_status_enum_excludes_approved() -> None:
     assert LocalBeatmapStatus.RANKED.value == "ranked"
 
 
+def test_external_status_maps_not_submitted() -> None:
+    """外部providerのnot_submitted値を専用statusへ変換することを検証する.
+
+    Returns:
+        None: not_submittedがUNKNOWNではなくNOT_SUBMITTEDになることを検証して完了する.
+    """
+    assert map_external_status(" not_submitted ") is BeatmapRankStatus.NOT_SUBMITTED
+
+
 def test_fetch_target_exposes_typed_metadata_lookup() -> None:
     """Beatmapset metadata fetch targetがtyped lookupとqueue payloadを返すことを検証する.
 
@@ -170,6 +195,34 @@ def test_fetch_target_restores_worker_queue_payload() -> None:
     assert target.force_refresh is False
     assert target.is_file_fetch
     assert target.file_beatmap_id() == 2000
+
+
+@pytest.mark.parametrize(
+    ("target_type", "target_key"),
+    [
+        ("metadata:beatmap", "0"),
+        ("metadata:beatmapset", "-1"),
+        ("file:beatmap", "not-an-id"),
+        ("metadata:beatmap", "01"),
+        ("metadata:beatmapset", " 1"),
+        ("file:beatmap", "+1"),
+    ],
+)
+def test_fetch_target_rejects_invalid_id_key(target_type: str, target_key: str) -> None:
+    """ID型fetch targetが正規形の正整数でないkeyを生成時に拒否することを検証する.
+
+    Args:
+        target_type (str): IDをlookup keyに使うfetch target type.
+        target_key (str): 0,負数,非整数,または非正規形の拒否対象key.
+
+    Returns:
+        None: 不正なID keyがValueErrorになることを検証して完了する.
+    """
+    with pytest.raises(ValueError, match="target_key must be a canonical positive integer"):
+        _ = BeatmapFetchTarget.from_queue_payload(
+            target_type=target_type,
+            target_key=target_key,
+        )
 
 
 def test_fetch_target_roundtrips_force_refresh_queue_payload() -> None:
@@ -299,6 +352,18 @@ def test_beatmap_rejects_approved_as_runtime_local_override() -> None:
         )
 
 
+def test_beatmap_rejects_attachment_owned_by_another_beatmap() -> None:
+    """Beatmapが別beatmap所有のfile attachmentを拒否することを検証する.
+
+    Returns:
+        None: attachment所有IDの不一致がValueErrorになることを検証して完了する.
+    """
+    attachment = replace(_make_attachment(), beatmap_id=9_999)
+
+    with pytest.raises(ValueError, match="must match Beatmap"):
+        _ = _make_beatmap(file_attachment=attachment)
+
+
 def test_beatmap_distinguishes_source_and_verification() -> None:
     """Beatmapがmetadata sourceと検証状態を別fieldとして保持することを検証する.
 
@@ -410,3 +475,63 @@ def test_beatmapset_groups_known_beatmaps_and_status_metadata() -> None:
     assert beatmapset.beatmaps == (beatmap,)
     assert beatmapset.official_status is BeatmapRankStatus.RANKED
     assert beatmapset.official_status_source is BeatmapMetadataSource.OFFICIAL
+
+
+def test_beatmapset_rejects_beatmap_owned_by_another_set() -> None:
+    """BeatmapSetが別set所有のdifficultyを拒否することを検証する.
+
+    Returns:
+        None: child beatmapの所有ID不一致がValueErrorになることを検証して完了する.
+    """
+    beatmap = replace(_make_beatmap(), beatmapset_id=9_999)
+
+    with pytest.raises(ValueError, match="must match BeatmapSet"):
+        _ = BeatmapSet(
+            id=1_000,
+            artist="Camellia",
+            title="Exit This Earth's Atomosphere",
+            creator="Realazy",
+            artist_unicode=None,
+            title_unicode=None,
+            official_status=BeatmapRankStatus.RANKED,
+            official_status_source=BeatmapMetadataSource.OFFICIAL,
+            official_status_verified=BeatmapSourceVerification.VERIFIED,
+            beatmaps=(beatmap,),
+            last_fetched_at=_NOW,
+            next_refresh_at=_NEXT_REFRESH,
+        )
+
+
+def test_beatmapset_snapshot_rejects_beatmap_owned_by_another_set() -> None:
+    """BeatmapsetSnapshotが別set所有のchild snapshotを拒否することを検証する.
+
+    Returns:
+        None: child snapshotの所有ID不一致がValueErrorになることを検証して完了する.
+    """
+    beatmap = BeatmapSnapshot(
+        beatmap_id=2_000,
+        beatmapset_id=9_999,
+        checksum_md5=_CHECKSUM,
+        mode=BeatmapMode.OSU,
+        version="Another",
+        official_status=BeatmapRankStatus.RANKED,
+        official_status_source=BeatmapMetadataSource.OFFICIAL,
+        official_status_verified=BeatmapSourceVerification.VERIFIED,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="must match BeatmapsetSnapshot",
+    ):
+        _ = BeatmapsetSnapshot(
+            beatmapset_id=1_000,
+            artist="Camellia",
+            title="Exit This Earth's Atomosphere",
+            creator="Realazy",
+            source=BeatmapMetadataSource.OFFICIAL,
+            verified=BeatmapSourceVerification.VERIFIED,
+            official_status=BeatmapRankStatus.RANKED,
+            official_status_source=BeatmapMetadataSource.OFFICIAL,
+            official_status_verified=BeatmapSourceVerification.VERIFIED,
+            beatmaps=(beatmap,),
+        )

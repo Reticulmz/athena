@@ -278,16 +278,17 @@ async def test_provider_returns_unavailable_for_available_state_without_attachme
 
 @pytest.mark.asyncio
 async def test_provider_returns_unavailable_for_attachment_from_different_beatmap() -> None:
-    """別beatmapのattachmentを利用不能として拒否する契約を検証する.
+    """不変条件を破った別beatmapのattachmentをproviderでも拒否する契約を検証する.
 
-    要求対象と異なるbeatmap識別子を持つattachmentを用意する.
-    blobを読まずにmismatchになることを確認する.
+    有効なaggregate生成後に所有IDを破損させ,blobを読まずmismatchになることを確認する.
 
     Returns:
         None: attachment mismatch理由とblob未読を検証して完了する.
     """
-    attachment = _make_attachment(attachment_id=7, beatmap_id=_BEATMAP_ID + 1, blob_id=42)
-    resolver = _Resolver(_resolve_result(_make_beatmap(file_attachment=attachment)))
+    attachment = _make_attachment(attachment_id=7, blob_id=42)
+    beatmap = _make_beatmap(file_attachment=attachment)
+    object.__setattr__(attachment, "beatmap_id", _BEATMAP_ID + 1)
+    resolver = _Resolver(_resolve_result(beatmap))
     blob_storage = _BlobStorage({42: _OSU_BYTES})
     provider = BeatmapMirrorPerformanceBeatmapFileProvider(resolver, blob_storage)
 

@@ -591,6 +591,7 @@ def _beatmap_domain(
 def _beatmapset_domain(
     beatmap: Beatmap,
     *,
+    beatmapset_id: int = 1_000,
     official_submitted_at: datetime | None = None,
     official_ranked_at: datetime | None = None,
     official_last_updated_at: datetime | None = None,
@@ -599,6 +600,7 @@ def _beatmapset_domain(
 
     Args:
         beatmap (Beatmap): beatmapsetへ含めるdomain beatmap.
+        beatmapset_id (int): domain beatmapsetのID.
         official_submitted_at (datetime | None): sourceが報告した投稿日時.
         official_ranked_at (datetime | None): sourceが報告したranked日時.
         official_last_updated_at (datetime | None): sourceが報告した更新日時.
@@ -607,7 +609,7 @@ def _beatmapset_domain(
         BeatmapSet: snapshot保存に使用する1件のbeatmapを持つbeatmapset.
     """
     return BeatmapSet(
-        id=1_000,
+        id=beatmapset_id,
         artist="Camellia",
         title="Exit This Earth's Atomosphere",
         creator="Realazy",
@@ -968,7 +970,7 @@ async def test_save_single_beatmap_snapshot_keeps_parent_child_set_ids_equal() -
         checksum_md5="699c3008a5a455db6736f0e659141571",
         version="Alheak's Extra",
     )
-    snapshot = replace(_beatmapset_domain(beatmap), id=757681)
+    snapshot = _beatmapset_domain(beatmap, beatmapset_id=757681)
     session = FakeSession()
 
     await _repo(session).save_beatmapset_snapshot(snapshot)

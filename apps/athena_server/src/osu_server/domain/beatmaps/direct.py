@@ -3,16 +3,17 @@
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Final, Protocol, Self
+from typing import TYPE_CHECKING, Final, Protocol, Self
 
-from osu_server.domain.beatmaps.models import (
-    Beatmap,
+from osu_server.domain.beatmaps.states import (
     BeatmapMetadataSource,
     BeatmapMode,
     BeatmapRankStatus,
-    BeatmapSet,
 )
 from osu_server.shared.checksums import MD5_HEX_LENGTH, is_lowercase_md5_hexdigest
+
+if TYPE_CHECKING:
+    from osu_server.domain.beatmaps.entities import Beatmap, BeatmapSet
 
 _DIRECT_INACTIVE_STATUSES: Final = frozenset(
     {

@@ -110,6 +110,19 @@ def test_status_resolver_rejects_approved_local_override() -> None:
         BeatmapStatusResolver().validate_local_override(BeatmapRankStatus.APPROVED)
 
 
+def test_status_resolver_uses_domain_local_override_validation() -> None:
+    """Status resolverがdomain modelと同じlocal override制約を使うことを検証する.
+
+    Returns:
+        None: 不正な型がdomain共通messageのTypeErrorになることを検証して完了する.
+    """
+    with pytest.raises(
+        TypeError,
+        match="local_status_override must be a LocalBeatmapStatus or None",
+    ):
+        BeatmapStatusResolver().validate_local_override("ranked")
+
+
 @pytest.mark.parametrize("status", [BeatmapRankStatus.RANKED, BeatmapRankStatus.APPROVED])
 def test_ranked_and_approved_award_ranked_pp(status: BeatmapRankStatus) -> None:
     """ranked扱いの状態がranked PPを許可することを検証する.
