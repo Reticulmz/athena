@@ -28,39 +28,49 @@ from osu_server.domain.beatmaps.eligibility import (
     BeatmapStatus,
     EligibilityResult,
 )
+from osu_server.domain.beatmaps.entities import (
+    Beatmap,
+    BeatmapFileAttachment,
+    BeatmapSet,
+)
 from osu_server.domain.beatmaps.errors import (
     BeatmapSourceError,
     BeatmapSourceErrorCategory,
 )
-from osu_server.domain.beatmaps.models import (
-    Beatmap,
-    BeatmapEligibility,
+from osu_server.domain.beatmaps.fetch_targets import (
     BeatmapFetchQueuePayload,
     BeatmapFetchRecord,
-    BeatmapFetchState,
     BeatmapFetchTarget,
     BeatmapFetchTargetKind,
-    BeatmapFileAttachment,
-    BeatmapFileProvider,
-    BeatmapFileSource,
-    BeatmapFileState,
-    BeatmapFreshnessDecision,
-    BeatmapFreshnessPolicy,
     BeatmapMetadataLookupKind,
     BeatmapMetadataLookupTarget,
+)
+from osu_server.domain.beatmaps.freshness import (
+    BeatmapFreshnessDecision,
+    BeatmapFreshnessPolicy,
+)
+from osu_server.domain.beatmaps.providers import (
+    BeatmapFileProvider,
     BeatmapMetadataProvider,
+    BeatmapsetSnapshot,
+    BeatmapSnapshot,
+    OsuFileFetchResult,
+)
+from osu_server.domain.beatmaps.resolution import (
+    BeatmapEligibility,
+    BeatmapResolveOptions,
+    BeatmapResolveResult,
+    BeatmapSetResolveResult,
+)
+from osu_server.domain.beatmaps.states import (
+    BeatmapFetchState,
+    BeatmapFileSource,
+    BeatmapFileState,
     BeatmapMetadataSource,
     BeatmapMode,
     BeatmapRankStatus,
-    BeatmapResolveOptions,
-    BeatmapResolveResult,
-    BeatmapSet,
-    BeatmapSetResolveResult,
-    BeatmapsetSnapshot,
-    BeatmapSnapshot,
     BeatmapSourceVerification,
     LocalBeatmapStatus,
-    OsuFileFetchResult,
     map_external_status,
 )
 
