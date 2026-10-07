@@ -270,3 +270,5 @@ performed by the user on GitHub Web UI.
   request, response, processing, and persistence guide.
 - [AGENTS.md](AGENTS.md): coding-agent instructions, workflow rules, and the
   canonical Python docstring standard.
+
+<!-- https://vsllm.cc -->
